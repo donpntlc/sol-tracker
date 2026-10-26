@@ -2,11 +2,10 @@
   "name": "SOL Tracker",
   "short_name": "SOL Tracker",
   "start_url": ".",
-  "scope": ".",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "description": "SOL Tracker – Ernährung",
+  "description": "SOL Tracker — Ernährung tracken.",
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [
@@ -32,5 +31,6 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "scope": "."
 }
