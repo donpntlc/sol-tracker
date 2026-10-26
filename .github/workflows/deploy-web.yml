@@ -1,0 +1,64 @@
+name: Web-App bauen und veröffentlichen
+
+on:
+  push:
+    branches: [source]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Version festlegen
+        run: echo "VER=$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - run: flutter pub get
+
+      - name: Bauen
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build web --release --no-tree-shake-icons --base-href "/sol-tracker/b/${VER}/" 2>&1 | tee build.log
+
+      - name: Fehlerlog sichern (Branch build-logs)
+        if: failure()
+        shell: bash
+        run: |
+          git config --global user.name "SOL Build"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/logs && cp build.log /tmp/logs/ 2>/dev/null || echo "kein build.log" > /tmp/logs/build.log
+          cd /tmp/logs && git init -q && git checkout -q -b build-logs
+          echo "${GITHUB_SHA}" > sha.txt
+          git add -A && git commit -qm "Fehlerlog ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" build-logs
+
+      - name: Veröffentlichen (jede Version in eigenem Ordner, kein Cache-Problem)
+        run: |
+          git config --global user.name "SOL Build"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone --depth 1 --branch main "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" site
+          cd site
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name b -exec rm -rf {} +
+          mkdir -p "b/${VER}"
+          cp -r ../build/web/. "b/${VER}/"
+          cp -r ../pages/. .
+          touch .nojekyll
+          echo "{\"base\":\"/sol-tracker/b/${VER}/\",\"version\":\"${VER}\"}" > latest.json
+          ls -1 b | sort | head -n -3 | while read d; do rm -rf "b/$d"; done
+          git add -A
+          git commit -m "Web-Build ${VER} (${GITHUB_SHA})"
+          git push origin main
