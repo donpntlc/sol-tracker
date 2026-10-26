@@ -956,8 +956,6 @@ class _TrackPortionScrollPanel extends StatefulWidget {
     required this.displayValueForGrams,
     required this.gramsFromDisplay,
     required this.onChanged,
-  _ShoppingListBundle shoppingDay = _ShoppingListBundle.fresh();
-  _ShoppingListBundle shoppingMonth = _ShoppingListBundle.fresh();
     required this.t,
   });
 
@@ -1212,7 +1210,6 @@ class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
               ),
             ),
             if (onCenterTap != null && centerLabel != null)
-  static const String _kShoppingListsKey = "shopping_lists_v1";
               Positioned(
                 left: 4,
                 right: 4,
@@ -1343,6 +1340,8 @@ class _MainScreenState extends State<MainScreen> {
   String databaseToleranceFilter = "all";
   /// Pro Tag: Mahlzeiten in der Gesamtmahlzeit (kcal zusammenführen).
   final Map<String, Set<String>> _mergedMealsByDay = <String, Set<String>>{};
+  _ShoppingListBundle shoppingDay = _ShoppingListBundle.fresh();
+  _ShoppingListBundle shoppingMonth = _ShoppingListBundle.fresh();
 
   // Reorderbare Meal-Gruppen.
   // Nicht-Alltag/Advanced: "prepost" = fester Block (Pre+Post gemeinsam).
@@ -1618,6 +1617,7 @@ class _MainScreenState extends State<MainScreen> {
   static const String _kIntroUnlockSessionsKey = "intro_unlock_sessions_today_v1";
   static const String _kUserDbStarKey = "user_db_star_fav_v1";
   static const String _kMergedMealsByDayKey = "merged_meals_by_day_v1";
+  static const String _kShoppingListsKey = "shopping_lists_v1";
   static const String _kMergedMealCardId = "__merged__";
   static const String _kUserFoodPerformanceKey = "user_food_performance_v1";
   static const String _kUserFoodToleranceKey = "user_food_tolerance_v1";
@@ -6262,29 +6262,6 @@ class _MainScreenState extends State<MainScreen> {
         name: "Kokosöl",
         protein: 0,
         carbs: 0,
-      "shop_title": "Lista za kupovinu",
-      "shop_tab_day": "Dnevno",
-      "shop_tab_month": "Mesečno",
-      "shop_group_general": "Opšte",
-      "shop_group_pick": "Grupa / prodavnica",
-      "shop_new_group": "Nova grupa",
-      "shop_new_group_hint": "npr. naziv lanca",
-      "shop_add_note": "Dodaj belešku",
-      "shop_add_note_hint": "Slobodan tekst",
-      "shop_add_from_db": "Iz baze",
-      "shop_quantity": "Količina / jedinica",
-      "shop_quantity_hint": "npr. 2, 500 g",
-      "shop_add_to_list": "Na listu",
-      "shop_add_recipe": "Svi sastojci na listu",
-      "shop_add_recipe_title": "Recept: sastojci",
-      "shop_clear_done": "Ukloni označeno",
-      "shop_empty": "Lista je prazna.",
-      "shop_cart_tooltip": "Liste za kupovinu",
-      "shop_db_add": "U korpu",
-      "shop_move_group": "Premesti u grupu",
-      "shop_delete_entry": "Obriši stavku",
-      "shop_cancel": "Otkaži",
-      "shop_ingredient_count": "{n} sastojaka",
         sugar: 0,
         fiber: 0,
         fat: 100,
@@ -6399,14 +6376,6 @@ class _MainScreenState extends State<MainScreen> {
         isDefault: true,
         extraCategories: const ["Gemüse"],
       ),
-      "track_fill_none": "Nema šta popuniti: cilj postignut ili nema mesta do gornje granice opsega.",
-      "track_fill_group_label": "Popuni traku",
-      "track_fill_protein": "Protein: popuni",
-      "track_fill_carbs": "UH: popuni",
-      "track_fill_carb_complex": "Kompleksni UH: popuni",
-      "track_fill_carb_simple": "Jednostavni UH: popuni",
-      "track_fill_fat": "Mast: popuni",
-      "track_fill_kcal": "kcal: popuni",
       Food(
         name: "Blumenkohl",
         protein: 1.9,
@@ -7183,29 +7152,6 @@ class _MainScreenState extends State<MainScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-      "shop_title": "Listas de compras",
-      "shop_tab_day": "Dia",
-      "shop_tab_month": "Mês",
-      "shop_group_general": "Geral",
-      "shop_group_pick": "Grupo / loja",
-      "shop_new_group": "Novo grupo",
-      "shop_new_group_hint": "ex.: nome do supermercado",
-      "shop_add_note": "Adicionar nota",
-      "shop_add_note_hint": "Texto livre",
-      "shop_add_from_db": "Da base",
-      "shop_quantity": "Quantidade / unidade",
-      "shop_quantity_hint": "ex.: 2, 500 g",
-      "shop_add_to_list": "Adicionar à lista",
-      "shop_add_recipe": "Todos os ingredientes",
-      "shop_add_recipe_title": "Receita: ingredientes",
-      "shop_clear_done": "Remover feitos",
-      "shop_empty": "Lista vazia.",
-      "shop_cart_tooltip": "Listas de compras",
-      "shop_db_add": "Ao carrinho",
-      "shop_move_group": "Mover para grupo",
-      "shop_delete_entry": "Apagar item",
-      "shop_cancel": "Cancelar",
-      "shop_ingredient_count": "{n} ingredientes",
                   setState(() {
                     foodDatabase.removeWhere((f) => f.name == food.name);
                     userDbStarByName.remove(food.name);
@@ -7319,14 +7265,6 @@ class _MainScreenState extends State<MainScreen> {
                     icon: const Icon(Icons.shopping_cart_outlined),
                     label: Text(t("shop_add_recipe")),
                   ),
-      "track_fill_none": "Nada a preencher: meta atingida ou sem espaço até ao máximo da faixa.",
-      "track_fill_group_label": "Preencher faixa",
-      "track_fill_protein": "Preencher proteína",
-      "track_fill_carbs": "Preencher hidratos",
-      "track_fill_carb_complex": "Hidratos complexos: preencher",
-      "track_fill_carb_simple": "Hidratos simples: preencher",
-      "track_fill_fat": "Preencher gordura",
-      "track_fill_kcal": "Preencher kcal",
                 ),
                 const Divider(height: 1, color: Color(0xFF2A2A2A)),
                 Expanded(
