@@ -7771,7 +7771,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// „Balken füllen“: setzt Eingabemodus + angezeigten Wert, oder `null` → Snackbar.
-  ({String text, String mode})? _tryTrackFillField(
+  ({String text, String mode, double value, double grams})? _tryTrackFillField(
     Food food,
     String meal,
     String target, {
@@ -7781,7 +7781,8 @@ class _MainScreenState extends State<MainScreen> {
         preWorkoutCarbKind: preWorkoutCarbKind);
     if (g == null || g <= 0) return null;
     final d = _trackDisplayValueForGrams(food, target, g);
-    return (text: (d ?? g).toStringAsFixed(0), mode: target);
+    final v = (d ?? g).roundToDouble();
+    return (text: v.toStringAsFixed(0), mode: target, value: v, grams: g);
   }
 
   @override
@@ -21949,6 +21950,7 @@ class _MainScreenState extends State<MainScreen> {
     String inputMode = "grams";
     double trackScrollDisplayValue = 100.0;
     double trackScrollGrams = 100.0;
+    int trackFillNonce = 0;
     String recipeSimpleMode = "portion";
     bool recipeAdvanced = false;
     String advInputMode = "kcal";
@@ -22065,7 +22067,9 @@ class _MainScreenState extends State<MainScreen> {
               advCtrl.text = r.text;
             } else {
               inputMode = r.mode;
-              amountCtrl.text = r.text;
+              trackScrollDisplayValue = r.value;
+              trackScrollGrams = r.grams;
+              trackFillNonce++;
             }
             pendingFillLocal = null;
           }
@@ -22807,7 +22811,7 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     const SizedBox(height: 8),
                     _TrackPortionScrollPanel(
-                      key: ValueKey('add_${fInList.name}'),
+                      key: ValueKey('add_${fInList.name}_$trackFillNonce'),
                       modes: _foodTrackModesFor(fInList),
                       initialMode: inputMode,
                       initialGrams: trackScrollGrams,
@@ -22825,6 +22829,179 @@ class _MainScreenState extends State<MainScreen> {
                       },
                       t: t,
                     ),
+                    if (!fInList.isRecipe) ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          t("track_fill_group_label"),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFFFFB74D),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: [
+                          if (fInList.protein > 0.01)
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_protein"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                    fInList, meal, "protein");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  inputMode = r.mode;
+                                  trackScrollDisplayValue = r.value;
+                                  trackScrollGrams = r.grams;
+                                  trackFillNonce++;
+                                });
+                              },
+                            ),
+                          if (fInList.carbs > 0.01 && meal != "Pre-Workout")
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_carbs"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                    fInList, meal, "carbs");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  inputMode = r.mode;
+                                  trackScrollDisplayValue = r.value;
+                                  trackScrollGrams = r.grams;
+                                  trackFillNonce++;
+                                });
+                              },
+                            ),
+                          if (meal == "Pre-Workout" && fInList.carbs > 0.01) ...[
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_carb_complex"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                  fInList,
+                                  meal,
+                                  "carbs",
+                                  preWorkoutCarbKind: "komplex",
+                                );
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  inputMode = r.mode;
+                                  trackScrollDisplayValue = r.value;
+                                  trackScrollGrams = r.grams;
+                                  trackFillNonce++;
+                                });
+                              },
+                            ),
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_carb_simple"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                  fInList,
+                                  meal,
+                                  "carbs",
+                                  preWorkoutCarbKind: "einfach",
+                                );
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  inputMode = r.mode;
+                                  trackScrollDisplayValue = r.value;
+                                  trackScrollGrams = r.grams;
+                                  trackFillNonce++;
+                                });
+                              },
+                            ),
+                          ],
+                          if (fInList.fat > 0.01)
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_fat"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r =
+                                    _tryTrackFillField(fInList, meal, "fat");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  inputMode = r.mode;
+                                  trackScrollDisplayValue = r.value;
+                                  trackScrollGrams = r.grams;
+                                  trackFillNonce++;
+                                });
+                              },
+                            ),
+                          if (fInList.calories > 0.01)
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_kcal"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r =
+                                    _tryTrackFillField(fInList, meal, "kcal");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  inputMode = r.mode;
+                                  trackScrollDisplayValue = r.value;
+                                  trackScrollGrams = r.grams;
+                                  trackFillNonce++;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                   if (gPreview != null && fInList != null) ...[
                     _trackPortionMacroPreview(fInList, gPreview),
@@ -22837,165 +23014,6 @@ class _MainScreenState extends State<MainScreen> {
                         fontSize: 11,
                         fontStyle: FontStyle.italic,
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        t("track_fill_group_label"),
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Color(0xFFFFB74D),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 4,
-                      children: [
-                        if (fInList.protein > 0.01)
-                          ActionChip(
-                            label: Text(
-                              t("track_fill_protein"),
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
-                              final r = _tryTrackFillField(
-                                  fInList, meal, "protein");
-                              if (r == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(t("track_fill_none"))),
-                                );
-                                return;
-                              }
-                              setDialogState(() {
-                                inputMode = r.mode;
-                                amountCtrl.text = r.text;
-                              });
-                            },
-                          ),
-                        if (fInList.carbs > 0.01 && meal != "Pre-Workout")
-                          ActionChip(
-                            label: Text(
-                              t("track_fill_carbs"),
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
-                              final r = _tryTrackFillField(
-                                  fInList, meal, "carbs");
-                              if (r == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(t("track_fill_none"))),
-                                );
-                                return;
-                              }
-                              setDialogState(() {
-                                inputMode = r.mode;
-                                amountCtrl.text = r.text;
-                              });
-                            },
-                          ),
-                        if (meal == "Pre-Workout" && fInList.carbs > 0.01) ...[
-                          ActionChip(
-                            label: Text(
-                              t("track_fill_carb_complex"),
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
-                              final r = _tryTrackFillField(
-                                fInList,
-                                meal,
-                                "carbs",
-                                preWorkoutCarbKind: "komplex",
-                              );
-                              if (r == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(t("track_fill_none"))),
-                                );
-                                return;
-                              }
-                              setDialogState(() {
-                                inputMode = r.mode;
-                                amountCtrl.text = r.text;
-                              });
-                            },
-                          ),
-                          ActionChip(
-                            label: Text(
-                              t("track_fill_carb_simple"),
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
-                              final r = _tryTrackFillField(
-                                fInList,
-                                meal,
-                                "carbs",
-                                preWorkoutCarbKind: "einfach",
-                              );
-                              if (r == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(t("track_fill_none"))),
-                                );
-                                return;
-                              }
-                              setDialogState(() {
-                                inputMode = r.mode;
-                                amountCtrl.text = r.text;
-                              });
-                            },
-                          ),
-                        ],
-                        if (fInList.fat > 0.01)
-                          ActionChip(
-                            label: Text(
-                              t("track_fill_fat"),
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
-                              final r =
-                                  _tryTrackFillField(fInList, meal, "fat");
-                              if (r == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(t("track_fill_none"))),
-                                );
-                                return;
-                              }
-                              setDialogState(() {
-                                inputMode = r.mode;
-                                amountCtrl.text = r.text;
-                              });
-                            },
-                          ),
-                        if (fInList.calories > 0.01)
-                          ActionChip(
-                            label: Text(
-                              t("track_fill_kcal"),
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
-                              final r =
-                                  _tryTrackFillField(fInList, meal, "kcal");
-                              if (r == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(t("track_fill_none"))),
-                                );
-                                return;
-                              }
-                              setDialogState(() {
-                                inputMode = r.mode;
-                                amountCtrl.text = r.text;
-                              });
-                            },
-                          ),
-                      ],
                     ),
                   ],
                 ],
