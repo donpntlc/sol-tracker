@@ -1,0 +1,24233 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+import 'package:sol/education_quiz.dart';
+import 'package:sol/education_quiz_view.dart';
+import 'package:sol/placement_quiz_view.dart';
+import 'package:sol/intro_unlock_quiz_view.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:sol/ai_meal_photo.dart' as aiphoto;
+import 'package:sol/sol_recipe_hero_image.dart';
+import 'dart:io';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:health/health.dart';
+
+part 'default_foods_catalog.dart';
+
+/// Gewicht pro Tag inkl. optional Foto-Zeit (Migration: früher nur Zahl).
+class _WeightDayEntry {
+  const _WeightDayEntry({
+    required this.kg,
+    this.recordedAt,
+    this.formImagePath,
+    this.formImageB64,
+  });
+  final double kg;
+  final DateTime? recordedAt;
+  final String? formImagePath;
+  final String? formImageB64;
+
+  bool get hasFormImage =>
+      (formImageB64 != null && formImageB64!.isNotEmpty) ||
+      (formImagePath != null && formImagePath!.isNotEmpty);
+
+  Object toPrefValue() {
+    if (recordedAt == null &&
+        !hasFormImage) {
+      return kg;
+    }
+    return {
+      'kg': kg,
+      if (recordedAt != null) 'at': recordedAt!.toIso8601String(),
+      if (formImagePath != null && formImagePath!.isNotEmpty)
+        'img': formImagePath,
+      if (formImageB64 != null && formImageB64!.isNotEmpty)
+        'imgB64': formImageB64,
+    };
+  }
+
+  static _WeightDayEntry fromPref(dynamic v) {
+    if (v is num) {
+      return _WeightDayEntry(kg: v.toDouble());
+    }
+    final m = Map<String, dynamic>.from(v as Map);
+    return _WeightDayEntry(
+      kg: (m['kg'] ?? 0).toDouble(),
+      recordedAt:
+          m['at'] != null ? DateTime.tryParse(m['at'].toString()) : null,
+      formImagePath: m['img']?.toString(),
+      formImageB64: m['imgB64']?.toString(),
+    );
+  }
+}
+
+/// Scrollbarer Dialog-Inhalt mit max. Breite/Höhe (SOL-Layout, z. B. lange Formulare).
+Widget _solConstrainedDialogScrollBody(BuildContext context, Widget child) {
+  final h = MediaQuery.sizeOf(context).height;
+  return ConstrainedBox(
+    constraints: BoxConstraints(
+      maxWidth: 520,
+      maxHeight: h * 0.86,
+    ),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: child,
+    ),
+  );
+}
+
+/// Frau: Silhouette + Einfärben in Pink wie der Schritte-Balken.
+class _FemaleStepsRunIcon extends StatelessWidget {
+  const _FemaleStepsRunIcon();
+
+  static const Color _pink = Color(0xFFE38ACF);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 24,
+      height: 26,
+      child: ColorFiltered(
+        colorFilter: const ColorFilter.mode(_pink, BlendMode.srcIn),
+        child: Image.asset(
+          'assets/images/female_steps_walker.png',
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          isAntiAlias: true,
+        ),
+      ),
+    );
+  }
+}
+
+/// Mann: Silhouette + Einfärben in Blau.
+class _MaleStepsRunIcon extends StatelessWidget {
+  const _MaleStepsRunIcon();
+
+  static const Color _blue = Color(0xFF90CAF9);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 24,
+      height: 26,
+      child: ColorFiltered(
+        colorFilter: const ColorFilter.mode(_blue, BlendMode.srcIn),
+        child: Image.asset(
+          'assets/images/male_steps_walker.png',
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          isAntiAlias: true,
+        ),
+      ),
+    );
+  }
+}
+
+const String _kAppThemePresetKey = "app_theme_preset_v1";
+final ValueNotifier<bool> appUseLightTheme = ValueNotifier(false);
+
+/// Globale Farben Hell/Dunkel (ThemeExtension) — greift in zentralen Widgets.
+@immutable
+class SolUi extends ThemeExtension<SolUi> {
+  const SolUi({
+    required this.scaffold,
+    required this.card,
+    required this.appBar,
+    required this.onCard,
+    required this.muted,
+    required this.soft,
+    required this.bottomNav,
+    required this.navSelected,
+    required this.navUnselected,
+    required this.dailyCard,
+    required this.dailyBorder,
+  });
+
+  final Color scaffold;
+  final Color card;
+  final Color appBar;
+  final Color onCard;
+  final Color muted;
+  final Color soft;
+  final Color bottomNav;
+  final Color navSelected;
+  final Color navUnselected;
+  final Color dailyCard;
+  final Color dailyBorder;
+
+  static const SolUi dark = SolUi(
+    scaffold: Color(0xFF111111),
+    card: Color(0xFF1F1F1F),
+    appBar: Color(0xFF111111),
+    onCard: Color(0xFFFFFFFF),
+    muted: Color(0xB3FFFFFF),
+    soft: Color(0x8AFFFFFF),
+    bottomNav: Color(0xFF121212),
+    navSelected: Color(0xFFE7D9C3),
+    navUnselected: Color(0xFF7A7A7A),
+    dailyCard: Color(0xFF2D2B28),
+    dailyBorder: Color(0x5ED4AF37),
+  );
+
+  static const SolUi light = SolUi(
+    scaffold: Color(0xFFEDE8E0),
+    card: Color(0xFFFFFBF7),
+    appBar: Color(0xFFEDE8E0),
+    onCard: Color(0xFF1E1A16),
+    muted: Color(0xFF5C5750),
+    soft: Color(0xFF6E6A63),
+    bottomNav: Color(0xFFF5F0E8),
+    navSelected: Color(0xFF7A5A1E),
+    navUnselected: Color(0xFF7A756C),
+    dailyCard: Color(0xFFF2EDE3),
+    dailyBorder: Color(0x8ED4AF37),
+  );
+
+  @override
+  SolUi copyWith({
+    Color? scaffold,
+    Color? card,
+    Color? appBar,
+    Color? onCard,
+    Color? muted,
+    Color? soft,
+    Color? bottomNav,
+    Color? navSelected,
+    Color? navUnselected,
+    Color? dailyCard,
+    Color? dailyBorder,
+  }) {
+    return SolUi(
+      scaffold: scaffold ?? this.scaffold,
+      card: card ?? this.card,
+      appBar: appBar ?? this.appBar,
+      onCard: onCard ?? this.onCard,
+      muted: muted ?? this.muted,
+      soft: soft ?? this.soft,
+      bottomNav: bottomNav ?? this.bottomNav,
+      navSelected: navSelected ?? this.navSelected,
+      navUnselected: navUnselected ?? this.navUnselected,
+      dailyCard: dailyCard ?? this.dailyCard,
+      dailyBorder: dailyBorder ?? this.dailyBorder,
+    );
+  }
+
+  @override
+  SolUi lerp(ThemeExtension<SolUi>? other, double t) {
+    if (other is! SolUi) return this;
+    return SolUi(
+      scaffold: Color.lerp(scaffold, other.scaffold, t)!,
+      card: Color.lerp(card, other.card, t)!,
+      appBar: Color.lerp(appBar, other.appBar, t)!,
+      onCard: Color.lerp(onCard, other.onCard, t)!,
+      muted: Color.lerp(muted, other.muted, t)!,
+      soft: Color.lerp(soft, other.soft, t)!,
+      bottomNav: Color.lerp(bottomNav, other.bottomNav, t)!,
+      navSelected: Color.lerp(navSelected, other.navSelected, t)!,
+      navUnselected: Color.lerp(navUnselected, other.navUnselected, t)!,
+      dailyCard: Color.lerp(dailyCard, other.dailyCard, t)!,
+      dailyBorder: Color.lerp(dailyBorder, other.dailyBorder, t)!,
+    );
+  }
+}
+
+ThemeData _buildSolAppThemeData(bool light) {
+  final s = light ? SolUi.light : SolUi.dark;
+  final b = light ? Brightness.light : Brightness.dark;
+  return ThemeData(
+    useMaterial3: true,
+    brightness: b,
+    scaffoldBackgroundColor: s.scaffold,
+    extensions: <ThemeExtension<dynamic>>[s],
+    colorScheme: light
+        ? ColorScheme.light(
+            primary: const Color(0xFF7A5C28),
+            onPrimary: Colors.white,
+            secondary: const Color(0xFF5C5348),
+            onSecondary: Colors.white,
+            surface: s.card,
+            onSurface: s.onCard,
+            error: const Color(0xFFB00020),
+            onError: Colors.white,
+          )
+        : const ColorScheme.dark(
+            primary: Color(0xFFD2C2A7),
+            secondary: Color(0xFFB5B5B5),
+            surface: Color(0xFF1A1A1A),
+            onSurface: Colors.white,
+          ),
+    cardTheme: CardThemeData(
+      color: s.card,
+      surfaceTintColor: Colors.transparent,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: s.card,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      alignment: Alignment.center,
+      // Luft zum Display-Rand, damit Modale nicht anstoßen
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: s.card,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+    ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: s.appBar,
+      foregroundColor: s.onCard,
+      elevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        color: s.onCard,
+        fontSize: 20,
+        fontWeight: FontWeight.w500,
+      ),
+      iconTheme: IconThemeData(color: s.onCard),
+    ),
+    textTheme: TextTheme(
+      bodyLarge: TextStyle(color: s.onCard),
+      bodyMedium: TextStyle(color: s.muted),
+      titleLarge: TextStyle(
+        color: s.onCard,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      backgroundColor: s.bottomNav,
+      selectedItemColor: s.navSelected,
+      unselectedItemColor: s.navUnselected,
+      selectedIconTheme: const IconThemeData(size: 26),
+      unselectedIconTheme: const IconThemeData(size: 22),
+      selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+      type: BottomNavigationBarType.fixed,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: light ? const Color(0xFFF5F2EC) : const Color(0xFF2A2A2A),
+      labelStyle: TextStyle(color: s.muted),
+      hintStyle: TextStyle(color: s.soft),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: s.soft.withValues(alpha: 0.45)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: s.soft.withValues(alpha: 0.45)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFD4AF37), width: 1.4),
+      ),
+    ),
+  );
+}
+
+extension _SolContext on BuildContext {
+  SolUi get sol {
+    return Theme.of(this).extension<SolUi>() ?? SolUi.dark;
+  }
+}
+
+String dateKeyFromDate(DateTime date) {
+  final y = date.year.toString().padLeft(4, "0");
+  final m = date.month.toString().padLeft(2, "0");
+  final d = date.day.toString().padLeft(2, "0");
+  return "$y-$m-$d";
+}
+
+DateTime dateFromKey(String key) {
+  final parts = key.split("-");
+  if (parts.length != 3) return DateTime.now();
+  return DateTime(
+    int.tryParse(parts[0]) ?? DateTime.now().year,
+    int.tryParse(parts[1]) ?? DateTime.now().month,
+    int.tryParse(parts[2]) ?? DateTime.now().day,
+  );
+}
+
+/// Open Food Facts: Barcode → API, vor Vorschau-Dialog.
+class _OffFetchResult {
+  const _OffFetchResult({
+    required this.barcode,
+    required this.name,
+    required this.protein,
+    required this.carbs,
+    required this.sugar,
+    required this.fiber,
+    required this.fat,
+  });
+  final String barcode;
+  final String name;
+  final double protein;
+  final double carbs;
+  final double sugar;
+  final double fiber;
+  final double fat;
+}
+
+DateTime _dateOnlyLocal(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// [startWeekday] wie DateTime.weekday: Mo=1 … So=7.
+DateTime _startOfWeekContaining(DateTime d, int startWeekday) {
+  final day = _dateOnlyLocal(d);
+  var daysBack = (day.weekday - startWeekday) % 7;
+  if (daysBack < 0) daysBack += 7;
+  return day.subtract(Duration(days: daysBack));
+}
+
+/// Rollup-Statistik (7 Tage bzw. beliebiger Tagesblock).
+typedef WeekRollData = ({
+  double avgEatenKcal,
+  double? avgDeficitPerDay,
+  double totalDeficitKcal,
+  int goalDayCount,
+  double meanGoalKcal,
+  double bandLo,
+  double bandHi,
+  double? avgWeight,
+  int weightLogCount,
+  double? weeklyDeltaKg,
+  String windowId,
+});
+
+/// Eine Kalenderwoche für Archiv, Charts und Wochenliste.
+typedef WeekBalanceListRow = ({
+  String a,
+  String b,
+  DateTime ws,
+  WeekRollData roll,
+});
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
+  runApp(const MyApp());
+  unawaited(_restoreThemePref());
+}
+
+Future<void> _restoreThemePref() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    appUseLightTheme.value = p.getString(_kAppThemePresetKey) == "light";
+  } catch (_) {}
+}
+
+class _CheatDayInfo {
+  final String dayKey;
+  final int sacrificeDays; // 1–4 (für Crashout: 0 — wird ignoriert)
+  final bool isCrashout;
+  final DateTime activatedAt;
+
+  _CheatDayInfo({
+    required this.dayKey,
+    required this.sacrificeDays,
+    required this.isCrashout,
+    required this.activatedAt,
+  });
+
+  // 1 für normale Cheatdays, 2 für Crashouts.
+  int get credits => isCrashout ? 2 : 1;
+
+  Map<String, dynamic> toMap() => {
+        "dayKey": dayKey,
+        "sacrificeDays": sacrificeDays,
+        "isCrashout": isCrashout,
+        "activatedAt": activatedAt.toIso8601String(),
+      };
+
+  factory _CheatDayInfo.fromMap(Map<String, dynamic> map) {
+    final raw = map["activatedAt"];
+    return _CheatDayInfo(
+      dayKey: map["dayKey"] ?? "",
+      sacrificeDays: (map["sacrificeDays"] ?? 0) as int,
+      isCrashout: (map["isCrashout"] ?? false) as bool,
+      activatedAt: raw is String
+          ? (DateTime.tryParse(raw) ?? DateTime.now())
+          : DateTime.now(),
+    );
+  }
+}
+
+class Food {
+  String name;
+  double protein;
+  double carbs;
+  double sugar;
+  double fiber;
+  double fat;
+  String category;
+  /// Weitere Kategoriefilter (z. B. "Obst", "Gemüse") — [category] zählt als Hauptgruppe, Einträge
+  /// erscheinen in allen passenden Sektionen.
+  List<String> extraCategories;
+  String type;
+  bool isDefault;
+  String? imagePath;
+  /// Nur bei category == "Carbs": "komplex" | "einfach" (Highlights & Sortierung).
+  String? carbKind;
+  // Optional Rezept-Felder
+  List<String> ingredients;
+  List<String> instructions;
+  String? portionHint;
+  /// Eine Rezept-Portion in g (Makros in der App = pro 100g). Für Track: „1 Portion“ = dieser Faktor.
+  double? basePortionGrams;
+  /// "sweet" / "salty" — für **alle** Kategorien (Filtern, SOL-Rezepte); [null] = bei Geschmacksfilter unsichtbar außer „Alle“.
+  String? recipeFlavor;
+  /// Open Food Facts / Scan — für schnelles Wiederfinden beim Scannen.
+  String? offBarcode;
+
+  Food({
+    required this.name,
+    required this.protein,
+    required this.carbs,
+    required this.sugar,
+    required this.fiber,
+    required this.fat,
+    required this.category,
+    this.extraCategories = const [],
+    required this.type,
+    this.isDefault = false,
+    this.imagePath,
+    this.carbKind,
+    this.ingredients = const [],
+    this.instructions = const [],
+    this.portionHint,
+    this.basePortionGrams,
+    this.recipeFlavor,
+    this.offBarcode,
+  });
+
+  double get calories =>
+      (protein * 4.1) + (carbs * 4.1) + (fat * 9.3);
+
+  double get complexCarbs => carbs - sugar - fiber;
+
+  /// True, wenn [cat] der Haupt- oder Zusatzkategorie entspricht.
+  bool isInCategory(String cat) {
+    if (category == cat) return true;
+    for (final e in extraCategories) {
+      if (e == cat) return true;
+    }
+    return false;
+  }
+
+  bool get isRecipe =>
+      ingredients.isNotEmpty || instructions.isNotEmpty;
+
+  Map<String, dynamic> toMap() {
+    return {
+      "name": name,
+      "protein": protein,
+      "carbs": carbs,
+      "sugar": sugar,
+      "fiber": fiber,
+      "fat": fat,
+      "category": category,
+      "extraCategories": extraCategories,
+      "type": type,
+      "isDefault": isDefault,
+      "imagePath": imagePath,
+      "carbKind": carbKind,
+      "ingredients": ingredients,
+      "instructions": instructions,
+      "portionHint": portionHint,
+      "basePortionGrams": basePortionGrams,
+      "recipeFlavor": recipeFlavor,
+      "offBarcode": offBarcode,
+    };
+  }
+
+  factory Food.fromMap(Map<String, dynamic> map) {
+    final rawImage = map["imagePath"];
+    final rawIng = map["ingredients"];
+    final rawInst = map["instructions"];
+    final rawHint = map["portionHint"];
+    final rawBase = map["basePortionGrams"];
+    final rawRF = map["recipeFlavor"];
+    final rawCK = map["carbKind"];
+    final rawOb = map["offBarcode"];
+    final rawX = map["extraCategories"];
+    final ex = rawX is List
+        ? rawX
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList()
+        : <String>[];
+    return Food(
+      name: map["name"] ?? "",
+      protein: (map["protein"] ?? 0).toDouble(),
+      carbs: (map["carbs"] ?? 0).toDouble(),
+      sugar: (map["sugar"] ?? 0).toDouble(),
+      fiber: (map["fiber"] ?? 0).toDouble(),
+      fat: (map["fat"] ?? 0).toDouble(),
+      category: map["category"] ?? "Carbs",
+      extraCategories: ex,
+      type: map["type"] ?? "Diät (Viel Volumen)",
+      isDefault: map["isDefault"] ?? false,
+      imagePath: (rawImage is String && rawImage.isNotEmpty) ? rawImage : null,
+      carbKind: (rawCK is String && rawCK.isNotEmpty) ? rawCK : null,
+      ingredients:
+          rawIng is List ? rawIng.map((e) => e.toString()).toList() : const [],
+      instructions: rawInst is List
+          ? rawInst.map((e) => e.toString()).toList()
+          : const [],
+      portionHint: (rawHint is String && rawHint.isNotEmpty) ? rawHint : null,
+      basePortionGrams:
+          (rawBase is num) ? rawBase.toDouble() : null,
+      recipeFlavor: (rawRF is String && rawRF.isNotEmpty) ? rawRF : null,
+      offBarcode: (rawOb is String && rawOb.isNotEmpty) ? rawOb : null,
+    );
+  }
+}
+
+class TrackedFood {
+  Food food;
+  double grams;
+  String meal;
+  String dayKey;
+
+  TrackedFood({
+    required this.food,
+    required this.grams,
+    required this.meal,
+    required this.dayKey,
+  });
+
+  double get factor => grams / 100;
+
+  double get calories => food.calories * factor;
+  double get protein => food.protein * factor;
+  double get carbs => food.carbs * factor;
+  double get sugar => food.sugar * factor;
+  double get fiber => food.fiber * factor;
+  double get fat => food.fat * factor;
+
+  Map<String, dynamic> toMap() {
+    return {
+      "food": food.toMap(),
+      "grams": grams,
+      "meal": meal,
+      "dayKey": dayKey,
+    };
+  }
+
+  factory TrackedFood.fromMap(Map<String, dynamic> map) {
+    return TrackedFood(
+      food: Food.fromMap(Map<String, dynamic>.from(map["food"] ?? {})),
+      grams: (map["grams"] ?? 0).toDouble(),
+      meal: map["meal"] ?? "Main Meal",
+      dayKey: map["dayKey"] ?? dateKeyFromDate(DateTime.now()),
+    );
+  }
+}
+
+/// Eine Zeile in der Mahlzeiten-Notiz (Checkbox + Text, z. B. „+ Elektrolyte“).
+class MealNoteLine {
+  const MealNoteLine({this.text = '', this.done = false});
+  final String text;
+  final bool done;
+
+  MealNoteLine copyWith({String? text, bool? done}) {
+    return MealNoteLine(
+      text: text ?? this.text,
+      done: done ?? this.done,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {'t': text, 'd': done};
+
+  static MealNoteLine fromMap(Map<dynamic, dynamic> m) {
+    return MealNoteLine(
+      text: (m['t'] ?? '').toString(),
+      done: m['d'] == true,
+    );
+  }
+}
+
+List<MealNoteLine> mealNoteLinesFromPrefsValue(dynamic v) {
+  if (v == null) return [];
+  if (v is String) {
+    if (v.trim().isEmpty) return [];
+    return v
+        .split('\n')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .map((s) => MealNoteLine(text: s, done: false))
+        .toList();
+  }
+  if (v is List) {
+    return v.map((e) {
+      if (e is Map) {
+        return MealNoteLine.fromMap(Map<dynamic, dynamic>.from(e));
+      }
+      return MealNoteLine(text: (e ?? '').toString(), done: false);
+    }).toList();
+  }
+  return [];
+}
+
+/// kcal-Korridor für i.d.R. Abend/letzte Nicht-Snack-Mahlzeit: entweder Makro-Band
+/// oder Tages-Rest inkl. optional Snack-Reserve.
+class _LastMealKcalChoice {
+  const _LastMealKcalChoice({
+    required this.useRemainder,
+    required this.reserveSnacks,
+  });
+  final bool useRemainder;
+  final bool reserveSnacks;
+  Map<String, dynamic> toMap() => {
+        'r': useRemainder,
+        's': reserveSnacks,
+      };
+  static _LastMealKcalChoice? fromMap(Object? o) {
+    if (o is! Map) return null;
+    final m = Map<String, dynamic>.from(o);
+    return _LastMealKcalChoice(
+      useRemainder: m['r'] == true,
+      reserveSnacks: m['s'] == true,
+    );
+  }
+}
+
+/// Eine Eingabezeile für Makro % / g: Mitte, oder %‑Spanne, oder g bzw. g‑Spanne.
+class _MealMacroLineParse {
+  const _MealMacroLineParse({
+    required this.centerPct,
+    this.minPct,
+    this.maxPct,
+  });
+  final double centerPct;
+  final double? minPct;
+  final double? maxPct;
+  bool get isRange => minPct != null && maxPct != null;
+}
+
+/// Web-App: alles etwas kleiner darstellen (wie "rausgezoomt"), damit es weniger eng wirkt.
+/// Nur im Browser/Homescreen-Web-App aktiv, die iOS-App bleibt unverändert.
+const double kWebUiScale = 0.88;
+Widget _webZoom(BuildContext context, Widget? child) {
+  if (!kIsWeb || child == null || kWebUiScale == 1.0) return child ?? const SizedBox.shrink();
+  const s = kWebUiScale;
+  final mq = MediaQuery.of(context);
+  final w = mq.size.width / s, h = mq.size.height / s;
+  return MediaQuery(
+    data: mq.copyWith(
+      size: Size(w, h),
+      padding: mq.padding / s,
+      viewPadding: mq.viewPadding / s,
+      viewInsets: mq.viewInsets / s,
+      devicePixelRatio: mq.devicePixelRatio * s,
+    ),
+    child: ClipRect(
+      child: OverflowBox(
+        alignment: Alignment.topLeft,
+        minWidth: w, maxWidth: w, minHeight: h, maxHeight: h,
+        child: Transform.scale(scale: s, alignment: Alignment.topLeft, child: child),
+      ),
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: appUseLightTheme,
+      builder: (context, isLight, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: _buildSolAppThemeData(isLight),
+          home: const MainScreen(),
+          builder: (context, child) => _webZoom(context, child),
+        );
+      },
+    );
+  }
+}
+
+/// Scroll-Wahl für Tracking: Einheit (g/kcal/P/KH/F) + Menge.
+class _TrackPortionScrollPanel extends StatefulWidget {
+  const _TrackPortionScrollPanel({
+    super.key,
+    required this.modes,
+    required this.initialMode,
+    required this.initialGrams,
+    required this.modeShortLabel,
+    required this.displayValueForGrams,
+    required this.gramsFromDisplay,
+    required this.onChanged,
+    required this.t,
+  });
+
+  final List<String> modes;
+  final String initialMode;
+  final double initialGrams;
+  final String Function(String mode) modeShortLabel;
+  final double? Function(String mode, double grams) displayValueForGrams;
+  final double? Function(String mode, double display) gramsFromDisplay;
+  final void Function(String mode, double displayValue, double grams) onChanged;
+  final String Function(String key) t;
+
+  @override
+  State<_TrackPortionScrollPanel> createState() =>
+      _TrackPortionScrollPanelState();
+}
+
+class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
+  static const _itemExtent = 36.0;
+  static const _visibleItems = 5;
+
+  late FixedExtentScrollController _modeCtrl;
+  late FixedExtentScrollController _valueCtrl;
+  late int _modeIndex;
+  late List<double> _values;
+  late int _valueIndex;
+  double? _manualValue;
+
+  double _currentDisplay() => _manualValue ?? _values[_valueIndex];
+
+  double _clampForMode(String mode, double v) {
+    switch (mode) {
+      case "grams":
+        return v.clamp(1.0, 1000.0);
+      case "kcal":
+        return v.clamp(10.0, 3000.0);
+      default:
+        return v.clamp(0.5, 100.0);
+    }
+  }
+
+  double? _parseManualInput(String raw) {
+    final t = raw.trim().replaceAll(',', '.');
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+
+  Future<void> _promptManualValue() async {
+    final mode = widget.modes[_modeIndex];
+    final ctrl = TextEditingController(
+      text: _formatValue(mode, _currentDisplay()),
+    );
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(widget.t("track_portion_manual_title")),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            labelText: widget.t("track_value_label"),
+          ),
+          onSubmitted: (v) {
+            final n = _parseManualInput(v);
+            if (n != null && n > 0) Navigator.pop(ctx, n);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(widget.t("cancel")),
+          ),
+          TextButton(
+            onPressed: () {
+              final n = _parseManualInput(ctrl.text);
+              if (n == null || n <= 0) return;
+              Navigator.pop(ctx, n);
+            },
+            child: Text(widget.t("save")),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    _applyManualValue(result);
+  }
+
+  void _applyManualValue(double raw) {
+    final mode = widget.modes[_modeIndex];
+    final clamped = _clampForMode(mode, raw);
+    if (clamped <= 0) return;
+    final idx = _nearestIndex(_values, clamped);
+    setState(() {
+      _manualValue = clamped;
+      _valueIndex = idx;
+    });
+    _valueCtrl.jumpToItem(idx);
+    _emit();
+  }
+
+  List<double> _valuesForMode(String mode) {
+    switch (mode) {
+      case "grams":
+        final list = <double>[];
+        for (var g = 1; g <= 500; g++) {
+          list.add(g.toDouble());
+        }
+        for (var g = 525; g <= 1000; g += 25) {
+          list.add(g.toDouble());
+        }
+        return list;
+      case "kcal":
+        return List.generate(300, (i) => (i + 1) * 10.0);
+      default:
+        return List.generate(200, (i) => (i + 1) * 0.5);
+    }
+  }
+
+  int _nearestIndex(List<double> values, double target) {
+    if (values.isEmpty) return 0;
+    var best = 0;
+    var bestDiff = (values[0] - target).abs();
+    for (var i = 1; i < values.length; i++) {
+      final d = (values[i] - target).abs();
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  String _formatValue(String mode, double v) {
+    switch (mode) {
+      case "grams":
+        return v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+      case "kcal":
+        return v.toStringAsFixed(0);
+      default:
+        return v.toStringAsFixed(1);
+    }
+  }
+
+  void _emit() {
+    final mode = widget.modes[_modeIndex];
+    final display = _currentDisplay();
+    final g = widget.gramsFromDisplay(mode, display) ?? display;
+    widget.onChanged(mode, display, g);
+  }
+
+  void _switchMode(int idx) {
+    if (idx == _modeIndex) return;
+    final oldMode = widget.modes[_modeIndex];
+    final oldDisplay = _currentDisplay();
+    final grams = widget.gramsFromDisplay(oldMode, oldDisplay) ?? oldDisplay;
+    final newMode = widget.modes[idx];
+    final newValues = _valuesForMode(newMode);
+    final newDisplay =
+        widget.displayValueForGrams(newMode, grams) ?? grams;
+    final newIdx = _nearestIndex(newValues, newDisplay);
+    setState(() {
+      _modeIndex = idx;
+      _values = newValues;
+      _valueIndex = newIdx;
+      _manualValue = null;
+    });
+    _valueCtrl.jumpToItem(newIdx);
+    _emit();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _modeIndex = widget.modes.indexOf(widget.initialMode);
+    if (_modeIndex < 0) _modeIndex = 0;
+    _values = _valuesForMode(widget.modes[_modeIndex]);
+    final initDisplay = widget.displayValueForGrams(
+          widget.modes[_modeIndex],
+          widget.initialGrams,
+        ) ??
+        widget.initialGrams;
+    _valueIndex = _nearestIndex(_values, initDisplay);
+    _modeCtrl = FixedExtentScrollController(initialItem: _modeIndex);
+    _valueCtrl = FixedExtentScrollController(initialItem: _valueIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _emit());
+  }
+
+  @override
+  void dispose() {
+    _modeCtrl.dispose();
+    _valueCtrl.dispose();
+    super.dispose();
+  }
+
+  Widget _wheel({
+    required FixedExtentScrollController controller,
+    required int itemCount,
+    required int selectedIndex,
+    required String Function(int index) label,
+    required ValueChanged<int> onSelected,
+    VoidCallback? onCenterTap,
+    String? centerLabel,
+  }) {
+    return Expanded(
+      child: SizedBox(
+        height: _itemExtent * _visibleItems,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              height: _itemExtent,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFFD4AF37).withValues(alpha: 0.45),
+                ),
+              ),
+            ),
+            ListWheelScrollView.useDelegate(
+              controller: controller,
+              itemExtent: _itemExtent,
+              diameterRatio: 1.4,
+              perspective: 0.003,
+              physics: const FixedExtentScrollPhysics(),
+              onSelectedItemChanged: onSelected,
+              childDelegate: ListWheelChildBuilderDelegate(
+                childCount: itemCount,
+                builder: (ctx, i) {
+                  if (i < 0 || i >= itemCount) return null;
+                  final selected = i == selectedIndex;
+                  if (selected && onCenterTap != null) {
+                    return const SizedBox(height: _itemExtent);
+                  }
+                  return Center(
+                    child: Text(
+                      label(i),
+                      style: TextStyle(
+                        color: selected
+                            ? const Color(0xFFD4AF37)
+                            : Colors.white54,
+                        fontSize: selected ? 17 : 14,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w400,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (onCenterTap != null && centerLabel != null)
+              Positioned(
+                left: 4,
+                right: 4,
+                height: _itemExtent,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onCenterTap,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF252525).withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.55),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            centerLabel,
+                            style: const TextStyle(
+                              color: Color(0xFFD4AF37),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.edit_outlined,
+                            size: 15,
+                            color: const Color(0xFFD4AF37).withValues(alpha: 0.75),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = widget.modes[_modeIndex];
+    final valueWheel = _wheel(
+      controller: _valueCtrl,
+      itemCount: _values.length,
+      selectedIndex: _valueIndex,
+      label: (i) => _formatValue(mode, _values[i]),
+      onSelected: (idx) {
+        setState(() {
+          _valueIndex = idx;
+          _manualValue = null;
+        });
+        _emit();
+      },
+      onCenterTap: _promptManualValue,
+      centerLabel: _formatValue(mode, _currentDisplay()),
+    );
+    if (widget.modes.length <= 1) {
+      return valueWheel;
+    }
+    return Row(
+      children: [
+        _wheel(
+          controller: _modeCtrl,
+          itemCount: widget.modes.length,
+          selectedIndex: _modeIndex,
+          label: (i) => widget.modeShortLabel(widget.modes[i]),
+          onSelected: _switchMode,
+        ),
+        const SizedBox(width: 8),
+        valueWheel,
+      ],
+    );
+  }
+}
+
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+/// Datenbank-Listen: Makro-Kachel (grau / SOL-Gold / eigener Favorit).
+enum _DbPcfFrameKind { gray, solGold, userSoft }
+
+class _MainScreenState extends State<MainScreen> {
+  static const Color _proteinColor = Color(0xFFD2C2A7);
+  static const Color _carbColor = Color(0xFFC7C7C7);
+  static const Color _fatColor = Color(0xFF8E8E8E);
+  static const Color _fiberColor = Color(0xFFAFAFAF);
+  static const Color _kChartGold = Color(0xFFD4AF37);
+  /// Schnellvorschlag + DB-Protein-Highlights
+  static const List<String> _kFavoriteProteinNames = [
+    "Magerquark",
+    "Protein Shake",
+  ];
+
+  int selectedIndex = 1;
+
+  List<Food> foodDatabase = [];
+  List<TrackedFood> trackedFoods = [];
+  String searchQuery = "";
+  String databaseCategoryFilter = "Alle";
+  String databaseTypeFilter = "Alle";
+  /// all | sweet | salty — Geschmacksfilter in der gesamten Datenbank (Süß/Salzig).
+  String databaseRecipeFlavorFilter = "all";
+  /// all | mine | sol — Datenbank-Quelle
+  String databaseSourceFilter = "all";
+  /// SOL-Vorschläge-Block: nicht dauernd aufgeklappt (einklappbar).
+  bool dbHighlightsExpanded = false;
+  /// Tracking: Workout-Block (Pre+Post) aufgeklappt.
+  /// Eigene Lebensmittel: optional „Favorit“ (diat | aufbau | all) — dezenter Rahmen.
+  Map<String, String> userDbStarByName = {};
+  /// Persönliche Bewertung 1–3 je Lebensmittelname (Performance / Verträglichkeit).
+  Map<String, int> userFoodPerformanceByName = {};
+  Map<String, int> userFoodToleranceByName = {};
+  String databasePerformanceFilter = "all";
+  String databaseToleranceFilter = "all";
+  /// Pro Tag: Mahlzeiten in der Gesamtmahlzeit (kcal zusammenführen).
+  final Map<String, Set<String>> _mergedMealsByDay = <String, Set<String>>{};
+
+  // Reorderbare Meal-Gruppen.
+  // Nicht-Alltag/Advanced: "prepost" = fester Block (Pre+Post gemeinsam).
+  // Alltag + Advanced: "Pre-Workout" und "Post-Workout" einzeln, frei sortierbar.
+  List<String> mealGroupOrder = [
+    "Snacks",
+    "prepost",
+    "Main Meal",
+    "Evening Meal",
+  ];
+
+  // Nur in Alltag / Advanced: Mahlzeiten-Labels (leer = Default-Logik in _tMeal).
+  Map<String, String> mealCustomNames = {};
+  /// Rollendes 7-Tage-Fenster (key = "${start}..${end}") → "great"|"ok"|"low"
+  Map<String, String> weeklyMoodByWindow = {};
+  bool commitmentAcceptedCut = false;
+  bool commitmentAcceptedBulk = false;
+  /// Erzwingt Neuaufbau des Modus-Dropdowns, falls die Auswahl nach Rechner-/Dialog-Abbruch zurückgesetzt werden muss.
+  int _modeDropdownRevision = 0;
+  static const String _kMealCustomNamesKey = "meal_custom_names_v1";
+  static const String _kCommitmentCutKey = "commitment_ok_cut_v1";
+  static const String _kCommitmentBulkKey = "commitment_ok_bulk_v1";
+  static const String _kWeeklyMoodKey = "weekly_mood_v1";
+  static const Set<String> _lockedMealGroupIds = {
+    "prepost",
+    "Main Meal",
+    "Evening Meal",
+    "Snacks",
+  };
+  static const Set<String> _freeMealGroupIds = {
+    "Pre-Workout",
+    "Post-Workout",
+    "Main Meal",
+    "Evening Meal",
+    "Snacks",
+  };
+
+  // Ausgepackte, geordnete Meal-IDs — überall im Code als `meals` benutzt.
+  List<String> get meals {
+    final out = <String>[];
+    for (final g in mealGroupOrder) {
+      if (g == "prepost") {
+        out.add("Pre-Workout");
+        out.add("Post-Workout");
+      } else {
+        out.add(g);
+      }
+    }
+    return out;
+  }
+
+  /// Main/Evening in derselben Reihenfolge wie in [meals] (Einstellungen).
+  List<String> _trackingMainEveningInOrder() {
+    return meals
+        .where((m) => m == "Main Meal" || m == "Evening Meal")
+        .toList();
+  }
+
+  /// Tagesablauf ohne Snacks (Snacks ist immer fix an Position 0).
+  List<String> _mealGroupOrderWithoutSnacks() {
+    return mealGroupOrder.where((g) => g != "Snacks").toList();
+  }
+
+  /// Frühstück / Mittagessen / Abendessen — nur [Evening Meal], nach Slot im Tagesablauf.
+  /// [Main Meal] bleibt immer „Hauptmahlzeit“.
+  String? _chronoLabelForEveningMeal() {
+    final order = _mealGroupOrderWithoutSnacks();
+    final idx = order.indexOf("Evening Meal");
+    if (idx == -1 || order.length <= 1) return null;
+    if (idx == 0) return t("meal_evening_first");
+    if (idx == order.length - 1) return t("meal_evening");
+    return t("meal_evening_middle");
+  }
+
+  bool get _usesFreeMealLayout =>
+      nutritionMode == "Alltag" || nutritionMode == "Advanced";
+
+  void _normalizeMealGroupOrderForMode() {
+    if (_usesFreeMealLayout) {
+      if (mealGroupOrder.contains("prepost")) {
+        final i = mealGroupOrder.indexOf("prepost");
+        mealGroupOrder.removeAt(i);
+        mealGroupOrder.insertAll(i, ["Pre-Workout", "Post-Workout"]);
+      }
+      if (mealGroupOrder.length != 5 ||
+          mealGroupOrder.toSet().length != 5 ||
+          mealGroupOrder.toSet().difference(_freeMealGroupIds).isNotEmpty) {
+        mealGroupOrder = [
+          "Snacks",
+          "Pre-Workout",
+          "Post-Workout",
+          "Main Meal",
+          "Evening Meal",
+        ];
+      }
+    } else {
+      if (mealGroupOrder.contains("Pre-Workout") ||
+          mealGroupOrder.contains("Post-Workout")) {
+        int insert = 0;
+        final ip = mealGroupOrder.indexOf("Pre-Workout");
+        final io = mealGroupOrder.indexOf("Post-Workout");
+        if (ip >= 0 && io >= 0) {
+          insert = math.min(ip, io);
+        } else {
+          insert = ip >= 0 ? ip : io;
+        }
+        mealGroupOrder.remove("Pre-Workout");
+        mealGroupOrder.remove("Post-Workout");
+        if (!mealGroupOrder.contains("prepost") && insert >= 0) {
+          final safe = insert.clamp(0, mealGroupOrder.length);
+          mealGroupOrder.insert(safe, "prepost");
+        }
+      }
+      if (mealGroupOrder.length != 4 ||
+          mealGroupOrder.toSet().length != 4 ||
+          mealGroupOrder.toSet().difference(_lockedMealGroupIds).isNotEmpty) {
+        mealGroupOrder = [
+          "Snacks",
+          "prepost",
+          "Main Meal",
+          "Evening Meal",
+        ];
+      }
+    }
+    _pinSnacksFirstInMealGroupOrder();
+  }
+
+  /// Snacks sind immer an Position 0 und nicht in der ziehbaren Liste.
+  void _pinSnacksFirstInMealGroupOrder() {
+    if (!mealGroupOrder.contains("Snacks")) return;
+    mealGroupOrder.remove("Snacks");
+    mealGroupOrder.insert(0, "Snacks");
+  }
+
+  /// Sichtbarer Mahlzeiten-Name: Custom (Alltag/Advanced) sonst lokalisierte Logik.
+  String _displayMealName(String mealId) {
+    if (_usesFreeMealLayout) {
+      final c = mealCustomNames[mealId];
+      if (c != null && c.trim().isNotEmpty) return c.trim();
+    }
+    return _tMeal(mealId);
+  }
+
+  bool get _isAggressiveMode =>
+      nutritionMode == "Diät" || nutritionMode == "Aufbau";
+
+  /// Cut = warm / Aufbau = violett — sofort sichtbar: hohe Intensität.
+  Widget _aggressiveModeStrip({bool compact = false}) {
+    final isCut = nutritionMode == "Diät";
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: compact ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: isCut
+              ? [const Color(0xFF4A1810), const Color(0xFF120705)]
+              : [const Color(0xFF301840), const Color(0xFF0D0610)],
+        ),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isCut
+              ? const Color(0xFFFF6D00).withValues(alpha: 0.9)
+              : const Color(0xFFE040FB).withValues(alpha: 0.65),
+          width: 1.4,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isCut ? const Color(0xFFFF9100) : const Color(0xFFEA80FC))
+                .withValues(alpha: 0.18),
+            blurRadius: compact ? 8 : 14,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isCut ? Icons.local_fire_department : Icons.bolt,
+            color: isCut ? const Color(0xFFFFAB40) : const Color(0xFFE1BEE7),
+            size: compact ? 22 : 26,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t("mode_aggressive_badge"),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    letterSpacing: 0.35,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  t("mode_aggressive_sub"),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    fontSize: compact ? 10.5 : 11,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double goalProtein = 200;
+  double goalCarbs = 275;
+  double goalFat = 60;
+
+  double get goalCalories =>
+      (goalProtein * 4.1) + (goalCarbs * 4.1) + (goalFat * 9.3);
+
+  Map<String, Map<String, double>> mealMacros = {
+    "Pre-Workout": {"protein": 20, "carbs": 20, "fat": 5},
+    "Post-Workout": {"protein": 25, "carbs": 30, "fat": 5},
+    "Main Meal": {"protein": 30, "carbs": 30, "fat": 40},
+    "Evening Meal": {"protein": 15, "carbs": 10, "fat": 30},
+    "Snacks": {"protein": 10, "carbs": 10, "fat": 20},
+  };
+
+  late Map<String, Map<String, double>> _mealTotals;
+  static const String _kFoodsKey = "foods_v1";
+  static const String _kTrackedFoodsKey = "tracked_foods_v1";
+  static const String _kGoalsKey = "goals_v1";
+  static const String _kMealMacrosKey = "meal_macros_v1";
+  /// Pro Mahlzeit/Makro: [min%, max%] = Anteil an der **Tagesmenge** von Protein/KH/Fett (Balken unabh. von verbleibenden kcal).
+  static const String _kMealDayMacroBandsKey = "meal_day_macro_bands_v1";
+  Map<String, Map<String, List<double>>> mealDayMacroBands = {};
+  static const String _kWeightHistoryKey = "weight_history_v1";
+  static const String _kDayNotesKey = "day_notes_v1";
+  static const String _kMealDayNotesKey = "meal_day_notes_v1";
+  static const String _kSelectedDayKey = "selected_day_v1";
+  static const String _kNutritionModeKey = "nutrition_mode_v1";
+  static const String _kCurrentWeightKey = "current_weight_v1";
+  static const String _kBodyFatPercentKey = "body_fat_percent_v1";
+  static const String _kAgeYearsKey = "age_years_v1";
+  static const String _kLanguageKey = "language_v1";
+  static const String _kAlltagBalanceKey = "alltag_balance_v1";
+  static const String _kAdvancedPresetKey = "advanced_preset_v1";
+  /// -1 in Prefs = automatisch; >=1 = harte Obergrenze (nur wenn Modus == Advanced).
+  static const String _kAdvancedCheatMaxKey = "advanced_cheat_max_v1";
+  static const String _kCutDeficitStyleKey = "cut_deficit_style_v1";
+  static const String _kActivityLevelKey = "activity_level_v1";
+  static const String _kCutExtraStepsBaseKey = "cut_extra_steps_base_v1";
+  static const String _kCutExtraStepsByDayKey = "cut_extra_steps_by_day_v1";
+  static const String _kCutExtraStepsAdditionalByDayKey =
+      "cut_extra_steps_additional_by_day_v1";
+  static const String _kStepSyncEnabledKey = "step_sync_enabled_v1";
+  static const String _kLastDeviationWarningKey = "last_deviation_warning_v1";
+  static const String _kMealGroupOrderKey = "meal_group_order_v1";
+  static const String _kWeekStartWeekdayKey = "week_start_weekday_v1";
+  static const String _kLastWeekRecapKey = "last_week_recap_v1";
+  static const String _kWeekStartIntroKey = "week_start_intro_done_v1";
+  static const String _kAutoOpenWeightMorningKey = "auto_open_weight_morning_v1";
+  static const String _kLastAutoWeightPromptDayKey = "last_auto_weight_prompt_day_v1";
+  static const String _kEducationPassedKey = "education_passed_ids_v1";
+  static const String _kPlacementDoneKey = "placement_done_v1";
+  static const String _kPlacementLevelKey = "placement_level_v1";
+  static const String _kIntroTheoryUnlockedKey = "intro_theory_unlocked_v1";
+  static const String _kIntroUnlockSessionDayKey = "intro_unlock_session_day_v1";
+  static const String _kIntroUnlockSessionsKey = "intro_unlock_sessions_today_v1";
+  static const String _kUserDbStarKey = "user_db_star_fav_v1";
+  static const String _kMergedMealsByDayKey = "merged_meals_by_day_v1";
+  static const String _kMergedMealCardId = "__merged__";
+  static const String _kUserFoodPerformanceKey = "user_food_performance_v1";
+  static const String _kUserFoodToleranceKey = "user_food_tolerance_v1";
+  static const String _kMealKcalUiModeKey = "meal_kcal_ui_mode_v1";
+  static const String _kLastMealKcalByDayKey = "last_meal_kcal_by_day_v1";
+  static const String _kLastMealTrackPromptKey = "last_meal_track_prompt_v1";
+  static const String _kWeightOpenCountByDayKey = "weight_open_count_by_day_v1";
+  static const String _kSurplusCheatPromptDayKey = "surplus_cheat_prompt_day_v1";
+  final Set<String> _excludedFoodNames = {
+    "waffeln",
+    "lachsöl",
+    "lachsoel",
+  };
+  String selectedDayKey = dateKeyFromDate(DateTime.now());
+  Map<String, _WeightDayEntry> weightHistory = {};
+  Map<String, String> dayNotes = {};
+  /// Pro Tag, pro [meal]-Slot optionale Checkliste (Erinnerungen, abhakbar).
+  Map<String, Map<String, List<MealNoteLine>>> mealDayNoteLists = {};
+  String nutritionMode = "Alltag"; // Alltag | Diät | Aufbau | Advanced
+  double currentWeightKg = 80;
+  double bodyFatPercent = 15;
+  int ageYears = 30;
+  /// 1=Mo … 7=So (DateTime.weekday) — Wochenstart für Bilanz + Recap.
+  int weekStartWeekday = DateTime.monday;
+  String? _lastRecapForWeekStartKey;
+  bool weekStartIntroDone = false;
+  /// Einmal morgens Waage, wenn noch kein Gewicht heute — in Einstellungen abschaltbar.
+  bool autoOpenWeightMorning = true;
+  String? _lastAutoWeightPromptDay;
+  final Set<String> _educationPassedIds = {};
+  /// Einstufungs-Check abgeschlossen (erster Start) — sonst nur Einleitung-Tab.
+  bool placementDone = false;
+  /// 1…3, aus Einstufungs-Quiz; steuert sichtbare/komfortable Nutzung (s. Einstellungen).
+  int placementLevel = 1;
+  /// Freischalten-Quiz für Einleitungs-Texte (ab „Warum Makros“). → später Feature-Gates.
+  bool introTheoryUnlocked = false;
+  String? introUnlockSessionDayKey;
+  int introUnlockSessionsToday = 0;
+  bool _dailyOverDialogInFlight = false;
+  /// Pro Mahlzeit: Tagesübersicht-Kcal-Balken aufgeklappt = Makros + Liste.
+  final Map<String, bool> _mealKcalBarExpanded = {};
+  String languageCode = "de";
+  /// Google AI Studio: Gemini API-Key (optional, für KI-Mahlzeit-Foto).
+  String geminiApiKey = "";
+  TextEditingController? _geminiKeyCtrl;
+  // "male" | "female" — wird u.a. für Navy-KFA Estimator und für die
+  // Anzeige der Cheatday-Warnung ("Herr/Frau deiner Sinne") gebraucht.
+  String genderCode = "male";
+
+  // ───────────── Cheatday-System ─────────────
+  // Pro Tag (dayKey YYYY-MM-DD) ein Eintrag, falls dieser Tag als Cheatday
+  // markiert ist. sacrificeDays = Anzahl Tage Fortschritt, die geopfert
+  // werden (1–4). isCrashout = unbegrenzte Obergrenze, nur Mindest-Makros.
+  // Kcal-Bonus = geplantes Tages-Defizit (Maintenance−Ziel) × sacrificeDays,
+  // nicht (1+n)× volles Tagesziel.
+  Map<String, _CheatDayInfo> cheatDays = {};
+  static const String _kCheatDaysKey = "cheat_days_v1";
+  static const String _kGenderKey = "gender_v1";
+  static const String _kGeminiApiKey = "gemini_api_key_v1";
+  // 0.0 = Performance (strikte Verteilung, leicht weniger kcal),
+  // 1.0 = Entspannt (gleichmäßig, leicht mehr kcal)
+  double alltagBalance = 0.0;
+  double _alltagBalanceDraft = 0.0;
+  // Advanced-Modus: 0.0 = Max Aggressiv Cut, 0.5 = Maintenance, 1.0 = Max Dirty Bulk
+  double advancedPreset = 0.5;
+  /// null = 4+Bonus wie SOL; sonst manuelles Monats-Maximum (nur im Advanced-Modus).
+  int? advancedCheatMonthlyMax;
+  // Aggressiv-Cut: Bewegung / Extra-Cardio. Nur bei nutritionMode == "Diät" aktiv.
+  String cutDeficitStyle =
+      "standard"; // "more_cardio" | "standard" | "less_move"
+  /// Alltags-Aktivität (unabhängig von Extra-Schritten): steuert Maintenance → Carbs.
+  String activityLevel = "normal"; // "very_active" | "normal" | "low_everyday"
+  int cutExtraStepsBaseline = 5000; // 3000…10000
+  Map<String, int> cutExtraStepsByDay = {};
+  Map<String, int> cutExtraStepsAdditionalByDay = {};
+  bool stepSyncEnabled = false;
+  int syncedStepsForSelectedDay = 0;
+  Health? _healthInstance;
+  Health get _health => _healthInstance ??= Health();
+  bool _stepSyncBusy = false;
+  DateTime? _stepSyncLastAt;
+  String? _stepSyncLastDayKey;
+  final Map<String, bool> _stepGoalCelebratedByDay = <String, bool>{};
+  String? lastDeviationWarningKey;
+  // Daily-overview macro details collapsed by default — only kcal bar visible.
+  bool _macroDetailsExpanded = false;
+  /// Tagesübersicht: „Lebensmittel je Mahlzeit“-Block unter dem Titel.
+  bool _dailyOverviewMealsListExpanded = false;
+  /// Mahlzeiten-Kcal: "advanced" (Range-Zahlen) | "simple" (Ziel + Band).
+  String mealKcalDisplayMode = "advanced";
+  /// Makro-KPI: Tap auf Zielzahl schaltet Min–Max-Range ein/aus.
+  final Set<String> _macroTargetRangeExpanded = {};
+  /// Frage vor Food/Gen/KI (letzte Nicht-Snack), wenn Tages-Entscheid fehlt.
+  bool lastMealTrackPromptEnabled = true;
+  final Map<String, _LastMealKcalChoice> lastMealKcalByDay = {};
+
+  // Basis-Verteilung für den Performance-Endpunkt (Summe = 100 pro Makro)
+  static const Map<String, Map<String, double>> _performanceMealMacros = {
+    "Pre-Workout": {"protein": 20, "carbs": 20, "fat": 5},
+    "Post-Workout": {"protein": 25, "carbs": 30, "fat": 5},
+    "Main Meal": {"protein": 30, "carbs": 30, "fat": 40},
+    "Evening Meal": {"protein": 15, "carbs": 10, "fat": 30},
+    "Snacks": {"protein": 10, "carbs": 10, "fat": 20},
+  };
+
+  /// Toleranz (Prozentpunkte) um den Mittelwert, wenn [mealDayMacroBands] leer
+  /// und aus [mealMacros]-Zentriern abgeleitet wird.
+  static const double _defaultMealMacroTolerancePp = 4.0;
+  /// Alltag: weichere Mahlzeiten-Bänder (Fett bewusst am weitesten).
+  static const double _alltagMealBandTolerancePpProtein = 6.5;
+  static const double _alltagMealBandTolerancePpCarbs = 6.5;
+  static const double _alltagMealBandTolerancePpFat = 9.0;
+  /// Pre/Post-Workout: bewusst **enger** (sonst wirkte z. B. KH ~±6,5 pp wie 25–32 %+ statt
+  /// einer „Slot“-Logik; Ziel: Bandbreite in der Größenordnung eines festen %-Korridors).
+  static const double _alltagWorkoutMealBandTolerancePpProtein = 3.0;
+  static const double _alltagWorkoutMealBandTolerancePpCarbs = 2.5;
+  static const double _alltagWorkoutMealBandTolerancePpFat = 4.0;
+  /// Diät/Aufbau: obere Kappe für Pre/Post-Slots (Basis bleibt [_defaultMealMacroTolerancePp]).
+  static const double _aggressiveWorkoutMealBandTolerancePpMax = 2.5;
+  /// Pre/Post-Workout Fett: Obergrenze (% vom Tages-Fett) — z. B. Haferflocken.
+  static const double _kWorkoutFatMaxPct = 15.0;
+  /// Fett-Minimum (g/kg) — in der Nähe gängiger EFA-Empfehlung (~0,6 g/kg).
+  static const double _kMinFatGPerKg = 0.6;
+  /// Alltag-Plan-Fett pro kg.
+  static const double _kAlltagPlanFatGPerKg = 0.9;
+  /// Lean Bulk: Fett pro kg.
+  static const double _kBulkPlanFatGPerKg = 1.0;
+  /// Aggressiv Cut (Diät): Fett pro kg.
+  static const double _kCutPlanFatGPerKg = 0.75;
+  /// Nur Advanced: Wenn pro Makro nur eine %‑/g‑Zahl (Mitte) steht, Band = Mitte ± dieses.
+  static const String _kAdvancedMealMacroBandPpKey = "adv_meal_macro_band_pp_v1";
+  static const String _kAdvancedMealMacroBandPpByMealKey =
+      "adv_meal_macro_band_pp_by_meal_v1";
+  double advancedMealMacroBandPp = 4.0;
+  /// Pro Mahlzeit: ± Prozentpunkte je Makro (Advanced). Leer = [advancedMealMacroBandPp].
+  Map<String, Map<String, double>> advancedMealMacroBandPpByMeal = {};
+
+  // Tagesübersicht: kcal-Spanne bewusst enger, damit die Bilanz fokussierter wirkt.
+  static const double _dailyKcalTolerancePct = 0.02;
+  /// Alltag: Tages-kcal- und Makro-Band etwas großzügiger.
+  static const double _dailyKcalTolerancePctAlltag = 0.035;
+  static const double _dailyMacroTolerancePct = 0.05;
+  static const double _dailyMacroTolerancePctAlltag = 0.07;
+  /// [Diät] Toleranz am Wochenanfang 100 %, zum letzten Wochentag [1 − span] (engeres «von–bis»).
+  static const double _kCutWeekBandTightenSpan = 0.65;
+
+  static double _kcalPerGForMacro(String macro) =>
+      (macro == "protein" || macro == "carbs") ? 4.1 : 9.3;
+
+  double _advancedBandPpFor(String meal, String macro) {
+    final row = advancedMealMacroBandPpByMeal[meal];
+    final v = row != null ? row[macro] : null;
+    if (v != null) return v.clamp(0.5, 25.0);
+    return advancedMealMacroBandPp.clamp(0.5, 25.0);
+  }
+
+  /// ± Prozentpunkte um die Mittel-% für fehlende [mealDayMacroBands]-Einträge.
+  double _defaultTolerancePpForMealMacro(String meal, String macro) {
+    if (nutritionMode == "Advanced") {
+      return _advancedBandPpFor(meal, macro);
+    }
+    final workout = meal == "Pre-Workout" || meal == "Post-Workout";
+    if (nutritionMode == "Alltag") {
+      if (workout) {
+        if (macro == "fat") return _alltagWorkoutMealBandTolerancePpFat;
+        if (macro == "protein") {
+          return _alltagWorkoutMealBandTolerancePpProtein;
+        }
+        if (macro == "carbs") {
+          return _alltagWorkoutMealBandTolerancePpCarbs;
+        }
+      }
+      if (macro == "fat") return _alltagMealBandTolerancePpFat;
+      if (macro == "protein") return _alltagMealBandTolerancePpProtein;
+      if (macro == "carbs") return _alltagMealBandTolerancePpCarbs;
+    }
+    var t = _defaultMealMacroTolerancePp;
+    if (workout) {
+      t = t.clamp(0.0, _aggressiveWorkoutMealBandTolerancePpMax);
+    }
+    if (nutritionMode == "Diät") {
+      t *= _aggressiveCutWeekTightenFactor(selectedDayKey);
+    }
+    return t;
+  }
+
+  /// [mealMacros] pro Zeile: Mittel-%-Anteil an der Tagesmenge P/KH/F (Gen/Einst. wie bisher).
+  /// Standard-Band, falls noch kein [mealDayMacroBands]-Eintrag existiert.
+  /// Pre-Workout–Protein [5–14] % nur in Nicht-Advanced (Sonderregel).
+  /// Pre/Post-Workout–Fett: Obergrenze [_kWorkoutFatMaxPct] % (Untergrenze wie üblich).
+  List<double> _defaultBandListFor(String meal, String macro) {
+    final c = mealMacros[meal]?[macro] ?? 0.0;
+    if (meal == "Pre-Workout" &&
+        macro == "protein" &&
+        nutritionMode != "Diät" &&
+        nutritionMode != "Advanced") {
+      return [5.0, 14.0];
+    }
+    final t = _defaultTolerancePpForMealMacro(meal, macro);
+    final lo = (c - t).clamp(0.0, 100.0);
+    if ((meal == "Pre-Workout" || meal == "Post-Workout") && macro == "fat") {
+      return [lo, _kWorkoutFatMaxPct];
+    }
+    return [
+      lo,
+      (c + t).clamp(0.0, 100.0),
+    ];
+  }
+
+  ({double minPct, double maxPct}) _mealDayMacroBandPct(
+      String meal, String macro) {
+    final row = mealDayMacroBands[meal];
+    if (row != null) {
+      final a = row[macro];
+      if (a != null && a.length >= 2) {
+        var lo = a[0];
+        var hi = a[1];
+        if (lo > hi) {
+          final t = lo;
+          lo = hi;
+          hi = t;
+        }
+        return (minPct: lo, maxPct: hi);
+      }
+    }
+    final d = _defaultBandListFor(meal, macro);
+    return (minPct: d[0], maxPct: d[1]);
+  }
+
+  // Gramm-Range: Anteil (min–max %) an der Tagesmenge P/KH/F, cheat-/crashout-skaliert.
+  ({double minG, double maxG}) mealMacroRangeG(String meal, String macro) {
+    final gE = effectiveMacroGoalsForDay(selectedDayKey);
+    final goalG = macro == "protein"
+        ? gE.protein
+        : (macro == "carbs" ? gE.carbs : gE.fat);
+    final r = _mealDayMacroBandPct(meal, macro);
+    if (isSelectedDayCrashout) {
+      return (
+        minG: goalG * (r.minPct / 100.0),
+        maxG: goalG * (r.maxPct / 100.0) * 5.0,
+      );
+    }
+    return (
+      minG: goalG * (r.minPct / 100.0),
+      maxG: goalG * (r.maxPct / 100.0),
+    );
+  }
+
+  // kcal-Range für eine Mahlzeit (Summe der Makro-Ranges).
+  ({double minKcal, double maxKcal}) mealKcalRange(String meal) {
+    final p = mealMacroRangeG(meal, "protein");
+    final c = mealMacroRangeG(meal, "carbs");
+    final f = mealMacroRangeG(meal, "fat");
+    return (
+      minKcal: p.minG * 4.1 + c.minG * 4.1 + f.minG * 9.3,
+      maxKcal: p.maxG * 4.1 + c.maxG * 4.1 + f.maxG * 9.3,
+    );
+  }
+
+  /// [Diät] 1.0 am ersten Tag der Kalenderwoche → ~0,35 am letzten (engeres Band).
+  double _aggressiveCutWeekTightenFactor(String dayKey) {
+    if (nutritionMode != "Diät") return 1.0;
+    final d = dateFromKey(dayKey);
+    final ws = _startOfWeekContaining(d, weekStartWeekday);
+    final idx = d.difference(ws).inDays.clamp(0, 6);
+    final progress = idx / 6.0;
+    return 1.0 - _kCutWeekBandTightenSpan * progress;
+  }
+
+  // Tageskorridor für kcal — cheat-aware (basierend auf selectedDayKey).
+  ({double minKcal, double maxKcal}) dailyKcalRange() {
+    final baseTol = nutritionMode == "Alltag"
+        ? _dailyKcalTolerancePctAlltag
+        : _dailyKcalTolerancePct;
+    final tol = baseTol *
+        (nutritionMode == "Diät"
+            ? _aggressiveCutWeekTightenFactor(selectedDayKey)
+            : 1.0);
+    final info = cheatDays[selectedDayKey];
+    if (info == null) {
+      return (
+        minKcal: goalCalories * (1 - tol),
+        maxKcal: goalCalories * (1 + tol),
+      );
+    }
+    if (info.isCrashout) {
+      return (minKcal: goalCalories, maxKcal: goalCalories * 5);
+    }
+    final s = _cheatDayKcalScale(info);
+    return (
+      minKcal: goalCalories * s * (1 - tol),
+      maxKcal: goalCalories * s * (1 + tol),
+    );
+  }
+
+  // Tageskorridor für ein Makro (Gramm) — cheat-aware.
+  ({double minG, double maxG}) dailyMacroRange(String macro) {
+    final goal = macro == "protein"
+        ? goalProtein
+        : macro == "carbs"
+            ? goalCarbs
+            : goalFat;
+    final baseTol = nutritionMode == "Alltag"
+        ? _dailyMacroTolerancePctAlltag
+        : _dailyMacroTolerancePct;
+    final tol = baseTol *
+        (nutritionMode == "Diät"
+            ? _aggressiveCutWeekTightenFactor(selectedDayKey)
+            : 1.0);
+    final info = cheatDays[selectedDayKey];
+    if (info == null) {
+      return (
+        minG: goal * (1 - tol),
+        maxG: goal * (1 + tol),
+      );
+    }
+    if (info.isCrashout) {
+      // Crashout: Mindest-Werte für Eiweiß/Fett = Normales Ziel,
+      // keine echte Obergrenze (visueller Cap = 5x).
+      return (minG: goal, maxG: goal * 5);
+    }
+    final s = _cheatDayKcalScale(info);
+    return (
+      minG: goal * s * (1 - tol),
+      maxG: goal * s * (1 + tol),
+    );
+  }
+
+  // True wenn der aktuell ausgewählte Tag ein Crashout ist.
+  bool get isSelectedDayCrashout =>
+      cheatDays[selectedDayKey]?.isCrashout ?? false;
+
+  /// Letzte „Hauptmahlzeit“ vor Snacks (für Protein-Priorität).
+  String get _lastNonSnackMealId {
+    final m = meals;
+    for (var i = m.length - 1; i >= 0; i--) {
+      if (m[i] != "Snacks") return m[i];
+    }
+    return m.isNotEmpty ? m.last : "Main Meal";
+  }
+
+  String _rolling7dWindowId(String endDayKey) {
+    final end = dateFromKey(endDayKey);
+    final start = end.subtract(const Duration(days: 6));
+    return "${dateKeyFromDate(start)}..$endDayKey";
+  }
+
+  /// Summe gegessene kcal an Tag `dayKey`.
+  double _kcalEatenOnDay(String dayKey) {
+    return trackedFoods
+        .where((f) => f.dayKey == dayKey)
+        .fold(0.0, (s, t) => s + t.calories);
+  }
+
+  /// Tages-Referenz (kcal) fürs Tracking, cheat-aware.
+  double _dayBaseGoalKcalForDisplay(String dayKey) {
+    if (isCheatDay(dayKey) && (cheatDays[dayKey]?.isCrashout ?? false)) {
+      return goalCalories;
+    }
+    final e = effectiveGoalKcalForDay(dayKey);
+    if (e < 0) return goalCalories;
+    return e > 0 ? e : goalCalories;
+  }
+
+  /// kcal-Über-/Unterschuss der 6 Tage *vor* `dayKey` im rollierenden 7-T-Fenster.
+  double _slipKcalPast6InWindow(String dayKey) {
+    final end = dateFromKey(dayKey);
+    final keys = List<String>.generate(6, (d) {
+      return dateKeyFromDate(end.subtract(Duration(days: 6 - d)));
+    });
+    var sumG = 0.0, sumE = 0.0;
+    for (final k in keys) {
+      final gk = _goalKcalForStatsDay(k);
+      if (gk == null) continue;
+      sumG += gk;
+      sumE += _kcalEatenOnDay(k);
+    }
+    return sumG - sumE;
+  }
+
+  /// Weiche Tagesempfehlung (nur Anzeige) — nähert Wochenbilanz an, ohne Ranges/Makro-Ziele zu überschreiben.
+  double _recommendKcalForBalanceDisplay(String dayKey) {
+    if (isCheatDay(dayKey) && (cheatDays[dayKey]?.isCrashout ?? false)) {
+      return _dayBaseGoalKcalForDisplay(dayKey);
+    }
+    final gT = _dayBaseGoalKcalForDisplay(dayKey);
+    final slip = _slipKcalPast6InWindow(dayKey);
+    final w = (dateFromKey(dayKey).weekday / 7.0).clamp(0.12, 1.0);
+    const kDamp = 0.42;
+    var nudge = slip * w * kDamp;
+    nudge = nudge.clamp(-gT * 0.12, gT * 0.12);
+    // „Nach oben schrauben“ nur, wenn mindestens 3 Tage in Folge getrackt.
+    final streak = _trackingDayStreak();
+    if (nudge > 0 && streak < 3) {
+      nudge = 0;
+    }
+    return (gT + nudge).clamp(gT * 0.9, gT * 1.1);
+  }
+
+  /// Kalendertage in Folge (von heute rückwärts) mit mind. einem Tracking-Eintrag.
+  int _trackingDayStreak() {
+    var day = _dateOnlyLocal(DateTime.now());
+    var n = 0;
+    for (;;) {
+      final key = dateKeyFromDate(day);
+      if (!trackedFoods.any((t) => t.dayKey == key)) break;
+      n++;
+      day = day.subtract(const Duration(days: 1));
+    }
+    return n;
+  }
+
+  /// Streak-Emoji-Leiter: kleines Feuer, dann mehr bis ☀️ ab 30, 🐉 ab 50, 🌌👑 ab 100.
+  String _streakEmojiBar(int d) {
+    if (d < 1) return '';
+    final b = StringBuffer('🔥');
+    if (d >= 5) b.write('🌱');
+    if (d >= 10) b.write('✨');
+    if (d >= 15) b.write('⭐');
+    if (d >= 20) b.write('⚡');
+    if (d >= 25) b.write('🌤️');
+    if (d >= 30) b.write('☀️');
+    if (d >= 50) b.write('🐉');
+    if (d >= 100) b.write('🌌👑');
+    return b.toString();
+  }
+
+  /// Tagesziel-kcal inkl. Cheat (null bei Crashout = keine Defizit-Rechnung).
+  double? _goalKcalForStatsDay(String dayKey) {
+    if (isCheatDay(dayKey) && cheatDays[dayKey]!.isCrashout) {
+      return null;
+    }
+    final e = effectiveGoalKcalForDay(dayKey);
+    if (e < 0) return null;
+    if (e == 0) return goalCalories;
+    return e;
+  }
+
+  /// Grobe Obergrenze Fettverlust / Woche aus KFA-Reserve (Alpert-Ordnung, kcal-Limit).
+  double _alpertMaxWeeklyFatLossKg() {
+    final fatKg = currentWeightKg * (bodyFatPercent / 100.0);
+    if (fatKg < 0.1) return 0.0;
+    const kcalPerKgFatPerDay = 69.0;
+    return (kcalPerKgFatPerDay * fatKg * 7) / 7000.0;
+  }
+
+  /// Obergrenge Zuwachs / Woche (Fett+Muscle-Mix, orientsichungswert im Aufbau).
+  double _roughMaxWeeklyGainKg() {
+    final fatM = currentWeightKg * (bodyFatPercent / 100.0);
+    final leanM = (currentWeightKg - fatM).clamp(1.0, 500.0);
+    return (leanM * 0.004 + fatM * 0.0015).clamp(0.1, 0.6);
+  }
+
+  /// Wie [mealMacroRangeG]: Gramm = Anteil (min–max %) an **Tagesmenge** (nicht an Rest-kcal).
+  ({double minG, double maxG}) dynamicMealMacroRangeG(
+      String meal, String macro) {
+    if (meal == _kMergedMealCardId) {
+      final scope = _activeMergedMealsForDay();
+      if (scope == null) return (minG: 0.0, maxG: 0.0);
+      var minG = 0.0;
+      var maxG = 0.0;
+      for (final m in scope) {
+        final r = mealMacroRangeG(m, macro);
+        minG += r.minG;
+        maxG += r.maxG;
+      }
+      return (minG: minG, maxG: maxG);
+    }
+    return mealMacroRangeG(meal, macro);
+  }
+
+  /// kcal-Spanne der Mahlzeit als Summe der Makro-Min/Max in kcal.
+  ({double minKcal, double maxKcal}) dynamicMealKcalRange(String meal) {
+    final p = dynamicMealMacroRangeG(meal, "protein");
+    final c = dynamicMealMacroRangeG(meal, "carbs");
+    final f = dynamicMealMacroRangeG(meal, "fat");
+    return (
+      minKcal: p.minG * 4.1 + c.minG * 4.1 + f.minG * 9.3,
+      maxKcal: p.maxG * 4.1 + c.maxG * 4.1 + f.maxG * 9.3,
+    );
+  }
+
+  /// kcal-Spanne aus %-Min/Max je Makro relativ zum Tagesziel in g.
+  ({double minKcal, double maxKcal}) _kcalFromMacroPctBands({
+    required double pLo,
+    required double pHi,
+    required double cLo,
+    required double cHi,
+    required double fLo,
+    required double fHi,
+  }) {
+    final gE = effectiveMacroGoalsForDay(selectedDayKey);
+    return (
+      minKcal: gE.protein * (pLo / 100.0) * 4.1 +
+          gE.carbs * (cLo / 100.0) * 4.1 +
+          gE.fat * (fLo / 100.0) * 9.3,
+      maxKcal: gE.protein * (pHi / 100.0) * 4.1 +
+          gE.carbs * (cHi / 100.0) * 4.1 +
+          gE.fat * (fHi / 100.0) * 9.3,
+    );
+  }
+
+  /// Wie Tageskarte: weiche kcal-Bilanz → skalierte g‑Ziele; pro Mahlzeit × Verteilung-%.
+  ({double p, double c, double f}) _balanceRecommendMacroGForMeal(
+      String meal) {
+    final recK = _recommendKcalForBalanceDisplay(selectedDayKey);
+    final bGoal = _dayBaseGoalKcalForDisplay(selectedDayKey);
+    final mGoals = effectiveMacroGoalsForDay(selectedDayKey);
+    final ratio = bGoal > 0.01 ? (recK / bGoal).clamp(0.5, 1.5) : 1.0;
+    final recP = mGoals.protein * ratio;
+    final recC = mGoals.carbs * ratio;
+    final recF = mGoals.fat * ratio;
+    final mm = mealMacros[meal]!;
+    return (
+      p: recP * (mm['protein']! / 100.0),
+      c: recC * (mm['carbs']! / 100.0),
+      f: recF * (mm['fat']! / 100.0),
+    );
+  }
+
+  /// Pre+Post-Block: gleiche Logik, Anteile summiert.
+  ({double p, double c, double f}) _balanceRecommendMacroGForWorkoutBlock() {
+    final recK = _recommendKcalForBalanceDisplay(selectedDayKey);
+    final bGoal = _dayBaseGoalKcalForDisplay(selectedDayKey);
+    final mGoals = effectiveMacroGoalsForDay(selectedDayKey);
+    final ratio = bGoal > 0.01 ? (recK / bGoal).clamp(0.5, 1.5) : 1.0;
+    final recP = mGoals.protein * ratio;
+    final recC = mGoals.carbs * ratio;
+    final recF = mGoals.fat * ratio;
+    final pre = mealMacros['Pre-Workout']!;
+    final post = mealMacros['Post-Workout']!;
+    return (
+      p: recP * ((pre['protein']! + post['protein']!) / 100.0),
+      c: recC * ((pre['carbs']! + post['carbs']!) / 100.0),
+      f: recF * ((pre['fat']! + post['fat']!) / 100.0),
+    );
+  }
+
+  /// i.d.R. [Evening Meal], sonst letzte in [meals] außer Snacks.
+  String? _anchoredLastMealIdForKcal() {
+    if (meals.contains("Evening Meal")) return "Evening Meal";
+    for (var i = meals.length - 1; i >= 0; i--) {
+      if (meals[i] != "Snacks") return meals[i];
+    }
+    return null;
+  }
+
+  /// Anzeige-kcal: für Anker + [lastMealKcalByDay] = Tages-Rest, sonst Makro-Summe.
+  ({double minKcal, double maxKcal}) displayMealKcalRangeForUi(String meal) {
+    if (meal == _kMergedMealCardId) {
+      final scope = _activeMergedMealsForDay();
+      if (scope == null) return (minKcal: 0.0, maxKcal: 0.0);
+      return _combinedMealKcalRange(scope);
+    }
+    final anchor = _anchoredLastMealIdForKcal();
+    if (anchor == null || meal != anchor) {
+      return dynamicMealKcalRange(meal);
+    }
+    final c = lastMealKcalByDay[selectedDayKey];
+    if (c == null || !c.useRemainder) {
+      return dynamicMealKcalRange(meal);
+    }
+    return _remainderKcalRangeForLastMeal(c.reserveSnacks);
+  }
+
+  ({double minKcal, double maxKcal}) _remainderKcalRangeForLastMeal(
+    bool reserveSnacks,
+  ) {
+    final anchor = _anchoredLastMealIdForKcal();
+    if (anchor == null) {
+      return (minKcal: 0.0, maxKcal: 0.0);
+    }
+    final dr = dailyKcalRange();
+    final dayMid = (dr.minKcal + dr.maxKcal) / 2.0;
+    var eatenOther = 0.0;
+    for (final m in meals) {
+      if (m == anchor) continue;
+      eatenOther += _mealTotals[m]!['calories'] ?? 0.0;
+    }
+    var rem = dayMid - eatenOther;
+    if (reserveSnacks && meals.contains("Snacks")) {
+      final sk = dynamicMealKcalRange("Snacks");
+      final sMid = (sk.minKcal + sk.maxKcal) / 2.0;
+      final sEaten = _mealTotals["Snacks"]!['calories'] ?? 0.0;
+      final sKeep = (sMid - sEaten).clamp(0.0, sMid);
+      rem -= sKeep;
+    }
+    if (dayMid < 1.0) {
+      return dynamicMealKcalRange(anchor);
+    }
+    rem = rem.clamp(0.0, dayMid * 2.0);
+    const w = 0.03;
+    if (rem < 2.0) {
+      return (minKcal: 0.0, maxKcal: 30.0);
+    }
+    final minK = (rem * (1.0 - w)).clamp(0.0, rem * 1.2);
+    final maxK = (rem * (1.0 + w));
+    if (maxK <= minK) {
+      return (minKcal: rem, maxKcal: rem + 1.0);
+    }
+    return (minKcal: minK, maxKcal: maxK);
+  }
+
+  Future<bool> _ensureLastMealKcalChoiceIfNeeded(String meal) async {
+    final anchor = _anchoredLastMealIdForKcal();
+    if (anchor == null || meal != anchor) return true;
+    if (!lastMealTrackPromptEnabled) return true;
+    if (lastMealKcalByDay.containsKey(selectedDayKey)) return true;
+    return _showLastMealKcalChoiceDialog();
+  }
+
+  /// Returns true, wenn weitermachen (O.k. / schon vorgegeben), false = Abbrechen.
+  Future<bool> _showLastMealKcalChoiceDialog() async {
+    if (!mounted) return false;
+    var useRem = true;
+    var resS = true;
+    final r = await showDialog<_LastMealKcalChoice?>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          return AlertDialog(
+            title: Text(t("last_meal_kcal_prompt_title")),
+            content: _solDialogConstrainedBody(
+              ctx,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("last_meal_kcal_prompt_body"),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white60,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<bool>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      t("last_meal_kcal_mode_macro"),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    value: false,
+                    groupValue: useRem,
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setL(() {
+                        useRem = v;
+                        if (!v) resS = false;
+                      });
+                    },
+                  ),
+                  RadioListTile<bool>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      t("last_meal_kcal_mode_remainder"),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    value: true,
+                    groupValue: useRem,
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setL(() => useRem = v);
+                    },
+                  ),
+                  if (useRem) ...[
+                    const SizedBox(height: 2),
+                    CheckboxListTile(
+                      value: resS,
+                      onChanged: (v) => setL(() => resS = v ?? true),
+                      title: Text(
+                        t("last_meal_kcal_reserve_snacks"),
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(
+                    ctx,
+                    _LastMealKcalChoice(
+                      useRemainder: useRem,
+                      reserveSnacks: useRem && resS,
+                    ),
+                  );
+                },
+                child: Text(t("save")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (r == null || !mounted) return false;
+    setState(() {
+      lastMealKcalByDay[selectedDayKey] = r;
+    });
+    unawaited(_saveAppState());
+    return true;
+  }
+
+  /// Fehlende [mealDayMacroBands] aus [mealMacros]-Mitteln ± Toleranz ergänzen.
+  void _fillMissingMealDayMacroBandEntries() {
+    for (final meal in mealMacros.keys) {
+      mealDayMacroBands.putIfAbsent(meal, () => {});
+      final row = mealDayMacroBands[meal]!;
+      for (final macro in const ["protein", "carbs", "fat"]) {
+        if (!row.containsKey(macro)) {
+          row[macro] = _defaultBandListFor(meal, macro);
+        }
+      }
+    }
+  }
+
+  /// 7 Tage endend an `endDayKey` (gleiche Logik wie bisher: rollendes Fenster).
+  WeekRollData _rollup7DayStats(String endDayKey) {
+    final end = dateFromKey(endDayKey);
+    final keys = List<String>.generate(7, (d) {
+      return dateKeyFromDate(end.subtract(Duration(days: 6 - d)));
+    });
+    return _rollupStatsForKeyList(keys, windowId: _rolling7dWindowId(endDayKey));
+  }
+
+  /// Beliebige aufeinanderfolgende Tage (typisch 7) — für Wochen-Recap o. ä.
+  WeekRollData _rollupStatsForKeyList(
+    List<String> keys, {
+    required String windowId,
+  }) {
+    if (keys.isEmpty) {
+      return (
+        avgEatenKcal: 0.0,
+        avgDeficitPerDay: null,
+        totalDeficitKcal: 0.0,
+        goalDayCount: 0,
+        meanGoalKcal: goalCalories,
+        bandLo: goalCalories * (1.0 - _dailyKcalTolerancePct),
+        bandHi: goalCalories * (1.0 + _dailyKcalTolerancePct),
+        avgWeight: null,
+        weightLogCount: 0,
+        weeklyDeltaKg: null,
+        windowId: windowId,
+      );
+    }
+    final n = keys.length;
+    var sumEat = 0.0, sumDef = 0.0, sumGoal = 0.0;
+    var nGoal = 0;
+    for (final k in keys) {
+      final eat = _kcalEatenOnDay(k);
+      sumEat += eat;
+      final gk = _goalKcalForStatsDay(k);
+      if (gk != null) {
+        sumDef += (gk - eat);
+        sumGoal += gk;
+        nGoal++;
+      }
+    }
+    final avgEaten = sumEat / n;
+    final meanGoal = nGoal > 0 ? (sumGoal / nGoal) : goalCalories;
+    final lo = meanGoal * (1.0 - _dailyKcalTolerancePct);
+    final hi = meanGoal * (1.0 + _dailyKcalTolerancePct);
+    final wEntries = weightHistory.entries.where((e) {
+      final d = dateFromKey(e.key);
+      return !d.isBefore(dateFromKey(keys.first)) &&
+          !d.isAfter(dateFromKey(keys.last));
+    }).toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    double? wAvg;
+    if (wEntries.isNotEmpty) {
+      wAvg =
+          wEntries.fold(0.0, (a, b) => a + b.value.kg) / wEntries.length;
+    }
+    double? wDelta;
+    if (wEntries.length >= 2) {
+      wDelta = wEntries.last.value.kg - wEntries.first.value.kg;
+    }
+    return (
+      avgEatenKcal: avgEaten,
+      avgDeficitPerDay: nGoal > 0 ? (sumDef / nGoal) : null,
+      totalDeficitKcal: sumDef,
+      goalDayCount: nGoal,
+      meanGoalKcal: meanGoal,
+      bandLo: lo,
+      bandHi: hi,
+      avgWeight: wAvg,
+      weightLogCount: wEntries.length,
+      weeklyDeltaKg: wDelta,
+      windowId: windowId,
+    );
+  }
+
+  static const TextStyle _kWeekTheoryLineStyle = TextStyle(
+    color: Colors.white70,
+    fontSize: 12.4,
+    height: 1.4,
+  );
+
+  String _weekTheoryWaStr(double? wDelta) {
+    if (wDelta == null) return "–";
+    return "${wDelta >= 0 ? "+" : ""}${wDelta.toStringAsFixed(1)}";
+  }
+
+  /// kcal- vs. KFA- vs. Waage — in kurzen, getrennten Zeilen (7-T-Box, Bilanz-Dialog).
+  Widget _buildWeekTheoryBlock({
+    required double totalDeficitKcal,
+    required double? weeklyDeltaKg,
+  }) {
+    final fatEq = totalDeficitKcal / 7000.0;
+    final alpertCap = _alpertMaxWeeklyFatLossKg();
+    final gainCap = _roughMaxWeeklyGainKg();
+    final wa = _weekTheoryWaStr(weeklyDeltaKg);
+    if (nutritionMode == "Diät") {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tFmt("week_rollup_f_cut_l1", {
+              "eq": fatEq.toStringAsFixed(2),
+            }),
+            style: _kWeekTheoryLineStyle,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            tFmt("week_rollup_f_cut_l2", {
+              "cap": alpertCap.toStringAsFixed(2),
+            }),
+            style: _kWeekTheoryLineStyle,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            tFmt("week_rollup_f_cut_l3", {"wa": wa}),
+            style: _kWeekTheoryLineStyle,
+          ),
+        ],
+      );
+    }
+    if (nutritionMode == "Aufbau") {
+      final sur = -totalDeficitKcal;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tFmt("week_rollup_f_bulk_l1", {
+              "eq": (sur / 7000.0).toStringAsFixed(2),
+            }),
+            style: _kWeekTheoryLineStyle,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            tFmt("week_rollup_f_bulk_l2", {
+              "cap": gainCap.toStringAsFixed(2),
+            }),
+            style: _kWeekTheoryLineStyle,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            tFmt("week_rollup_f_bulk_l3", {"wa": wa}),
+            style: _kWeekTheoryLineStyle,
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          tFmt("week_rollup_f_neutral_l1", {
+            "kcal7": totalDeficitKcal.toStringAsFixed(0),
+          }),
+          style: _kWeekTheoryLineStyle,
+        ),
+        const SizedBox(height: 5),
+        Text(
+          tFmt("week_rollup_f_neutral_l2", {"wa": wa}),
+          style: _kWeekTheoryLineStyle,
+        ),
+      ],
+    );
+  }
+
+  Widget _weekRollupDataColumn(WeekRollData roll, {bool withEncourage = false}) {
+    String? encourage;
+    if (withEncourage) {
+      if (nutritionMode == "Diät" && roll.totalDeficitKcal > 0) {
+        encourage = t("week_recap_encourage_cut");
+      } else if (nutritionMode == "Aufbau" && roll.totalDeficitKcal < 0) {
+        encourage = t("week_recap_encourage_bulk");
+      } else {
+        encourage = t("week_recap_encourage_neutral");
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          tFmt("week_recap_kcal_avg", {
+            "k": roll.avgEatenKcal.toStringAsFixed(0),
+          }),
+        ),
+        if (roll.avgDeficitPerDay != null)
+          Text(
+            tFmt("week_recap_deficit", {
+              "d": roll.avgDeficitPerDay!.toStringAsFixed(0),
+              "s": roll.totalDeficitKcal.toStringAsFixed(0),
+            }),
+          ),
+        if (roll.totalDeficitKcal > 0 && nutritionMode == "Diät")
+          Text(
+            tFmt("week_recap_kcal_stack", {
+              "k": roll.totalDeficitKcal.toStringAsFixed(0),
+            }),
+            style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+          ),
+        if (roll.totalDeficitKcal > 0)
+          Text(
+            tFmt("week_recap_fat_eq_line", {
+              "f": (roll.totalDeficitKcal / 7000.0).toStringAsFixed(2),
+            }),
+            style: const TextStyle(color: Colors.white60, fontSize: 12.2),
+          ),
+        if (roll.meanGoalKcal > 0)
+          Text(
+            tFmt("week_recap_target_avg", {
+              "g": roll.meanGoalKcal.toStringAsFixed(0),
+            }),
+          ),
+        if (roll.weeklyDeltaKg != null)
+          Text(
+            tFmt("week_recap_weight_delta", {
+              "w": roll.weeklyDeltaKg! >= 0
+                  ? "+${roll.weeklyDeltaKg!.toStringAsFixed(1)}"
+                  : roll.weeklyDeltaKg!.toStringAsFixed(1),
+            }),
+          ),
+        if (roll.weightLogCount > 0 && roll.avgWeight != null)
+          Text(
+            tFmt("week_recap_weight_avg", {
+              "w": roll.avgWeight!.toStringAsFixed(1),
+              "n": roll.weightLogCount,
+            }),
+          ),
+        const SizedBox(height: 6),
+        _buildWeekTheoryBlock(
+          totalDeficitKcal: roll.totalDeficitKcal,
+          weeklyDeltaKg: roll.weeklyDeltaKg,
+        ),
+        if (encourage != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            encourage,
+            style: const TextStyle(
+              color: Color(0xFFD4AF37),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Neueste Woche zuerst (Index 0 = aktuelle Kalenderwoche).
+  List<WeekBalanceListRow> _weeklyBalanceRows({int maxWeeks = 104}) {
+    final rows = <WeekBalanceListRow>[];
+    var weekStart = _startOfWeekContaining(
+      _dateOnlyLocal(DateTime.now()),
+      weekStartWeekday,
+    );
+    for (var i = 0; i < maxWeeks; i++) {
+      if (weekStart.isBefore(DateTime(2020))) break;
+      final keys = List<String>.generate(7, (d) {
+        return dateKeyFromDate(weekStart.add(Duration(days: d)));
+      });
+      final roll = _rollupStatsForKeyList(
+        keys,
+        windowId: "week_${keys.first}",
+      );
+      rows.add((
+        a: keys.first,
+        b: keys.last,
+        ws: weekStart,
+        roll: roll,
+      ));
+      weekStart = weekStart.subtract(const Duration(days: 7));
+    }
+    return rows;
+  }
+
+  /// Links älter, rechts jünger (für Diagramme).
+  List<WeekBalanceListRow> _weekRowsChronoForChart(
+    List<WeekBalanceListRow> newestFirst, {
+    int take = 12,
+  }) {
+    if (newestFirst.isEmpty) return <WeekBalanceListRow>[];
+    final n = take.clamp(1, newestFirst.length);
+    return newestFirst.take(n).toList().reversed.toList();
+  }
+
+  Widget _weekBalanceKcalBarChart(
+    List<WeekBalanceListRow> chrono, {
+    required bool compact,
+  }) {
+    if (chrono.isEmpty) {
+      return const Center(
+        child: Text("—", style: TextStyle(color: Colors.white38)),
+      );
+    }
+    var maxK = 400.0;
+    for (final e in chrono) {
+      final v = e.roll.avgEatenKcal;
+      if (v > maxK) maxK = v;
+    }
+    maxK = (maxK * 1.12).clamp(600.0, 20000.0);
+    final gLine = goalCalories > 0 ? goalCalories : null;
+    if (gLine != null && gLine > maxK) {
+      maxK = gLine * 1.08;
+    }
+    final n = chrono.length;
+    final w = compact ? 4.0 : 7.0;
+    final gridInt = (maxK / 4).clamp(100.0, 5000.0);
+    return BarChart(
+      BarChartData(
+        maxY: maxK,
+        minY: 0,
+        barTouchData: BarTouchData(
+          enabled: !compact,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => const Color(0xFF2A2825),
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final i = group.x.toInt();
+              if (i < 0 || i >= n) return null;
+              final row = chrono[i];
+              return BarTooltipItem(
+                "${row.a} →\n",
+                const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+                children: [
+                  TextSpan(
+                    text: "${rod.toY.toStringAsFixed(0)} kcal",
+                    style: const TextStyle(
+                      color: Color(0xFFD4AF37),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        extraLinesData: gLine == null
+            ? const ExtraLinesData()
+            : ExtraLinesData(
+                horizontalLines: [
+                  HorizontalLine(
+                    y: gLine,
+                    color: Colors.white30,
+                    strokeWidth: 1,
+                    dashArray: const [4, 4],
+                    label: HorizontalLineLabel(
+                      show: !compact,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 9,
+                      ),
+                      labelResolver: (_) => gLine.toStringAsFixed(0),
+                    ),
+                  ),
+                ],
+              ),
+        gridData: FlGridData(
+          show: !compact,
+          drawVerticalLine: false,
+          horizontalInterval: gridInt,
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: compact ? 18 : 26,
+              interval: 1,
+              getTitlesWidget: (v, m) {
+                final i = v.round();
+                if ((v - i).abs() > 0.001) {
+                  return const SizedBox.shrink();
+                }
+                if (i < 0 || i >= n) {
+                  return const SizedBox.shrink();
+                }
+                if (compact && n > 5 && i.isOdd) {
+                  return const SizedBox.shrink();
+                }
+                final d = chrono[i].ws;
+                return SideTitleWidget(
+                  meta: m,
+                  space: 2,
+                  child: Text(
+                    "${d.day}.${d.month}.",
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: compact ? 8 : 9,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: !compact,
+              reservedSize: compact ? 0 : 36,
+              interval: gridInt,
+              getTitlesWidget: (v, m) {
+                return SideTitleWidget(
+                  meta: m,
+                  space: 2,
+                  child: Text(
+                    "${v.round()}",
+                    style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 9,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        barGroups: [
+          for (var i = 0; i < n; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: chrono[i].roll.avgEatenKcal,
+                  width: w,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(3),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      _kChartGold.withValues(alpha: 0.5),
+                      _kChartGold.withValues(alpha: 0.95),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+      duration: Duration.zero,
+    );
+  }
+
+  Widget _weekBalanceWeightDeltaBarChart(
+    List<WeekBalanceListRow> chrono, {
+    required bool compact,
+  }) {
+    if (chrono.isEmpty) {
+      return const Center(
+        child: Text("—", style: TextStyle(color: Colors.white38)),
+      );
+    }
+    var minV = 0.0;
+    var maxV = 0.0;
+    var hasData = false;
+    for (final e in chrono) {
+      final d = e.roll.weeklyDeltaKg;
+      if (d == null) continue;
+      hasData = true;
+      if (d < minV) minV = d;
+      if (d > maxV) maxV = d;
+    }
+    if (!hasData) {
+      return Center(
+        child: Text(
+          t("week_chart_no_weight_data"),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white38,
+            fontSize: 12.5,
+            height: 1.3,
+          ),
+        ),
+      );
+    }
+    final spread = (maxV - minV).abs();
+    var pad = math.max(0.12, spread * 0.25);
+    if (spread < 1e-6) pad = 0.2;
+    final minY = math.min(0.0, minV) - pad;
+    final maxY = math.max(0.0, maxV) + pad;
+    final n = chrono.length;
+    final w = compact ? 4.0 : 7.0;
+    final yGrid = (maxY - minY) / 4;
+    return BarChart(
+      BarChartData(
+        maxY: maxY,
+        minY: minY,
+        baselineY: 0,
+        barTouchData: BarTouchData(
+          enabled: !compact,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => const Color(0xFF2A2825),
+            getTooltipItem: (group, gIndex, rod, rodIndex) {
+              final i = group.x.toInt();
+              if (i < 0 || i >= n) return null;
+              final d = chrono[i].roll.weeklyDeltaKg;
+              final s = d == null
+                  ? "—"
+                  : "${d >= 0 ? "+" : ""}${d.toStringAsFixed(1)} kg";
+              return BarTooltipItem(
+                s,
+                const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+            },
+          ),
+        ),
+        extraLinesData: ExtraLinesData(
+          horizontalLines: [
+            HorizontalLine(
+              y: 0,
+              color: Colors.white30,
+              strokeWidth: 1.2,
+            ),
+          ],
+        ),
+        gridData: FlGridData(
+          show: !compact,
+          drawVerticalLine: false,
+          horizontalInterval: yGrid < 0.1 ? 0.2 : yGrid,
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: compact ? 18 : 26,
+              interval: 1,
+              getTitlesWidget: (v, m) {
+                final i = v.round();
+                if ((v - i).abs() > 0.001) {
+                  return const SizedBox.shrink();
+                }
+                if (i < 0 || i >= n) {
+                  return const SizedBox.shrink();
+                }
+                if (compact && n > 5 && i.isOdd) {
+                  return const SizedBox.shrink();
+                }
+                final d = chrono[i].ws;
+                return SideTitleWidget(
+                  meta: m,
+                  space: 2,
+                  child: Text(
+                    "${d.day}.${d.month}.",
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: compact ? 8 : 9,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: !compact,
+              reservedSize: compact ? 0 : 32,
+              interval: yGrid < 0.1 ? 0.2 : yGrid,
+              getTitlesWidget: (v, m) {
+                return SideTitleWidget(
+                  meta: m,
+                  space: 2,
+                  child: Text(
+                    v.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 9,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        barGroups: [
+          for (var i = 0; i < n; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [
+                () {
+                  final d = chrono[i].roll.weeklyDeltaKg;
+                  if (d == null) {
+                    return BarChartRodData(
+                      fromY: 0,
+                      toY: 0,
+                      width: w,
+                      color: Colors.transparent,
+                    );
+                  }
+                  if (d >= 0) {
+                    return BarChartRodData(
+                      fromY: 0,
+                      toY: d,
+                      width: w,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(3),
+                      ),
+                      color: const Color(0xFF4CAF50).withValues(alpha: 0.9),
+                    );
+                  }
+                  return BarChartRodData(
+                    fromY: d,
+                    toY: 0,
+                    width: w,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(3),
+                    ),
+                    color: const Color(0xFFE53935).withValues(alpha: 0.9),
+                  );
+                }(),
+              ],
+            ),
+        ],
+      ),
+      duration: Duration.zero,
+    );
+  }
+
+  void _openWeeklyBalancesArchive() {
+    final rows = _weeklyBalanceRows();
+    final chronoK = _weekRowsChronoForChart(rows, take: 16);
+    final chronoW = _weekRowsChronoForChart(rows, take: 16);
+    if (!mounted) return;
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => Scaffold(
+          backgroundColor: const Color(0xFF111111),
+          appBar: AppBar(
+            title: Text(t("week_balances_title")),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            children: [
+              Text(
+                t("week_balances_sub"),
+                style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 12.5,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                t("week_chart_kcal_caption"),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: _kChartGold,
+                  fontSize: 13.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 220,
+                child: _weekBalanceKcalBarChart(chronoK, compact: false),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                t("week_chart_weight_caption"),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: _kChartGold,
+                  fontSize: 13.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 200,
+                child: _weekBalanceWeightDeltaBarChart(
+                  chronoW,
+                  compact: false,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                t("week_balances_list_header"),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...rows.map(
+                (row) {
+                  final r = row.roll;
+                  return Card(
+                    color: const Color(0xFF1F1F1F),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ExpansionTile(
+                      title: Text(
+                        tFmt("week_list_period", {
+                          "from": row.a,
+                          "to": row.b,
+                        }),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: Text(
+                        "${t("week_rollup_intake_l")} ${r.avgEatenKcal.toStringAsFixed(0)} kcal",
+                        style: const TextStyle(
+                          color: Color(0xFFAAAAAA),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "${t("week_rollup_target_band_l")} ${tFmt("week_rollup_target_band_v", {
+                                  "lo": r.bandLo.toStringAsFixed(0),
+                                  "hi": r.bandHi.toStringAsFixed(0),
+                                  "mid": r.meanGoalKcal.toStringAsFixed(0),
+                                })}",
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _weekRollupDataColumn(r, withEncourage: false),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _initDefaultFoods();
+      _updateMealTotals();
+    } catch (_) {}
+    unawaited(_loadAppState());
+  }
+
+  @override
+  void dispose() {
+    _geminiKeyCtrl?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAppState() async {
+    try {
+      await _loadAppStateInner();
+    } catch (_) {}
+  }
+
+  Future<void> _loadAppStateInner() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final foodsRaw = prefs.getString(_kFoodsKey);
+    final trackedRaw = prefs.getString(_kTrackedFoodsKey);
+    final goalsRaw = prefs.getString(_kGoalsKey);
+    final mealMacrosRaw = prefs.getString(_kMealMacrosKey);
+    final weightRaw = prefs.getString(_kWeightHistoryKey);
+    final notesRaw = prefs.getString(_kDayNotesKey);
+    final mealNotesRaw = prefs.getString(_kMealDayNotesKey);
+    final savedSelectedDay = prefs.getString(_kSelectedDayKey);
+    final savedMode = prefs.getString(_kNutritionModeKey);
+    final savedWeight = prefs.getDouble(_kCurrentWeightKey);
+    final savedBodyFat = prefs.getDouble(_kBodyFatPercentKey);
+    final savedAge = prefs.getInt(_kAgeYearsKey);
+    final savedLanguage = prefs.getString(_kLanguageKey);
+    final savedGemini = prefs.getString(_kGeminiApiKey);
+    final savedAlltagBalance = prefs.getDouble(_kAlltagBalanceKey);
+    final savedAdvancedPreset = prefs.getDouble(_kAdvancedPresetKey);
+    final savedAdvCheatMax = prefs.getInt(_kAdvancedCheatMaxKey);
+    final savedLastDeviationWarning = prefs.getString(_kLastDeviationWarningKey);
+    final savedMealGroupOrder = prefs.getString(_kMealGroupOrderKey);
+    final savedMealCustomNames = prefs.getString(_kMealCustomNamesKey);
+    final savedCommitmentCut = prefs.getBool(_kCommitmentCutKey);
+    final savedCommitmentBulk = prefs.getBool(_kCommitmentBulkKey);
+    final savedGender = prefs.getString(_kGenderKey);
+    final savedCheatDays = prefs.getString(_kCheatDaysKey);
+    final savedCutStyle = prefs.getString(_kCutDeficitStyleKey);
+    final savedActivityLevel = prefs.getString(_kActivityLevelKey);
+    final savedCutSteps = prefs.getInt(_kCutExtraStepsBaseKey);
+    final savedCutByDay = prefs.getString(_kCutExtraStepsByDayKey);
+    final savedCutAdditionalByDay =
+        prefs.getString(_kCutExtraStepsAdditionalByDayKey);
+    final savedStepSyncEnabled = prefs.getBool(_kStepSyncEnabledKey);
+    final savedMealKcalUi = prefs.getString(_kMealKcalUiModeKey);
+    final savedAdvMealBandPp = prefs.getDouble(_kAdvancedMealMacroBandPpKey);
+    final savedAdvBandByMeal = prefs.getString(_kAdvancedMealMacroBandPpByMealKey);
+    final savedLastMealKcal = prefs.getString(_kLastMealKcalByDayKey);
+    final savedLastMealPrompt = prefs.getBool(_kLastMealTrackPromptKey);
+
+    if (!mounted) return;
+
+    setState(() {
+      if (foodsRaw != null) {
+        final decoded = jsonDecode(foodsRaw) as List<dynamic>;
+        final stored = decoded
+            .map((e) => Food.fromMap(Map<String, dynamic>.from(e)))
+            .toList();
+        // Defaults aus dem Code haben Vorrang — sonst bleiben Updates an
+        // Default-Rezepten (Werte, Bilder, Anleitung) im alten Stand hängen,
+        // wenn die DB schon mal gespeichert wurde.
+        // Rezepte aus dem Code beibehalten + alle User-eigenen Foods aus stored.
+        final userAdded = stored.where((f) => !f.isDefault).toList();
+        foodDatabase = [
+          ...foodDatabase,
+          ...userAdded,
+        ];
+      }
+
+      if (trackedRaw != null) {
+        final decoded = jsonDecode(trackedRaw) as List<dynamic>;
+        trackedFoods = decoded
+            .map((e) => TrackedFood.fromMap(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+      if (weightRaw != null) {
+        final decoded = Map<String, dynamic>.from(jsonDecode(weightRaw));
+        weightHistory = decoded.map(
+          (key, value) => MapEntry(key, _WeightDayEntry.fromPref(value)),
+        );
+      }
+      if (notesRaw != null) {
+        final decoded = Map<String, dynamic>.from(jsonDecode(notesRaw));
+        dayNotes = decoded.map(
+          (key, value) => MapEntry(key, (value ?? "").toString()),
+        );
+      }
+      if (mealNotesRaw != null && mealNotesRaw.isNotEmpty) {
+        try {
+          final decoded = Map<String, dynamic>.from(jsonDecode(mealNotesRaw));
+          mealDayNoteLists = decoded.map(
+            (day, m) {
+              if (m is! Map) {
+                return MapEntry(day, <String, List<MealNoteLine>>{});
+              }
+              return MapEntry(
+                day,
+                m.map(
+                  (k, v) => MapEntry(
+                    k.toString(),
+                    mealNoteLinesFromPrefsValue(v),
+                  ),
+                ),
+              );
+            },
+          );
+        } catch (_) {}
+      }
+      if (savedSelectedDay != null && savedSelectedDay.isNotEmpty) {
+        selectedDayKey = savedSelectedDay;
+      }
+      if (savedMode != null && savedMode.isNotEmpty) {
+        nutritionMode = savedMode;
+      }
+      if (savedWeight != null) currentWeightKg = savedWeight;
+      if (savedBodyFat != null) bodyFatPercent = savedBodyFat;
+      if (savedAge != null) ageYears = savedAge;
+      if (savedLanguage != null && savedLanguage.isNotEmpty) {
+        languageCode =
+            (savedLanguage == "en") ? "en" : "de";
+      }
+      if (savedGemini != null) {
+        geminiApiKey = savedGemini;
+        _geminiKeyCtrl?.text = savedGemini;
+      }
+      if (savedAlltagBalance != null) {
+        alltagBalance = savedAlltagBalance.clamp(0.0, 1.0);
+      }
+      _alltagBalanceDraft = alltagBalance;
+      if (savedAdvancedPreset != null) {
+        advancedPreset = savedAdvancedPreset.clamp(0.0, 1.0);
+      }
+      if (savedAdvCheatMax != null && savedAdvCheatMax >= 1) {
+        advancedCheatMonthlyMax = savedAdvCheatMax.clamp(1, 20);
+      } else {
+        advancedCheatMonthlyMax = null;
+      }
+      if (savedCutStyle != null &&
+          (savedCutStyle == "more_cardio" ||
+              savedCutStyle == "standard" ||
+              savedCutStyle == "less_move")) {
+        cutDeficitStyle = savedCutStyle;
+      }
+      if (savedActivityLevel != null &&
+          (savedActivityLevel == "very_active" ||
+              savedActivityLevel == "normal" ||
+              savedActivityLevel == "low_everyday")) {
+        activityLevel = savedActivityLevel;
+      }
+      if (savedCutSteps != null) {
+        cutExtraStepsBaseline = savedCutSteps.clamp(3000, 10000);
+      }
+      if (savedCutByDay != null && savedCutByDay.isNotEmpty) {
+        try {
+          final m = Map<String, dynamic>.from(
+            jsonDecode(savedCutByDay) as Map<dynamic, dynamic>,
+          );
+          final fixed = <String, int>{};
+          for (final e in m.entries) {
+            final v = e.value;
+            final i = v is int ? v : int.tryParse(v.toString());
+            if (i != null) {
+              fixed[e.key.toString()] = i.clamp(3000, 10000);
+            }
+          }
+          cutExtraStepsByDay = fixed;
+        } catch (_) {}
+      }
+      if (savedCutAdditionalByDay != null && savedCutAdditionalByDay.isNotEmpty) {
+        try {
+          final raw = jsonDecode(savedCutAdditionalByDay);
+          if (raw is Map) {
+            final fixed = <String, int>{};
+            for (final e in raw.entries) {
+              final i = int.tryParse(e.value.toString());
+              if (i == null) continue;
+              fixed[e.key.toString()] = i.clamp(0, 10000);
+            }
+            cutExtraStepsAdditionalByDay = fixed;
+          }
+        } catch (_) {}
+      }
+      if (savedStepSyncEnabled != null) {
+        stepSyncEnabled = savedStepSyncEnabled;
+      } else if (!kIsWeb && Platform.isIOS) {
+        // Erststart iOS: Schritte aus Apple Health wie früher automatisch.
+        stepSyncEnabled = true;
+      }
+      if (savedMealKcalUi != null &&
+          (savedMealKcalUi == "simple" || savedMealKcalUi == "advanced")) {
+        mealKcalDisplayMode = savedMealKcalUi;
+      }
+      if (savedAdvMealBandPp != null) {
+        advancedMealMacroBandPp = savedAdvMealBandPp.clamp(0.5, 25.0);
+      }
+      if (savedAdvBandByMeal != null && savedAdvBandByMeal.isNotEmpty) {
+        try {
+          final o = Map<String, dynamic>.from(jsonDecode(savedAdvBandByMeal));
+          final out = <String, Map<String, double>>{};
+          for (final e in o.entries) {
+            if (e.value is! Map) continue;
+            final inner = Map<String, dynamic>.from(e.value as Map);
+            final row = <String, double>{};
+            for (final k in const ["protein", "carbs", "fat"]) {
+              final v = inner[k];
+              if (v != null) {
+                row[k] = (v as num).toDouble().clamp(0.5, 25.0);
+              }
+            }
+            if (row.isNotEmpty) {
+              out[e.key.toString()] = row;
+            }
+          }
+          advancedMealMacroBandPpByMeal = out;
+        } catch (_) {}
+      }
+      if (savedLastMealPrompt != null) {
+        lastMealTrackPromptEnabled = savedLastMealPrompt;
+      }
+      if (savedLastMealKcal != null && savedLastMealKcal.isNotEmpty) {
+        try {
+          final o = Map<String, dynamic>.from(
+            jsonDecode(savedLastMealKcal) as Map<dynamic, dynamic>,
+          );
+          lastMealKcalByDay.clear();
+          for (final e in o.entries) {
+            final c = _LastMealKcalChoice.fromMap(e.value);
+            if (c != null) {
+              lastMealKcalByDay[e.key] = c;
+            }
+          }
+        } catch (_) {}
+      }
+      lastDeviationWarningKey = savedLastDeviationWarning;
+      if (savedMealGroupOrder != null && savedMealGroupOrder.isNotEmpty) {
+        try {
+          final decoded = (jsonDecode(savedMealGroupOrder) as List)
+              .map((e) => e.toString())
+              .toList();
+          if (decoded.isNotEmpty) mealGroupOrder = decoded;
+        } catch (_) {}
+      }
+
+      if (savedMealCustomNames != null && savedMealCustomNames.isNotEmpty) {
+        try {
+          final m = Map<String, dynamic>.from(
+              jsonDecode(savedMealCustomNames) as Map<dynamic, dynamic>);
+          mealCustomNames = m.map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          );
+        } catch (_) {}
+      }
+      if (savedCommitmentCut != null) commitmentAcceptedCut = savedCommitmentCut;
+      if (savedCommitmentBulk != null) {
+        commitmentAcceptedBulk = savedCommitmentBulk;
+      }
+
+      _normalizeMealGroupOrderForMode();
+
+      if (goalsRaw != null) {
+        final map = Map<String, dynamic>.from(jsonDecode(goalsRaw));
+        goalProtein = (map["protein"] ?? goalProtein).toDouble();
+        goalCarbs = (map["carbs"] ?? goalCarbs).toDouble();
+        goalFat = (map["fat"] ?? goalFat).toDouble();
+      }
+
+      if (mealMacrosRaw != null) {
+        final map = Map<String, dynamic>.from(jsonDecode(mealMacrosRaw));
+        final loaded = <String, Map<String, double>>{};
+        for (final meal in meals) {
+          final macroMap = Map<String, dynamic>.from(map[meal] ?? {});
+          loaded[meal] = {
+            "protein": (macroMap["protein"] ?? mealMacros[meal]!["protein"]!)
+                .toDouble(),
+            "carbs":
+                (macroMap["carbs"] ?? mealMacros[meal]!["carbs"]!).toDouble(),
+            "fat": (macroMap["fat"] ?? mealMacros[meal]!["fat"]!).toDouble(),
+          };
+        }
+        mealMacros = loaded;
+      }
+
+      final savedDayBands = prefs.getString(_kMealDayMacroBandsKey);
+      if (savedDayBands != null && savedDayBands.isNotEmpty) {
+        try {
+          final outer = Map<String, dynamic>.from(jsonDecode(savedDayBands));
+          final out = <String, Map<String, List<double>>>{};
+          for (final e in outer.entries) {
+            final innerM = <String, List<double>>{};
+            final mv = e.value;
+            if (mv is Map) {
+              for (final e2 in mv.entries) {
+                final v2 = e2.value;
+                if (v2 is List && v2.length >= 2) {
+                  innerM[e2.key.toString()] = [
+                    (v2[0] as num).toDouble(),
+                    (v2[1] as num).toDouble(),
+                  ];
+                }
+              }
+            }
+            if (innerM.isNotEmpty) {
+              out[e.key.toString()] = innerM;
+            }
+          }
+          mealDayMacroBands = out;
+        } catch (_) {}
+      }
+      _fillMissingMealDayMacroBandEntries();
+
+      if (savedGender != null && savedGender.isNotEmpty) {
+        genderCode = savedGender;
+      }
+
+      if (savedCheatDays != null && savedCheatDays.isNotEmpty) {
+        try {
+          final decoded = Map<String, dynamic>.from(jsonDecode(savedCheatDays));
+          cheatDays = decoded.map(
+            (k, v) => MapEntry(
+              k,
+              _CheatDayInfo.fromMap(Map<String, dynamic>.from(v)),
+            ),
+          );
+        } catch (_) {}
+      }
+
+      final savedWeeklyMood = prefs.getString(_kWeeklyMoodKey);
+      if (savedWeeklyMood != null && savedWeeklyMood.isNotEmpty) {
+        try {
+          final m = Map<String, dynamic>.from(jsonDecode(savedWeeklyMood) as Map);
+          weeklyMoodByWindow = m.map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          );
+        } catch (_) {}
+      }
+
+      final savedWsw = prefs.getInt(_kWeekStartWeekdayKey);
+      if (savedWsw != null && savedWsw >= 1 && savedWsw <= 7) {
+        weekStartWeekday = savedWsw;
+      }
+      final savedRecap = prefs.getString(_kLastWeekRecapKey);
+      if (savedRecap != null && savedRecap.isNotEmpty) {
+        _lastRecapForWeekStartKey = savedRecap;
+      }
+      final tr0 = prefs.getString(_kTrackedFoodsKey);
+      final wh0 = prefs.getString(_kWeightHistoryKey);
+      final hasHistory = (tr0 != null && tr0.length > 3 && tr0 != "[]") ||
+          (wh0 != null && wh0.length > 3 && wh0 != "{}");
+      // Nur neue Installationen ohne Tracking/Gewicht: Wochenstart-Dialog.
+      weekStartIntroDone = prefs.getBool(_kWeekStartIntroKey) ?? hasHistory;
+
+      autoOpenWeightMorning =
+          prefs.getBool(_kAutoOpenWeightMorningKey) ?? true;
+      _lastAutoWeightPromptDay =
+          prefs.getString(_kLastAutoWeightPromptDayKey);
+
+      final eduP = prefs.getString(_kEducationPassedKey);
+      if (eduP != null && eduP.isNotEmpty) {
+        try {
+          _educationPassedIds
+            ..clear()
+            ..addAll(
+              List<String>.from(jsonDecode(eduP) as List<dynamic>),
+            );
+        } catch (_) {
+          _educationPassedIds.clear();
+        }
+      } else {
+        _educationPassedIds.clear();
+      }
+
+      final pd = prefs.getBool(_kPlacementDoneKey);
+      final plRaw = prefs.getInt(_kPlacementLevelKey);
+      placementLevel =
+          (plRaw != null && plRaw >= 1 && plRaw <= 3) ? plRaw : 1;
+      if (pd == null) {
+        // Erst-Update: noch kein Key — Nutzer mit Daten gelten als schon eingestuft.
+        placementDone = hasHistory || _educationPassedIds.isNotEmpty;
+        if (placementDone) {
+          placementLevel = 3;
+        }
+      } else {
+        placementDone = pd;
+      }
+      if (!placementDone) {
+        selectedIndex = 0;
+      }
+
+      final itRaw = prefs.getBool(_kIntroTheoryUnlockedKey);
+      if (itRaw == null) {
+        introTheoryUnlocked = hasHistory ||
+            _educationPassedIds.isNotEmpty ||
+            (pd == true);
+      } else {
+        introTheoryUnlocked = itRaw;
+      }
+      final todayK = dateKeyFromDate(DateTime.now());
+      final sd = prefs.getString(_kIntroUnlockSessionDayKey);
+      final sc = prefs.getInt(_kIntroUnlockSessionsKey) ?? 0;
+      if (sd != todayK) {
+        introUnlockSessionDayKey = todayK;
+        introUnlockSessionsToday = 0;
+      } else {
+        introUnlockSessionDayKey = sd;
+        introUnlockSessionsToday = sc.clamp(0, 99);
+      }
+
+      final starRaw = prefs.getString(_kUserDbStarKey);
+      if (starRaw != null && starRaw.isNotEmpty) {
+        try {
+          final m = Map<String, dynamic>.from(jsonDecode(starRaw) as Map);
+          userDbStarByName = {};
+          for (final e in m.entries) {
+            final v = e.value?.toString() ?? "";
+            if (v == "diat" || v == "aufbau" || v == "all") {
+              userDbStarByName[e.key.toString()] = v;
+            }
+          }
+        } catch (_) {}
+      }
+
+      userFoodPerformanceByName =
+          _loadPersonalRatingMap(prefs.getString(_kUserFoodPerformanceKey));
+      userFoodToleranceByName =
+          _loadPersonalRatingMap(prefs.getString(_kUserFoodToleranceKey));
+
+      final mergeRaw = prefs.getString(_kMergedMealsByDayKey);
+      if (mergeRaw != null && mergeRaw.isNotEmpty) {
+        try {
+          final m = Map<String, dynamic>.from(jsonDecode(mergeRaw) as Map);
+          _mergedMealsByDay.clear();
+          for (final e in m.entries) {
+            final list = e.value;
+            if (list is! List) continue;
+            final set = list.map((x) => x.toString()).where((x) => x.isNotEmpty).toSet();
+            if (set.isNotEmpty) {
+              _mergedMealsByDay[e.key.toString()] = set;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Nach jedem Start: SOL-Rezepte aus dem Code nachziehen (auch wenn [foodsRaw]
+      // fehlt oder ältere Saves noch ohne neuen Eintrag sind).
+      _ensureMissingSolDefaultRecipes();
+      _migrateLegacyDefaultRecipeNames();
+
+      foodDatabase.removeWhere(
+        (f) => _excludedFoodNames.contains(f.name.toLowerCase()),
+      );
+      trackedFoods.removeWhere(
+        (t) => _excludedFoodNames.contains(t.food.name.toLowerCase()),
+      );
+      if (stepSyncEnabled && !kIsWeb) {
+        unawaited(_refreshSyncedSteps(requestPermissionsIfNeeded: false));
+      }
+    });
+    _ensureCurrentDay();
+    // Modus revalidieren — falls Alter inzwischen außerhalb der Range,
+    // automatisch auf Alltag fallen lassen (silent, ohne Dialog beim Start).
+    if (mounted && _ageBlockReasonForMode(nutritionMode) != null) {
+      setState(() {
+        nutritionMode = "Alltag";
+        _normalizeMealGroupOrderForMode();
+      });
+    }
+    if (nutritionMode == "Advanced") {
+      _applyAdvancedPreset();
+    } else {
+      _applyAutoNutritionTargets();
+    }
+    if (nutritionMode == "Alltag") {
+      _applyAlltagMealDistribution();
+    }
+    _saveAppState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndShowDeviationWarning();
+      _maybeShowWeekStartOnboarding();
+      Future<void>.delayed(const Duration(milliseconds: 2400), () {
+        if (!mounted) return;
+        unawaited(_maybeAutoOpenWeightMorning());
+      });
+      Future<void>.delayed(const Duration(milliseconds: 3000), () {
+        if (!mounted) return;
+        unawaited(_nudgeWeightOnAppOpen());
+      });
+      Future<void>.delayed(const Duration(milliseconds: 4200), () {
+        if (!mounted) return;
+        _applyDailyKcalOverSchedule();
+      });
+    });
+  }
+
+  Future<void> _saveAppState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kFoodsKey,
+      jsonEncode(foodDatabase.map((f) => f.toMap()).toList()),
+    );
+    await prefs.setString(
+      _kTrackedFoodsKey,
+      jsonEncode(trackedFoods.map((t) => t.toMap()).toList()),
+    );
+    await prefs.setString(
+      _kWeightHistoryKey,
+      jsonEncode(
+        weightHistory.map((k, v) => MapEntry(k, v.toPrefValue())),
+      ),
+    );
+    await prefs.setString(_kDayNotesKey, jsonEncode(dayNotes));
+    await prefs.setString(
+      _kMealDayNotesKey,
+      jsonEncode(
+        mealDayNoteLists.map(
+          (day, meals) => MapEntry(
+            day,
+            meals.map(
+              (meal, lines) => MapEntry(
+                meal,
+                lines.map((e) => e.toMap()).toList(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await prefs.setString(_kSelectedDayKey, selectedDayKey);
+    await prefs.setString(_kNutritionModeKey, nutritionMode);
+    await prefs.setDouble(_kCurrentWeightKey, currentWeightKg);
+    await prefs.setDouble(_kBodyFatPercentKey, bodyFatPercent);
+    await prefs.setInt(_kAgeYearsKey, ageYears);
+    await prefs.setString(_kLanguageKey, languageCode);
+    await prefs.setString(_kMealKcalUiModeKey, mealKcalDisplayMode);
+    await prefs.setDouble(
+      _kAdvancedMealMacroBandPpKey,
+      advancedMealMacroBandPp.clamp(0.5, 25.0),
+    );
+    await prefs.setString(
+      _kAdvancedMealMacroBandPpByMealKey,
+      jsonEncode(advancedMealMacroBandPpByMeal),
+    );
+    await prefs.setString(
+      _kLastMealKcalByDayKey,
+      jsonEncode(
+        lastMealKcalByDay.map((k, v) => MapEntry(k, v.toMap())),
+      ),
+    );
+    await prefs.setBool(_kLastMealTrackPromptKey, lastMealTrackPromptEnabled);
+    await prefs.setString(_kGeminiApiKey, geminiApiKey);
+    await prefs.setDouble(_kAlltagBalanceKey, alltagBalance);
+    await prefs.setDouble(_kAdvancedPresetKey, advancedPreset);
+    await prefs.setInt(
+      _kAdvancedCheatMaxKey,
+      advancedCheatMonthlyMax ?? -1,
+    );
+    await prefs.setString(_kCutDeficitStyleKey, cutDeficitStyle);
+    await prefs.setString(_kActivityLevelKey, activityLevel);
+    await prefs.setInt(_kCutExtraStepsBaseKey, cutExtraStepsBaseline);
+    await prefs.setString(
+        _kCutExtraStepsByDayKey, jsonEncode(cutExtraStepsByDay));
+    await prefs.setString(_kCutExtraStepsAdditionalByDayKey,
+        jsonEncode(cutExtraStepsAdditionalByDay));
+    await prefs.setBool(_kStepSyncEnabledKey, stepSyncEnabled);
+    if (lastDeviationWarningKey != null) {
+      await prefs.setString(
+          _kLastDeviationWarningKey, lastDeviationWarningKey!);
+    }
+    await prefs.setString(_kMealGroupOrderKey, jsonEncode(mealGroupOrder));
+    await prefs.setString(_kMealCustomNamesKey, jsonEncode(mealCustomNames));
+    await prefs.setBool(_kCommitmentCutKey, commitmentAcceptedCut);
+    await prefs.setBool(_kCommitmentBulkKey, commitmentAcceptedBulk);
+    await prefs.setString(_kGenderKey, genderCode);
+    await prefs.setString(
+      _kCheatDaysKey,
+      jsonEncode(cheatDays.map((k, v) => MapEntry(k, v.toMap()))),
+    );
+    await prefs.setString(
+      _kWeeklyMoodKey,
+      jsonEncode(weeklyMoodByWindow),
+    );
+    await prefs.setInt(_kWeekStartWeekdayKey, weekStartWeekday);
+    if (_lastRecapForWeekStartKey != null) {
+      await prefs.setString(_kLastWeekRecapKey, _lastRecapForWeekStartKey!);
+    } else {
+      await prefs.remove(_kLastWeekRecapKey);
+    }
+    await prefs.setBool(_kWeekStartIntroKey, weekStartIntroDone);
+    await prefs.setBool(_kAutoOpenWeightMorningKey, autoOpenWeightMorning);
+    if (_lastAutoWeightPromptDay != null) {
+      await prefs.setString(
+        _kLastAutoWeightPromptDayKey,
+        _lastAutoWeightPromptDay!,
+      );
+    } else {
+      await prefs.remove(_kLastAutoWeightPromptDayKey);
+    }
+    await prefs.setString(
+      _kEducationPassedKey,
+      jsonEncode(_educationPassedIds.toList()..sort()),
+    );
+    await prefs.setBool(_kPlacementDoneKey, placementDone);
+    await prefs.setInt(_kPlacementLevelKey, placementLevel.clamp(1, 3));
+    await prefs.setBool(_kIntroTheoryUnlockedKey, introTheoryUnlocked);
+    if (introUnlockSessionDayKey != null) {
+      await prefs.setString(_kIntroUnlockSessionDayKey, introUnlockSessionDayKey!);
+    } else {
+      await prefs.remove(_kIntroUnlockSessionDayKey);
+    }
+    await prefs.setInt(_kIntroUnlockSessionsKey, introUnlockSessionsToday);
+    await prefs.setString(_kUserDbStarKey, jsonEncode(userDbStarByName));
+    await prefs.setString(
+      _kUserFoodPerformanceKey,
+      jsonEncode(userFoodPerformanceByName),
+    );
+    await prefs.setString(
+      _kUserFoodToleranceKey,
+      jsonEncode(userFoodToleranceByName),
+    );
+    await prefs.setString(
+      _kMergedMealsByDayKey,
+      jsonEncode(
+        _mergedMealsByDay.map((k, v) => MapEntry(k, v.toList())),
+      ),
+    );
+    await prefs.setString(
+      _kGoalsKey,
+      jsonEncode({
+        "protein": goalProtein,
+        "carbs": goalCarbs,
+        "fat": goalFat,
+      }),
+    );
+    await prefs.setString(_kMealMacrosKey, jsonEncode(mealMacros));
+    await prefs.setString(
+      _kMealDayMacroBandsKey,
+      jsonEncode(mealDayMacroBands),
+    );
+    await prefs.setString(
+      _kAppThemePresetKey,
+      appUseLightTheme.value ? "light" : "dark",
+    );
+  }
+
+  static const Map<String, Map<String, String>> _translations = {
+    "de": {
+      "intro": "Einleitung",
+      "database": "Datenbank",
+      "tracking": "Tracking",
+      "settings": "Einstellungen",
+      "settings_appearance": "Erscheinungsbild",
+      "settings_appearance_sub":
+          "Dunkel (Standard) oder helles Preset — gilt sofort für die ganze App.",
+      "settings_theme_dark": "Dunkel",
+      "settings_theme_light": "Hell",
+      "language": "Sprache",
+
+      // Intro
+      "intro_section_einleitung": "Einleitung",
+      "intro_section_bildung_title": "Bildung und Funktionen der App freischalten",
+      "intro_section_bildung_sub":
+          "Einstufung, Freischalten-Quiz, vertiefende Themen, Infografik und Lern-Checks (Stufe 1–3) — nacheinander absolvierbar.",
+      "intro_hero_title": "SOL — Soldier of Light",
+      "intro_hero_sub":
+          "Kein weiterer Kalorien-Zähler. SOL ist aktive Steuerung: planen, ausführen, optimieren.",
+      "intro_hero_caption":
+          "Symbolbild: dein künftiger Weg & Beständigkeit — egal, ob du ganz vorn startest oder schon lange dabei bist.",
+      "intro_concept_title": "Das Konzept",
+      "intro_concept_body":
+          "SOL zwingt dich nicht in starre Pläne, sondern gibt dir ein System.\nDu definierst deine Ziele, SOL verteilt die Makros intelligent auf deine Mahlzeiten und schlägt dir die passende Kombination vor.",
+      "intro_terms_cut_bulk_title": "Aggressiv Cut & Lean Bulk",
+      "intro_terms_cut_bulk_body":
+          "Aggressiv Cut: Steht für eine sehr strenge Diät-Phase — klares Kaloriendefizit und hohe Plankonsequenz, damit Fett abgebaut wird und Muskelmasse möglichst geschützt bleibt.\n\nLean Bulk: Steht für einen sauberen, kontrollierten Muskelaufbau — leichter überschüssiger Plan mit fokussierten Makros, damit du zunimmst, ohne schnell unnötig Fett anzusetzen.",
+      "intro_mode_title": "Die vier Modi",
+      "intro_mode_body":
+          "Alltag: Erhalt der Masse, flexible Verteilung im Alltag.\nAggressiv Cut: klarer Deficit, Muskelmasse wird geschützt.\nLean Bulk: sauberer Überschuss für Wachstum ohne Fettpolster.\nAdvanced: manuelle Steuerung oder Preset-Slider (Aggressiv Cut ↔ Dirty Bulk).",
+      "intro_why_macros_title": "Warum Makros — nicht Kalorien",
+      "intro_why_macros_body":
+          "Zuerst der Rahmen: Nahrung soll den Körper mit Energie versorgen. Was du dauerhaft über den Bedarf hinaus isst, lagert er gern als Fett — als Reserve für später.\n\nKalorien sagen dir nur, wie viel du isst. Makros sagen dir, wofür dein Körper es nutzt. Deshalb gibst du bei SOL nur Makros ein — die Kalorien ergeben sich daraus.\n\nEin Kaloriendefizit allein bedeutet nicht automatisch Fettverlust: mit zu wenig Protein baut dein Körper Muskeln ab. Mit genug Protein und der richtigen Verteilung schützt du Muskulatur und greifst gezielt Fett an.",
+      "intro_body_title": "Wie dein Körper arbeitet",
+      "intro_body_body":
+          "Fett ist ein Energiespeicher. Überschuss-Kalorien werden eingelagert — egal ob aus Fett, Carbs oder Protein. Ein Defizit entlädt diesen Speicher. Was verbrannt wird, entscheidet dein Hormon- und Nährstoff-Profil. Bausteine: 1 g Protein = 4 kcal, 1 g Kohlenhydrat = 4 kcal, 1 g Fett = 9 kcal. Im Defizit kann der Körper bei Bedarf auch Muskelprotein ansprechen — deshalb reicht „weniger essen“ ohne Eiweiß nicht.\n\n• Viel Protein (im Plan u. a. bis 2,5 g/kg KG) → Signal: „Muskeln behalten“.\n• Genug Fett (0,75 g/kg KG) → Hormone bleiben stabil.\n• Der Rest als Carbs → Energie fürs Training und das Gehirn.\n\nDeshalb ist die Makro-Priorität in SOL: Protein → Fett → Carbs.",
+      "intro_macro_title": "Die Makro-Priorität",
+      "intro_macro_body":
+          "1. Protein: schützt Muskeln, hält satt, hoher thermischer Effekt.\n2. Fett: Hormone, Zellmembranen, Nährstoff-Aufnahme, Regeneration.\n3. Kohlenhydrate: Energie für Leistung und Gehirn — skaliert am Ziel.",
+      "intro_recognize_macros_title": "Makros in Lebensmitteln erkennen (kurz)",
+      "intro_recognize_macros_body":
+          "Grobe Einordnung zum Draufschätzen und Einkaufen — die echten Werte stehen in der Datenbank pro 100 g.\n\n• Komplexe Carbs: stärkehaltig — z. B. Kartoffeln, Reis, Hafer, Vollkorn, Nudeln, Hülsenfrüchte.\n• Einfache Carbs: alles, was stark süß ist oder schnell wirkt: Zucker, Obst, Fruchtzucker in Säften, Limo, viele Backwaren; kalorienfreie Süßstoffe gelten dafür nicht (kaum kcal, kein Fokus im Tracking).\n• Eiweiß: Daumenregel — viel von dem, was eher fest bzw. stückig ist: Fleisch, Fisch, Eier, Quark, Käse, Tofu (reines Fett-Öl oder reiner flüssiger Zucker sind kein Protein).\n• Fett: eher ölig, buttrig, cremig, Nüsse, Samen, Avocado, fette Molkerei — oft viel Energie auf kleinem Volumen.",
+      "intro_how_title": "So nutzt du SOL",
+      "intro_how_body":
+          "1. Einstellungen: Modus wählen, Gewicht und KFA eingeben — SOL berechnet deine Makros, kcal ergeben sich daraus. Wochenbilanzen/Diagramme ebenfalls in den Einstellungen.\n2. Tracking: pro Mahlzeit Foods hinzufügen oder den Generator für passende Kombinationen nutzen.\n3. Täglich: Gewicht eintragen, Notizen machen, Tag bei Bedarf zurücksetzen.",
+      "intro_prepost_title": "Pre & Post Workout — Performance",
+      "intro_prepost_body":
+          "Pre- und Post-Workout sind keine normalen Mahlzeiten — sie sind auf Leistung optimiert.\n\nPre-Workout: Du gibst deinem Körper genau den Anteil an Energie des Tages, den er vor dem Training braucht — schnell verfügbare Kohlenhydrate für volle Speicher, etwas Eiweiß als Schutz für die Muskulatur. Du gehst nicht müde ins Training, sondern mit Kraft.\n\nPost-Workout: Direkt nach dem Training sind die Tanks leer — Glykogen ist verbraucht, die Muskelfasern sind beansprucht. Genau dann nimmt dein Körper Nährstoffe am effizientesten auf. Kohlenhydrate füllen die Speicher wieder, Eiweiß startet die Reparatur. Es ist das Fenster, in dem aus Training echter Aufbau wird.\n\nDeshalb stehen diese beiden Mahlzeiten in SOL als Block zusammen — sie gehören zum Training und werden gemeinsam geplant.",
+      "intro_mindset_title": "Mindset",
+      "intro_mindset_body":
+          "Disziplin schlägt Motivation. Jede Mahlzeit ist eine Entscheidung. SOL gibt dir die Struktur — du bringst die Ausführung.",
+      "intro_infographic_title": "Ernährung im Überblick",
+      "intro_infographic_caption":
+          "Dieselbe inhaltliche Logik wie in deiner Notion-Übersicht — als Schema in SOL-Optik (keine Comic-Grafik), dazu die farbigen Kacheln unten in deiner Sprache.",
+      "intro_infographic_illustration_lead":
+          "Kurzüberblick: sinnvolle Mischung (Energie, Hormone, Muskel) vs. schneller Überschuss (eher Speicherfett). Details stehen in den Kacheln — gleiche Logik wie in deiner Übersicht.",
+      "intro_infographic_hero_schematic_title": "Aufbau & Energie (schematisch)",
+      "intro_infographic_hero_chip_carbs": "KH · Energie",
+      "intro_infographic_hero_chip_fat": "Fett · Hormone & Co.",
+      "intro_infographic_hero_chip_protein": "Protein · Muskel",
+      "intro_infographic_hero_center_goal":
+          "Funktionelle Mischung: Alltag, Training, Regeneration",
+      "intro_infographic_hero_excess_path":
+          "Viel zuckerreiche + harte fette Mischung / Dauer-Überschuss → eher Körperfett (Reserve-Tank) als sinnvolle Leistung",
+      "intro_infographic_green_title": "Gesunde Fette",
+      "intro_infographic_green_body":
+          "Der Körper braucht sie u. a. für Hormonhaushalt und erholsamen Schlaf.\n\nDavon fließt ein Teil in Botenstoffe, Zellstruktur und Regeneration — meist reicht ein kleiner Anteil an den Tageskalorien. Beispiele: Avocado, Olivenöl, Nüsse.\n\nNur wenig nötig — u. a. für Herz-Kreislauf, Hormonbalance und Schlaf.",
+      "intro_infographic_orange_title": "Gesunde Kohlenhydrate = Energie",
+      "intro_infographic_orange_body":
+          "Liefern verlässliche Energie für Alltag, Gehirn und Training — z. B. Kartoffeln, Reis, Hafer, Hülsenfrüchte, Vollkorn.\n\nEinfach vs. komplex (einen Blick wert im Alltag): Komplexe Kohlenhydrate (Stärke, oft mit Ballaststoffen) geben meist langsamere Energie und länger Sättigung. Einfache Carbs (Zucker, süße Getränke, viel Weißmehl) wirken schnell, liefern oft viele kcal auf kleinem Volumen — in SOL trennen wir dazu u. a. Zuckerkennzahlen und «komplex» in der Datenbank sichtbar.",
+      "intro_infographic_blue_title": "Protein",
+      "intro_infographic_blue_body":
+          "Baut Gewebe auf und repariert es (u. a. Muskel) und sättigt gut — z. B. Lachs, Rind, Eier, Magerquark.\n\nFür Kraftsport & Erhalt: typisch 1,4–2,5 g Protein pro kg Körpergewicht (Beispiel 80 kg: ca. 112–200 g pro Tag). Wer Muskeln halten oder aufbauen will, plant lieber in der oberen Hälfte dieses Korridors — SOL rechnet im Regelfall mit bis 2,5 g/kg als erklärbarem Rahmen.",
+      "intro_infographic_red_title": "Zuckerreiche Carbs & ungesunde Fette",
+      "intro_infographic_red_body":
+          "Burger, Pommes, Donuts, Speck, viel Frittiertes/ Gebratenes: schnell viele Kalorien, oft wenig Sättigung und Ballaststoffe.\n\nAuch ein typisches Muster: stark zuckerreiche Getränke und Snacks zusammen mit viel hartem, gesättigtem Fett — so entsteht leicht ein dauerhafter Kalorienüberschuss.\n\nÜberschuss aus solchen Kombinationen begünstigt Körperfettzunahme.",
+      "intro_infographic_red_storage":
+          "Was gerade nicht gebraucht wird, lagert der Körper gern als Fett — als «gespeicherte Energie» für später (Reservetank).",
+      "intro_infographic_split_title": "Häufige Verteilung der Tageskalorien (Orientierung)",
+      "intro_infographic_split_carbs": "50 %\nKohlenhydrate",
+      "intro_infographic_split_protein": "30 %\nProtein",
+      "intro_infographic_split_fat": "20 %\nFett",
+      "intro_infographic_split_note":
+          "SOL berechnet deine Makros aus Gewicht, KFA und Ziel — keine starre 50/30/20-Pflicht.",
+      "intro_infographic_summary_title": "Merksätze",
+      "intro_infographic_summary_1":
+          "Protein = Reparatur → Aufbau → Kraft",
+      "intro_infographic_summary_2":
+          "Gesunde Fette = wichtig, aber nur in kleiner Menge.",
+      "intro_infographic_summary_3":
+          "Komplexe Carbs = Energie — dauerhafter Überschuss landet gern als Fett.",
+      "intro_edu_title": "Lern-Stufen (Quiz)",
+      "intro_edu_sub":
+          "Themen zu SOL, Makros & Training (anschlussfähig an deine Notion-Logik). Kurzfragen, spielerisch. Stufe 2 öffnet sich, wenn Stufe 1 voll beantwortet ist; Stufe 3, wenn 1 und 2 voll fertig.",
+      "intro_edu_stufe_label": "Stufe {n}",
+      "intro_edu_start": "Quiz",
+      "intro_edu_dialog_title": "Stufe {n}",
+      "intro_edu_wrong": "Nicht ganz — ein anderer Tippen.",
+      "intro_edu_locked": "Vorherige Stufe ist noch nicht vollständig bestanden.",
+      "intro_edu_stufe_done": "Stufe {n} voll — stark!",
+      "intro_locked_hint":
+          "Volltext sichtbar nach bestandenem Freischalten-Quiz (max. 3 Versuche pro Tag).",
+      "intro_unlock_title": "Aufschriebe freischalten",
+      "intro_unlock_sub":
+          "Lies die ersten beiden Themen, dann beantworte den kurzen Check (3 Fragen). So werden die folgenden Erklärtexte, die Infografik und die Lern-Stufen sichtbar — später lassen sich einzelne Inhalte mit App-Funktionen koppeln.",
+      "intro_unlock_button": "Zum Freischalten-Quiz",
+      "intro_unlock_attempts": "Versuche heute: {n} / {m}",
+      "intro_unlock_limit": "Höchstens 3 Versuche pro Tag. Morgen erneut — oder alles in einem Durchlauf richtig.",
+      "intro_unlock_passed_snack": "Aufschriebe freigeschaltet — viel Erfolg mit SOL.",
+      "intro_unlock_dialog_title": "Einleitung — Freischeck",
+      "intro_unlock_q1": "Was trifft auf SOL am besten zu?",
+      "intro_unlock_q1_o0":
+          "Flexibles System: Ziele werden in Makros pro Mahlzeit übersetzt — kein fixer Wochenplan in Stein.",
+      "intro_unlock_q1_o1":
+          "Fester 7-Tage-Plan, den du weder anpassen noch überspringen darfst.",
+      "intro_unlock_q1_o2": "Nur ein Kalorienziel, die Verteilung (P/C/F) spielt kaum eine Rolle.",
+      "intro_unlock_q2": "Typische Makro-Priorität in SOL (erste Sorge)?",
+      "intro_unlock_q2_o0": "Protein zuerst (muskel & Sättigung) — sinnvoll, dann Fett, dann v. a. Carbs",
+      "intro_unlock_q2_o1": "Möglichst wenig Kalorien, egal ob nur Zucker oder fast nur Protein.",
+      "intro_unlock_q2_o2": "Fett muss vollständig verzichtet werden, sonst kein Fortschritt.",
+      "intro_unlock_q3": "Wozu dient ein sinnvolles Fett-Minimum (Orientierung, z. B. pro kg Körpergewicht)?",
+      "intro_unlock_q3_o0": "Ausschließlich für den Geschmack, ohne weitere körperliche Relevanz.",
+      "intro_unlock_q3_o1":
+          "Für u. a. hormon- und zellrelevante Bausteine — nicht entbehrliches Füllmaterial.",
+      "intro_unlock_q3_o2": "Fett ersetzt vollständig jede Kcal aus Kohlenhydraten.",
+      "placement_quiz_title": "Einstufung — Wissenscheck",
+      "placement_quit": "Beenden",
+      "placement_gate_msg":
+          "Bitte zuerst die Einstufung in der Einleitung abschließen (kurzes Quiz).",
+      "placement_banner_title": "Einstufung nötig",
+      "placement_banner_body":
+          "7 kurze Fragen zu Ernährung & Makros (u. a. einfach vs. komplexe Carbs, inhaltlich wie in deiner Notion-Logik) — daraus leiten wir deine Start-Stufe (1–3) ab. Danach sind Datenbank, Tracking und Einstellungen offen. Du bestätigst damit, dass du die Grundlagen verstanden hast.",
+      "placement_start": "Einstufung starten",
+      "placement_done_snack": "Start-Stufe {n} · {c}/{m} richtig. Viel Erfolg!",
+      "placement_badge": "Einstufung: Stufe {n}",
+      "intro_knowledge_bar_title": "Wissensstand",
+      "intro_knowledge_line": "{p} / {t} Fragen in den Lern-Checks beantwortet",
+      "intro_outro_title": "Bereit?",
+      "intro_outro_body":
+          "Du kannst diese Seite jederzeit wieder lesen. Für den Start: in den Einstellungen Modus, Gewicht und KFA einstellen — danach im Tracking deine Mahlzeiten erfassen. So bleibt es einfach: erst Plan, dann Alltag.",
+      "intro_outro_settings": "Zu den Einstellungen",
+      "intro_outro_tracking": "Zum Tracking",
+      "edu_l1q1": "Welche zentrale Rolle spielt Protein im Körper am ehesten?",
+      "edu_l1q1_o0": "Vor allem schnellste Energie fürs Gehirn",
+      "edu_l1q1_o1": "Gewebe aufbauen & reparieren (u. a. Muskeln)",
+      "edu_l1q1_o2": "Ausschließlich Hormonproduktion",
+      "edu_l1q2": "Wozu trägt «gesundes Fett» in angemessener, kleiner Menge typischerweise bei?",
+      "edu_l1q2_o0": "u. a. Hormonhaushalt, Zellstruktur; auch Schlaf & Regeneration profitieren",
+      "edu_l1q2_o1": "Um komplett auf Kohlenhydrate verzichten zu müssen",
+      "edu_l1q2_o2": "Fett wird vom Körper prinzipiell gar nicht benötigt",
+      "edu_l1q3":
+          "Typischer praktischer Unterschied: komplexe vs. (stark) einfache Kohlenhydrate — was trifft am ehesten zu?",
+      "edu_l1q3_o0":
+          "Komplexe (z. B. viel Stärke/Ballaststoff) sättigen oft länger und heben Blutzucker meist moderater; einfache wirken schneller (Zucker, viele Softdrinks, feines Weißmehl-gebäck …).",
+      "edu_l1q3_o1": "Es gibt keinen praktikablen Unterschied, nur Marketing",
+      "edu_l1q3_o2": "Einfache Carbs sind immer die gesündere Wahl",
+      "edu_l2q1": "Isst du längerfristig deutlich mehr, als du verbrauchst, ist die typische Folge:",
+      "edu_l2q1_o0": "Alles wird vollständig ungenutzt ausgeschieden",
+      "edu_l2q1_o1": "Energie wird gern u. a. als Körperfett gespeichert",
+      "edu_l2q1_o2": "Gespeichert wird ausschließlich Protein",
+      "edu_l2q2": "Häufige grobe Richtwerte in einem Tortendiagramm: Carbs / Protein / Fett (%) in etwa",
+      "edu_l2q2_o0": "20 / 50 / 30",
+      "edu_l2q2_o1": "50 / 30 / 20",
+      "edu_l2q2_o2": "10 / 80 / 10",
+      "edu_l3q1": "Häufiger Verzehr von sehr süßem, Frittiertem, stark verarbeitetem sorgt typischerweise dafür, dass",
+      "edu_l3q1_o0": "Muskelmasse automatisch wächst, ohne Training",
+      "edu_l3q1_o1": "schnell viele dichte kcal reinkommen und Fettzunahme wahrscheinlicher wird",
+      "edu_l3q1_o2": "Körperfett mechanisch unveränderbar bleibt",
+      "edu_l3q2": "Warum steht in SOL (und in guter Praxis) Protein oft ganz vorn, besonders in Defizitphasen?",
+      "edu_l3q2_o0": "Signal: Muskulatur eher behalten; fettfreie Masse besser absichern",
+      "edu_l3q2_o1": "Protein liefert dem Körper keinerlei Energie",
+      "edu_l3q2_o2": "Kohlenhydrate spielen dafür keine Rolle und können vernachlässigt werden",
+
+      // Bottom tabs already above
+      // Tracking screen
+      "daily_overview": "Tagesübersicht",
+      "kcal_merge_button": "Gesamtmahlzeit",
+      "kcal_merge_title": "Gesamtmahlzeit",
+      "kcal_merge_day_line":
+          "Tagesziel (Mitte) {goal} kcal · gegessen {eaten} kcal · Rest {rest} kcal",
+      "kcal_merge_scope_title": "Mahlzeiten wählen",
+      "kcal_merge_scope_all": "Alle Mahlzeiten",
+      "kcal_merge_scope_selected": "Ausgewählte Mahlzeiten",
+      "kcal_merge_meal_split": "Aufteilung nach Mahlzeiten",
+      "kcal_merge_pre_warn_title": "Performance-Hinweis (Pre-Workout)",
+      "kcal_merge_pre_warn_body":
+          "Pre-Workout ist leistungsbasiert — zusammenführen mit anderen Mahlzeiten kann die Trainings-Performance beeinflussen. Trotzdem fortfahren?",
+      "kcal_merge_combined_title": "Gesamtmahlzeit",
+      "kcal_merge_combined_line":
+          "Gesamt: {eaten} / {target} kcal ({delta})",
+      "kcal_merge_combined_rest": "Noch offen: {rest} kcal",
+      "kcal_merge_combined_eaten": "Gegessen: {eaten} kcal",
+      "kcal_merge_open_short": "{v} offen",
+      "kcal_merge_combined_includes": "Enthält: {m}",
+      "kcal_merge_mode_on": "Aktivieren",
+      "kcal_merge_mode_off": "Beenden",
+      "kcal_merge_locked_title": "In Gesamtmahlzeit",
+      "kcal_merge_locked_body":
+          "Diese Mahlzeit ist gebündelt — bitte über die Gesamtmahlzeit oben tracken.",
+      "kcal_merge_open_combined": "Zur Gesamtmahlzeit",
+      "kcal_merge_pick_target_title": "In welche Mahlzeit eintragen?",
+      "kcal_merge_open_generator": "Generator öffnen",
+      "continue_btn": "Trotzdem weiter",
+      "ok": "OK",
+      "volume_day_kpi": "Heute gegessenes Gesamtvolumen (g)",
+      "volume_meal_kpi": "Menge (Mahlzeit)",
+      "rec_kcal_streak_hint":
+          "Hinweis: Die empfohlene Tages-kcal steigt weich erst nach 3+ Tagen in Folge mit Einträgen. Bei unveränderter Körperentwicklung: an die grüne Tages-Spanne denken.",
+      "meal_kcal_mode_title": "Kcal in Mahlzeiten",
+      "meal_kcal_mode_sub": "Einfach: Zielmitte + erlaubtes Band. Fortgeschritten: wie bisher Min–Max-Angaben an den Balken.",
+      "meal_kcal_mode_simple": "Einfach",
+      "meal_kcal_mode_advanced": "Fortgeschritten",
+      "settings_last_meal_kcal_title": "Letzte Mahlzeit (kcal)",
+      "settings_last_meal_kcal_sub":
+          "Für die letzte Nicht-Snack-Mahlzeit (meist Abend) kann der kcal-Korridor aus dem Tagesrest entstehen — einmal pro Tag wählbar.",
+      "settings_last_meal_track_prompt": "Frage vor dem Tracken",
+      "settings_last_meal_track_prompt_sub":
+          "Wenn eingeschaltet: vor dem ersten Eintrag (Food, Generator, KI) an dieser Mahlzeit nach Makro-Band vs. Tages-Rest fragen. Aus = direkt mit Makro-Band.",
+      "last_meal_kcal_prompt_title": "Kcal: letzte Mahlzeit heute",
+      "last_meal_kcal_prompt_body":
+          "Nur dein Makro-Band (Ziel-Verteilung) — oder Tages-Restkcal nach den anderen Mahlzeiten? Optional: geplanten Snack-Anteil reservieren.",
+      "last_meal_kcal_mode_macro": "Makro-Spanne (Ziel-Verteilung, wie bisher)",
+      "last_meal_kcal_mode_remainder": "Tages-Rest (Tageskcal abzüglich anderer Mahlzeiten / Snack-Reserve)",
+      "last_meal_kcal_reserve_snacks": "Für Snacks den geplanten Anteil (Band) vorsorglich offen lassen",
+      "meal_kcal_simple_target": "Zielmitte: {k} kcal",
+      "meal_kcal_simple_bar_min": "Untergrenze",
+      "meal_kcal_simple_bar_max": "Obergrenze",
+      "meal_kcal_simple_hint":
+          "Ein Balken: deine Ist-kcal. Zwei Striche: Unter- und Obergrenze. Rechts daneben ~10% Leistenlänge als Puffer, damit Überschuss (rot) sichtbar bleibt. Zielmitte oben. Grün im Band, Gold drunter, rot drüber.",
+      "meal_kcal_advanced_bar_legend":
+          "Balken: Ist-kcal. Der vertikale Strich: Untergrenze. Grün, wenn du im vorgesehenen Band liegst.",
+      "barcode_food_in_db_title": "Schon in deiner Datenbank",
+      "barcode_food_in_db_body": "Dieser Code passt zu einem gespeicherten Lebensmittel — du kannst es direkt tracken oder eine neue Zeile (z. B. anderes Ablaufdatum) anlegen.",
+      "db_duplicate_name_title": "Gleicher Name",
+      "db_duplicate_name_body":
+          "Ein eigenes Lebensmittel mit diesem Namen existiert schon. Vergleiche die Werte — du kannst abbrechen oder trotzdem eine weitere Zeile anlegen.",
+      "db_duplicate_existing_label": "Gespeicherter Eintrag",
+      "db_duplicate_add_anyway": "Trotzdem anlegen",
+      "db_duplicate_barcode_title": "Barcode schon in der Datenbank",
+      "db_duplicate_barcode_body":
+          "Dieser Barcode ist schon verknüpft. Pro Strichcode ist nur ein eigener Eintrag möglich — ein zweiter Eintrag mit demselben Code ist nicht zulässig.",
+      "dialog_got_it": "Verstanden",
+      "barcode_add_to_track": "Zum Tracking",
+      "barcode_new_copy": "Neu anlegen (Vorschau)",
+      "track_edit_grams": "Menge bearbeiten (g)",
+      "surplus_cheat_title": "Viel drüber? Kontrolle sichtbar machen",
+      "surplus_cheat_body":
+          "Nur bewusste Ernährung und disziplinierte Entscheidungen sichern dauerhaften Erfolg. Mal mehr zu essen ist okay — wichtig ist, die Kontrolle zu behalten, Herr/Frau der Entscheidungen zu bleiben und dem Essen nicht die Macht über deine Stimmung zu geben. Du kannst den Tag als Cheatday markieren und damit ehrlich in der Bilanz bleiben — oder weitermachen, wenn es passt.",
+      "surplus_mark_cheat": "Cheatday & Bilanz",
+      "surplus_later": "Später",
+      "daily_over_title": "Tageskcal überschritten",
+      "daily_over_body": "Aktuell {eaten} kcal gegessen, Ziel {goal} kcal — Überschuss +{over} kcal.",
+      "daily_over_steps_est":
+          "Orientierung: rund {steps} extra Geh‑Schritte entsprechen ungefähr +{kcal} kcal (Schätzung bei deinem Gewicht; Bewegung ersetzt keine genaue Tagesbilanz).",
+      "daily_over_steps_cap":
+          "Im Modus «Diät»: SOL kann höchstens +{cap} kcal über «Extra‑Schritte (heute)» ins Tagesziel rechnen — nicht den ganzen Überschuss decken, wenn der größer ist.",
+      "daily_over_apply_steps": "Extra‑Schritte anwenden (SOL)",
+      "daily_over_cheat": "Cheatday eintragen & ehrlich bleiben",
+      "daily_over_ignore": "Ignorieren: Kontrolle & Fokus schwächer",
+      "daily_over_ignore_body":
+          "Dann rückt messbarer Fortschritt leichter in den Hintergrund, der Körper neigt dazu, Überschuss eher einzulagern, und schnell verfügbare, oft süße/reaktive Kcal lenken viele Menschen eher weg von klaren Entscheidungen. Nur du entscheidest — SOL protokolliert weiter ehrlich.",
+      "daily_over_snack_steps": "Extra‑Schritte für heute angepasst (+{k} kcal im Plan, bis SOL‑Obergrenze).",
+      "daily_over_steps_no_diet":
+          "Extra‑Schritte so im Plan hochdrehen geht in SOL im Modus «Diät» · die Zahl oben ist eine körperliche grobe Orientierung.",
+      "week_recap_kcal_stack": "Eingesparte kcal in der Woche (Diät, Summe Ziel−Ist, wo sinnvoll): ca. {k} kcal",
+      "week_recap_fat_eq_line":
+          "Grobes Fett-Äquivalent (Theorie, ~7000 kcal ≈ 1 kg Fettmasse): ≈ {f} kg",
+      "settings_lock_widget_hint":
+          "Sperrbildschirm-Widget: in Android/Apple je nach System über Widgets / Kurzbefehle einrichten — die App bietet dafür noch keine eingebaute Kachel.",
+      "day": "Tag",
+      "day_today": "Heute",
+      "day_week_details": "7-Tage-Statistik (Details)",
+      "weekly_balance_kpi": "Wochen-Δ (kg)",
+      "tracking_streak_label": "Serie",
+      "tracking_streak_hint":
+          "Aufeinanderfolgende Tage mit mindestens einem Log — gezählt ab heute rückwärts. Heute noch nichts erfasst = Serie 0.",
+      "day_context_tap": "Tag, Serie, Gewicht …",
+      "day_context_modal_title": "Tag — Details",
+      "week_balances_move_to_settings":
+          "Wochen-Bilanzen und Diagramme: Einstellungen → Wochenbilanzen.",
+      "week_chart_kcal_caption": "Ø kcal pro Tag (letzte Wochen, links älter)",
+      "week_chart_weight_caption":
+          "Waage-Änderung pro Woche in kg (grün +, rot −; 0 = Linie)",
+      "week_chart_no_weight_data":
+          "In diesen Wochen keine zwei Waagen-Einträge — kein Wochen-Δ.",
+      "week_balances_list_header": "Alle Wochen (Liste)",
+      "goal_kcal": "Ziel kcal",
+      "actual_kcal": "Aktuell kcal",
+      "weight": "Gewicht",
+      "weekly_balance": "Wochenbilanz (Kalenderwoche, Wochenstart s. Einstellungen)",
+      "week_start_settings": "Wochenstart (Bilanz & Wochen-Recap)",
+      "week_start_hint":
+          "Montag = üblich in EU, Sonntag = oft in US-Apps. Bestimmt, welcher Tag deine Woche beginnt (Gewichts-Δ, Recap).",
+      "week_start_dialog_title": "Wochenstart festlegen",
+      "week_start_dialog_body":
+          "Für Wochenbilanz und wöchentliches Recap: An welchem Wochentag beginnt deine Woche? (Empfohlen: Montag oder Sonntag.)",
+      "week_start_monday": "Montag",
+      "week_start_sunday": "Sonntag",
+      "week_recap_title": "Letzte Woche — Recap",
+      "week_recap_sub":
+          "Kurz die abgeschlossene Kalenderwoche bis gestern. Bleib dran — Konsistenz zählt.",
+      "week_recap_kcal_avg": "Ø gegessen: {k} kcal/Tag (7 Tage, bis Wochenende)",
+      "week_recap_deficit": "Ø Tagesbilanz: {d} kcal/Tag · Summe: {s} kcal (Ziel − Log, mit Ziel-Tagen)",
+      "week_recap_target_avg": "Ø Ziel: ca. {g} kcal/Tag (Tage mit Ziel)",
+      "week_recap_weight_delta": "Waage-Δ in der Woche: {w} kg (erster → letzter Log)",
+      "week_recap_weight_avg": "Ø Gewicht: {w} kg (n={n} Einträge)",
+      "week_recap_ok": "Weiter",
+      "week_recap_encourage_cut":
+          "Guter Rhythmus — Defizit und Disziplin zählen. Weiter so, bleib am Ball — du steuerst es.",
+      "week_recap_encourage_bulk": "Aufbau braucht Zeit und Konstanz. Gas geben, smart essen, dranbleiben.",
+      "week_recap_encourage_neutral": "Daten sehen, justieren, weitermachen. Augen aufs Ziel — du bist im Spiel.",
+      "meal_kcal_tap_hint": "Tippen: Makros & Einträge",
+      "meal_kcal_day_share": "Anteil (kcal) am Tagesziel: {s}",
+      "week_balances_title": "Wochenbilanzen",
+      "week_balances_sub":
+          "Diagramme und Tabelle — Kalenderwochen, Wochenstart wie unter „Wochenstart“.",
+      "week_balance_open": "Wochenbilanzen anzeigen",
+      "calendar_pick_title": "Tag wählen",
+      "calendar_weekstart_legend": "Hintergrund: dein Wochenstart-Tag (Bilanzwoche).",
+      "week_list_period": "Zeitraum: {from} – {to}",
+      "week_list_goalband": "Tageskcal-Korridor (Ø Woche, ±2%): {lo} – {hi} (Ø {mid} kcal)",
+      "weekday_1": "Mo",
+      "weekday_2": "Di",
+      "weekday_3": "Mi",
+      "weekday_4": "Do",
+      "weekday_5": "Fr",
+      "weekday_6": "Sa",
+      "weekday_7": "So",
+      "protein_last_meal_nudge":
+          "Protein zuerst: mindestens 20g fehlen noch zum Tagesziel, und du bist in deiner letzten Hauptmahlzeit (ohne Snacks) — lege jetzt priorisiert nach.",
+      "week_rollup_subtitle": "7-Tage-Überblick (rollierend, Endtag = gewählter Tag)",
+      "week_rollup_intake_l": "Ø gegessen (7 T, rollierend):",
+      "week_rollup_deficit_day_l": "Ø Tagesbilanz (Ziel − Log, nur Tage mit Ziel):",
+      "week_rollup_deficit_sum_l": "Summe 7 Tage (Ziel − Log, gleiche Tage):",
+      "week_rollup_target_band_l": "Tageskcal-Korridor (Ø, ±2%):",
+      "week_rollup_target_band_v": "{lo} – {hi} (Ø {mid} kcal)",
+      "week_rollup_w_avg_l": "Ø Gewicht (eingetr. Tage im Fenster, 7 T):",
+      "day_balance_sec_today": "Heute (Log)",
+      "day_balance_sec_weight": "Gewicht",
+      "day_balance_sec_calendar": "Diese Kalenderwoche",
+      "day_balance_cw_sub":
+          "Vom Wochenstart bis zu diesem Tag. Wochenstart: Einstellungen → Wochenstart.",
+      "day_balance_cw_row_label": "Veränderung (Waage, KW)",
+      "day_balance_sec_rolling7": "Letzte 7 Tage (rollierend)",
+      "day_balance_sec_context": "Einordnung (Modell)",
+      "week_rollup_f_cut_l1":
+          "Fettäquivalent aus der 7-Tage-kcal-Bilanz: ca. {eq} kg/Woche (Daumen: 7000 kcal ≈ 1 kg Fett).",
+      "week_rollup_f_cut_l2":
+          "Grob sinnvolles Maximum laut KFA-Reserve („physio. Deckel“): ca. {cap} kg/Woche.",
+      "week_rollup_f_cut_l3": "Differenz auf der Waage in der Woche: {wa} kg",
+      "week_rollup_f_bulk_l1":
+          "Kcal-Überschuss → grob {eq} kg Masse-Äq./Woche (nicht alles reines Fett).",
+      "week_rollup_f_bulk_l2": "Orientierungs-Obergrenze: ca. {cap} kg/Woche",
+      "week_rollup_f_bulk_l3": "Differenz auf der Waage in der Woche: {wa} kg",
+      "week_rollup_f_neutral_l1":
+          "7-Tage-Summe (Ziel − Log, Tage mit Ziel): {kcal7} kcal",
+      "week_rollup_f_neutral_l2": "Differenz auf der Waage: {wa} kg",
+      "week_mood_title": "Wie zufrieden bist du mit deiner Wochen-Performance?",
+      "week_mood_great": "Sehr zufrieden",
+      "week_mood_ok": "Geht so",
+      "week_mood_low": "Nicht so",
+      "week_mood_text_great":
+          "Wenn alles im Plan sitzt, darfst du stolz sein. Vollgas — du bist weit vorne. Sei stolz auf deine Leistung, du gehörst zu den Wenigen, die wirklich dranbleiben. Sei genau die Person, die du dir ins Vorbild wünschst und werde es Tag für Tag sichtbarer!",
+      "week_mood_text_ok":
+          "Mach dir keinen unnötigen Stress. Dein Körper arbeitet in seinem Tempo: die Waage hüpft, morgen oder übermorgen kann es wieder anders aussehen, und im Aufbau zündet die Performance nach ein oder zwei echten Regenerationstagen oft genau so. Vertrau deinem wunderbaren Körper und fokussiere die Variablen, die du steuern kannst: Gas im Training, Klarheit in der Ernährung — dabei bleiben.",
+      "week_mood_text_low":
+          "Auch harte Wochen sind normal. Wasser, Volumen, Training, Regeneration, Hormone: die Waage lügt manchmal Wochen lang schön, und das ist in Ordnung. Nichts zu verzweifeln. Bleib sachlich, bleib in der Konsistenz, und warte die Schwingung ab — du bleibst am Steuer der Hebel, die zählen.",
+      "calories": "Kalorien",
+      "protein": "Protein",
+      "carbs": "Kohlenhydrate",
+      "fat": "Fett",
+      "of_which_sugar": "davon Zucker",
+      "details": "Details",
+      "add_food": "Food hinzufügen",
+      "track_move_menu": "Verschieben…",
+      "track_move_title": "Zu welcher Mahlzeit?",
+      "track_move_hint":
+          "Der Eintrag (Lebensmittel + Gramm) bleibt gleich — nur die Zuordnung zur Mahlzeit ändert sich.",
+      "track_move_target_label": "Ziel-Mahlzeit",
+      "track_move_confirm": "Verschieben",
+      "track_move_none": "Keine andere Mahlzeit verfügbar.",
+      "track_food_menu_tooltip": "Verschieben oder löschen",
+      "track_barcode": "Barcode scannen (Open Food Facts)",
+      "generator": "Generator",
+      "track_add_ai_photo": "KI Foto",
+      "kcal_shorthand": "kcal",
+
+      // Meals
+      "meal_pre_workout": "Pre-Workout",
+      "meal_post_workout": "Post-Workout",
+      "meal_pre_paren": "Vor dem Training",
+      "meal_post_paren": "Nach dem Training",
+      "meal_main": "Hauptmahlzeit",
+      "meal_evening": "Abendessen",
+      "meal_evening_first": "Frühstück",
+      "meal_evening_middle": "Mittagessen",
+      "meal_snacks": "Snacks",
+      "tracking_meals_block_title": "Mahlzeiten",
+      "tracking_workout_block_title": "Workout",
+      "tracking_workout_sub_kcal": "∑ {k} kcal · Pre+Post",
+      "tracking_workout_popup_title": "Pre- & Post-Workout",
+      "workout_block_title_tooltip":
+          "Tippen: Pre- & Post-Workout getrennt (Einträge, Makros, Tracking)",
+      "workout_block_tap_split_hint":
+          "Antippen → Pre- und Post-Workout getrennt anzeigen.",
+      "pre_workout_carb_tip":
+          "Tipp: 30–90 min vor dem Training eher komplexe Carbs (ca. 15–20 % deines Tages-Kohlenhydrat-Ziels), direkt davor eher einfache (ca. 10–15 %).",
+      "pre_workout_carb_bar_complex": "Kohlenhydrate · komplex",
+      "pre_workout_carb_bar_simple": "Kohlenhydrate · einfach",
+      "pre_workout_carb_hint_complex_timing": "Ziel: früher (ca. 30–90 min)",
+      "pre_workout_carb_hint_simple_timing": "Ziel: direkt vor dem Training",
+
+      // Categories / types
+      "cat_all": "Alle",
+      "cat_carbs": "Kohlenhydrate",
+      "cat_protein": "Protein",
+      "cat_fat": "Fett",
+      "cat_fiber": "Ballaststoffe",
+      "cat_recipes": "Rezepte",
+      "cat_fruit": "Obst",
+      "cat_vegetable": "Gemüse",
+      "db_also_in": "Auch unter",
+      "type_all": "Alle",
+      "type_cut": "Diät",
+      "type_bulk": "Aufbau",
+      "type_cut_full": "Diät (viel Volumen)",
+      "type_bulk_full": "Aufbau (wenig Volumen)",
+
+      // Filters / database
+      "food_database": "Lebensmittel-Datenbank",
+      "db_highlights_title": "SOL — Vorschläge (Top pro Quelle)",
+      "db_highlights_collapse_hint": "Tippen zum Anzeigen — Vorschläge & Lesetipps",
+      "db_highlights_sub":
+          "Wähle unten beim Typ Diät oder Aufbau. In jeder Vorschlagszeile sind Plätze 1–2 am besten für dieses Ziel, Platz 3 ist neutral (kcal nahe der Mitte), 4–5 eher fürs andere Ziel — trotzdem essbar, nur oft schwerer am Plan zu bleiben. Bei Typ „Alle“: zuerst Diät-Tipps, dann neutral, dann Aufbau-Tipps. Die kleine Zahl = Position (1–5). Bei Protein stehen ggf. Favoriten vorn; Nummern folgen der sichtbaren Reihe.",
+      "db_hl_protein": "Protein (2+2+1 · g / 100 g)",
+      "db_hl_fat": "Fett (2+2+1 · g / 100 g)",
+      "db_hl_fiber": "Ballaststoffe (2+2+1 · g / 100 g)",
+      "db_hl_carbs_c": "Kohlenhydrate — komplex (2+2+1)",
+      "db_hl_carbs_s": "Kohlenhydrate — einfach (2+2+1)",
+      "db_hl_recipes": "Rezepte (Vorschläge, max. 5)",
+      "db_highlights_foot":
+          "Gesamtdatenbank unten, nach Quelle & Kategorie filterbar. OBD-Paket: Barcode, Schnell+Name+optional Foto.",
+      "db_user_star_label": "Eigener Favorit (dezenter Rahmen)",
+      "db_user_star_hint":
+          "Nur bei deinen eigenen Einträgen. Sichtbar je nach Typ-Filter: Diät, Aufbau oder allgemein — schwächer hervorgehoben als SOL-Top.",
+      "db_user_star_off": "Keiner",
+      "db_user_star_diet": "Diät",
+      "db_user_star_bulk": "Aufbau",
+      "db_user_star_all": "Allgemein",
+      "db_personal_rating_section": "Deine Bewertung (1–3)",
+      "db_personal_rating_hint":
+          "Optional — wie das Lebensmittel für dich wirkt. Unten in den Filtern einschränkbar.",
+      "db_personal_rating_performance": "Performance",
+      "db_personal_rating_tolerance": "Verträglichkeit",
+      "db_personal_rating_off": "—",
+      "db_personal_rating_perf_1": "schwach",
+      "db_personal_rating_perf_2": "ok",
+      "db_personal_rating_perf_3": "top",
+      "db_personal_rating_tol_1": "schlecht",
+      "db_personal_rating_tol_2": "ok",
+      "db_personal_rating_tol_3": "gut",
+      "db_personal_rating_performance_short": "Perf.",
+      "db_personal_rating_tolerance_short": "Vertr.",
+      "db_personal_filter_performance": "Performance-Filter",
+      "db_personal_filter_tolerance": "Verträglichkeits-Filter",
+      "db_personal_filter_button": "Meine Bewertung",
+      "db_personal_filter_sheet_title": "Nach Bewertung filtern",
+      "db_personal_filter_sheet_hint":
+          "Optional — filtert deine 1–3-Bewertungen aus der Lebensmittel-Karte.",
+      "db_personal_filter_reset": "Filter zurücksetzen",
+      "db_personal_filter_active": "Aktiv: {s}",
+      "db_personal_filter_all": "Alle",
+      "db_personal_filter_only3": "nur 3",
+      "db_personal_filter_min2": "≥ 2",
+      "db_personal_filter_rated": "bewertet",
+      "db_personal_filter_none": "ohne",
+      "db_source_filter_label": "Quelle",
+      "db_source_all": "Alle",
+      "db_source_mine": "Eigene",
+      "db_source_sol": "SOL-Vorschläge",
+      "recipe_flavor_filter_label": "Geschmack (Süß / Salzig)",
+      "recipe_flavor_all": "Alle",
+      "recipe_flavor_sweet": "Süß",
+      "recipe_flavor_salty": "Salzig",
+      "food_flavor_none": "Keine Angabe",
+      "db_carb_source_tile": "Kohlenhydrat-Quelle",
+      "db_carb_source_sheet_title": "Kohlenhydrat-Quelle wählen",
+      "db_carb_source_tile_sub": "Langfristige vs. schnelle Energie",
+      "db_carb_source_intro":
+          "Komplexe Kohlenhydrate liefern eher dauerhafte Energie; einfache stehen schnell zur Verfügung. Du kannst das gesetzt lassen, auch mit Zuckerkennzahlen in den Makros.",
+      "db_carb_source_complex_blurb": "Eher Vollkorn, Hülsenfrüchte, länger sättigend",
+      "db_carb_source_simple_blurb": "Eher schnell verfügbar (Zucker, Säfte, u. ä.)",
+      "db_edit_food": "Lebensmittel bearbeiten",
+      "meal_gen_optional_recipe": "Optional: Rezept dazu",
+      "db_barcode_add": "Barcode Scanner",
+      "ai_settings_title": "KI-Mahlzeit (Foto)",
+      "ai_settings_sub":
+          "Google AI Studio: Gemini-API-Key eintragen (kostenlose Kontingente möglich). Das Bild wird zur Schätzung an Google gesendet — nur nutzen, wenn du damit einverstanden bist.",
+      "ai_settings_key_label": "Gemini API-Key",
+      "ai_tracker_tooltip": "Mahlzeit fotografieren (KI schätzt Lebensmittel & Gramm)",
+      "ai_no_key": "Bitte API-Key unter Einstellungen eintragen.",
+      "ai_open_settings": "Einstellungen",
+      "ai_pick_source": "Foto wählen",
+      "ai_pick_source_sub":
+          "Kamera oder Galerie — gute Beleuchtung, Gericht möglichst vollständig.",
+      "ai_gallery": "Galerie",
+      "ai_camera": "Kamera",
+      "ai_analyzing": "KI wertet das Bild aus…",
+      "ai_error_empty": "Keine passenden Lebensmittel erkannt.",
+      "ai_error_empty_db": "Keine Einträge in der Lebensmittel-Datenbank.",
+      "ai_error_net": "API-Fehler — Verbindung, Key oder Kontingent prüfen.",
+      "ai_error_timeout": "Zeitüberschreitung — erneut versuchen.",
+      "ai_error_blocked": "Inhalt blockiert — anderes Foto versuchen.",
+      "ai_review_title": "KI-Vorschlag prüfen",
+      "ai_add_all": "Alle übernehmen",
+      "ai_unmatched_line":
+          "Kein eindeutiger Treffer für „{n}“ — bitte Lebensmittel wählen.",
+      "grams_short": "g",
+      "db_quick_name_add": "Schnell: Name (optional Foto)",
+      "db_off_preview_title": "Nährwerte prüfen & speichern",
+      "db_off_category": "Kategorie in SOL",
+      "db_off_error": "Netzwerk oder Dienst — erneut versuchen.",
+      "db_off_not_found": "Produkt in Open Food Facts nicht gefunden.",
+      "db_barcode_short": "Code zu kurz — vollständigen Barcode scannen.",
+      "db_quick_title": "Faul & schnell",
+      "db_quick_body":
+          "Nur der Name reicht; Nährwerte sind 0/100g — träg sie später in der Karte nach (oder per Barcode). Optional Referenzfoto, ohne Text-Erkennung.",
+      "db_quick_snap": "Referenzfoto (Kamera)",
+      "db_quick_snack":
+          "Foto gespeichert im Cache — Werte bitte in der Karte nachtragen.",
+      "db_food_photo_label": "Foto (optional)",
+      "db_food_photo_pick_gallery": "Galerie",
+      "db_food_photo_pick_camera": "Kamera",
+      "db_food_photo_remove": "Foto entfernen",
+      "carb_tag_complex": "Komplex",
+      "carb_tag_simple": "Einfach",
+      "filter": "Filter",
+      "search_food": "Lebensmittel suchen...",
+      "mode": "Modus",
+      "delete": "Löschen",
+      "values_per_100g": "Werte auf 100g",
+      "save": "Speichern",
+      "name": "Name",
+      "carbs_total": "Kohlenhydrate (gesamt)",
+      "of_which_fiber": "davon Ballaststoffe",
+      "of_which_complex": "davon komplex",
+
+      // Meal macros dialog
+      "meal_macros_title_suffix": "Makros %",
+      "meal_macro_day_share_hint":
+          "Mittlere % = Anteil deiner Tagesmenge. Von/Bis = erlaubter Bereich. Balken hängen nicht an Rest-kcal.",
+      "meal_macro_pct_from": "Von (%)",
+      "meal_macro_pct_to": "Bis (%)",
+      "meal_macro_save_invalid_band":
+          "Ungültig: 0–100, und Von muss ≤ Bis sein (pro Makro).",
+      "meal_macro_grams_daily_share": "Anteil Tagesziel",
+      "meal_macro_combined_input_hint":
+          "Eine Zeile: z. B. 20, 5–12 %, 40 g, 10–20 g. Ohne Spanne: Puffer (Advanced, unten).",
+      "meal_macro_combined_label_suffix": "%, g, Spanne",
+      "meal_macro_adv_buffer_title": "Puffer (±) je Makro für diese Mahlzeit",
+      "meal_macro_adv_buffer_body":
+          "Für reine %‑Zahlen (eine Zahl pro Makro): Von–Bis = Zielwert ± Puffer. Drei getrennte Regler — eng links (streng), weit rechts (luftig). Tippst du % oder g explizit als Spanne, gilt die Eingabe; Puffer betrifft dann nur die Makros mit Einzelwert.",
+      "meal_macro_adv_buffer_p": "± Prozentpunkte · Protein",
+      "meal_macro_adv_buffer_c": "± Prozentpunkte · Kohlenhydrate",
+      "meal_macro_adv_buffer_f": "± Prozentpunkte · Fett",
+      "meal_macro_kcal_band_preview":
+          "Diese Mahlzeit (kcal aus %-Min/Max): {lo} – {hi} kcal",
+      "meal_macro_slider_band_live":
+          "Aktuell: {lo}–{hi} %  →  {g1}–{g2} g (Tagesanteil)",
+      "meal_macro_slider_no_buffer_for_explicit_range":
+          "Bereich aus dem Eingabefeld – Puffer-Regler wirkt hier nicht.",
+      "meal_macro_parse_invalid":
+          "Eingabe unleserlich. Bitte Zahl, %, g oder eine Von–Bis‑Angabe (z. B. 5–10 oder 5–10 %).",
+      "free_suffix": "frei",
+      "distribution_too_high":
+          "Zu hoch verteilt: pro Makro darf die Summe max. 100% sein.",
+      "edit_meal_percent_tooltip": "Verteilung anpassen",
+      "meal_percent_locked_tooltip":
+          "Die Makro-Verteilung ist in diesem Modus fix. Wechsle in den Advanced-Modus, um sie selbst zu setzen.",
+      "macro_bar_footnote_of_day": "· Tagesziel",
+      "settings_meal_macro_section_title": "Makro-Verteilung",
+      "settings_meal_macro_section_sub":
+          "Balken-% im Tracking = Anteil in g an deiner Tagesmenge. Die eingegebene % im Dialog = Ziel-Anteil pro Mahlzeit (Summe 100 % je Makro).",
+      "settings_meal_macro_col_protein": "Tagesanteile: Protein (pro Mahlzeit)",
+      "settings_meal_macro_col_carbs": "Tagesanteile: KH (pro Mahlzeit)",
+      "settings_meal_macro_col_fat": "Tagesanteile: Fett (pro Mahlzeit)",
+      "settings_meal_macro_bands_list": "Mittel & Spanne (Von–Bis) je Mahlzeit",
+      "settings_meal_macro_column_hint": "Noch frei: {f}% = {g} g",
+      "settings_meal_macro_sum_all": "Gesamt: {s}% (von 100 %)",
+      "settings_meal_macro_remainder_all": "Noch verfügbar: {r}% = {g} g",
+      "settings_meal_macro_excess_all": "Ziel 100 % überschritten um {o}%.",
+      "settings_meal_macro_editor_hint":
+          "Schieberegler pro Mahlzeit — Summe maximal 100 %.",
+      "settings_input_invalid": "Bitte pro Feld eine Zahl 0–100 eintragen.",
+
+      // Meal Generator
+      "meal_generator_title": "Meal Generator",
+      "meal": "Mahlzeit",
+      "missing_protein": "Fehlt Protein",
+      "missing_carbs": "Fehlt Kohlenhydrate",
+      "missing_fat": "Fehlt Fett",
+      "protein_source": "Proteinquelle",
+      "carbs_source": "Kohlenhydratquelle",
+      "fat_source": "Fettquelle",
+      "recommendation": "Empfehlung",
+      "achieved": "Erreicht",
+      "gen_step_1": "1 · Protein wählen",
+      "gen_step_2": "2 · Kohlenhydrate wählen",
+      "gen_step_3": "3 · Fett wählen",
+      "gen_step_review": "4 · Menge & übernehmen",
+      "gen_none": "— Kein Beitrag (überspringen)",
+      "gen_search": "Suchen…",
+      "gen_back": "Zurück",
+      "gen_suggest": "Schnellvorschlag (alle 3 Quellen)",
+      "gen_suggest_no_foods":
+          "In der Datenbank fehlt für diese Kategorie/Modus etwas. Bitte anderes Profil wählen oder Rezept manuell.",
+      "gen_review_explain": "Hier findest du die vorgeschlagene Menge. Gramm anpassen, dann zu Tracking.",
+      "gen_warn_skipped": "Achtung: Du lässt „{m}“ weg, obwohl noch {g} g offen sind — Sollwerte triffst du so kaum.",
+      "gen_warn_mismatch": "Hinweis: Die Kombi weicht sichtbar von den Zielresten ab (Makro-Summe der Abweichung ca. {s} g).",
+      "gen_grams_field": "Menge in g (bearbeiten)",
+      "gen_food_per_100_short": "pro 100 g",
+      "gen_food_list_scroll_hint": "Zum Wischen/Scrollen — rechts: Scroll-Leiste",
+      "gen_meal_macro_preset": "Makro-Verteilung (diese Mahlzeit)",
+      "gen_meal_macro_hint":
+          "Anteil am Tagesziel in % (wie unter Mahlzeiten). „Fehlt …“ unten bezieht sich darauf.",
+      "gen_meal_macro_reset": "Wie in Einstellungen",
+      "gen_meal_macro_save": "In Mahlzeiten-Verteilung speichern",
+      "gen_recipe_ideas_title": "SOL-Rezeptideen",
+      "gen_recipe_ideas_sub":
+          "Je eine Empfehlung süß & salzig (Top-Pick, passend zum Modus).",
+      "gen_pick_recipe": "Als Rezept wählen",
+      "gen_no_recipe_pick": "Kein passendes Rezept in der Datenbank.",
+      "abbr_protein": "P",
+      "abbr_carbs": "k",
+      "abbr_fat": "F",
+      "fallback_note": "Hinweis: Näherungsrechnung aktiv (Kombi schwer exakt lösbar).",
+      "add_to_tracking": "Zu Tracking hinzufügen",
+
+      // Add food to meal
+      "choose_food": "Food auswählen",
+      "track_carb_subfilter_label": "Unterkategorie",
+      "track_sol_suggestion":
+          "SOL-Empfehlung (Top-Pick für deinen Ernährungsmodus)",
+      "grams": "Gramm",
+      "add": "Hinzufügen",
+      "track_input_mode": "Eingabe",
+      "track_mode_grams": "Gramm (Menge)",
+      "track_mode_kcal": "Kilokalorien (Ziel)",
+      "track_mode_protein": "Protein (Ziel, g)",
+      "track_mode_carbs": "Kohlenhydrate (Ziel, g)",
+      "track_mode_fat": "Fett (Ziel, g)",
+      "track_value_label": "Wert",
+      "track_preview": "→ ca. {g} g",
+      "track_error_bad":
+          "Ungültige Zahl, oder 0 in den Nährwerten/100g für dieses Ziel. Wähl anderes Ziel bzw. „Gramm“.",
+      "recipe_info_tooltip": "Rezept: Bild, Zutaten, Schritte",
+      "recipe_ai_generate": "Bild (KI) erzeugen",
+      "recipe_ai_placeholder_hint":
+          "Hier wäre dein Foto. Mit KI (Imagen) erzeugst du ein stimmiges Rezeptbild – derselbe API-Key wie unter Einstellungen (Google AI Studio, Imagen muss ggf. freigeschaltet sein).",
+      "recipe_ai_key_hint": "Trage dafür deinen API-Key in den Einstellungen ein.",
+      "recipe_ai_error": "Bild-Erstellung fehlgeschlagen (Quota, API oder Imagen-Modell prüfen).",
+      "recipe_base_grams": "1 Portion = {g} g (Referenz fürs Tracking)",
+      "track_recipe_portion_tab": "Portion",
+      "track_recipe_grams_tab": "Gramm",
+      "track_recipe_portion_label": "Anzahl Portionen",
+      "track_recipe_grams_label": "Menge in g",
+      "track_recipe_presets": "Schnell",
+      "track_advanced": "Ziel (Advanced)",
+      "track_back_simple": "Einfach",
+      "track_recipe_result": "→ {g} g · {kcal} kcal · P {p} · K {c} · F {f}",
+      "track_recipe_no_base":
+          "Keine Referenz-Portion hinterlegt — nutze Gramm oder Advanced.",
+
+      // Auto Calculator
+      "sol_calculator": "SOL Rechner",
+      "weight_kg": "Gewicht (kg)",
+      "bodyfat_pct": "KFA Schätzung (%)",
+      "age": "Alter",
+      "calc_note":
+          "Hinweis: Ab ca. 45 wird das Defizit konservativer gesetzt (Muskelschutz).",
+      "calc_required_for_mode":
+          "Gewicht, KFA und Alter eintragen und mit „Übernehmen“ bestätigen — nötig für den Moduswechsel.",
+      "cancel": "Abbrechen",
+      "apply": "Übernehmen",
+      "got_it": "Verstanden",
+      "deviation_warning_title":
+          "Halt dich an deinen Plan — Fokus, Disziplin!",
+      "deviation_warning_ack": "Verstanden, ich bleibe dran",
+      "deviation_warning_cut_attention": "Achtung!",
+      "deviation_warning_cut_body":
+          "Deine Werte sind bereits auf dem Maximum des gesund Möglichen. Alles was du darüber hinaus an Defizit drauflegst, schadet nur deiner Muskulatur — nicht dem Fett.\n\nDein Körper kann maximal etwa 70 kcal pro kg Körperfett am Tag abbauen. Alles was du darüber hinaus aus eigener Hand probierst, geht gegen die Natur und gegen deine eigene Disziplin.\n\nHalt dich an deinen Plan — damit kommst du schneller ans Ziel als mit falschem Ehrgeiz.",
+      "deviation_warning_bulk_body":
+          "Du weichst seit ein paar Tagen klar von deinem Plan ab. Mehr essen heißt nicht schneller wachsen — der Überschuss landet als Fett, nicht als Muskel.\n\nHalt dich an deine Werte. Sauberer Aufbau braucht Geduld und Disziplin, kein blindes Drauflegen.",
+      "deviation_warning_motto":
+          "„Der Mensch lebt nicht vom Brot allein.\" 🌞",
+
+      // Body fat estimator
+      "bodyfat_estimate_btn": "KFA schätzen",
+      "bodyfat_estimator_title": "KFA-Schätzer",
+      "bodyfat_what_title": "Was ist der KFA?",
+      "bodyfat_what_body":
+          "Der Körperfettanteil (KFA) ist der Anteil deines Gewichts, der aus Fett besteht — der Rest ist fettfreie Masse (Muskeln, Organe, Wasser, Knochen).\n\nSOL nutzt den KFA für deinen Grundumsatz und damit deinen Kalorienbedarf (über die fettfreie Masse). Protein und Fett werden direkt aus deinem Körpergewicht abgeleitet (2,5 g/kg KG bzw. 0,75 g/kg KG). Je genauer dein KFA, desto präziser deine kcal-Ziele.\n\nOrientierung: Männer ~10–15 % = sportlich, ~16–20 % = normal, >22 % = Fettaufbau sichtbar. Frauen liegen physiologisch etwa 8–10 %-Punkte höher.",
+      "bodyfat_method": "Methode",
+      "bodyfat_method_tape": "Maßband (Navy)",
+      "bodyfat_method_visual": "Visuelle Einstufung",
+      "bodyfat_sex": "Geschlecht",
+      "bodyfat_sex_male": "Mann",
+      "bodyfat_sex_female": "Frau",
+      "bodyfat_height": "Körpergröße (cm)",
+      "bodyfat_waist": "Taille (cm, Bauchnabel-Höhe, entspannt)",
+      "bodyfat_neck": "Hals (cm, unter Adamsapfel)",
+      "bodyfat_hip": "Hüfte (cm, weiteste Stelle)",
+      "bodyfat_navy_hint":
+          "Morgens nüchtern messen, entspannt stehen, nicht einziehen. Genauigkeit ca. ±3 %.",
+      "bodyfat_visual_hint":
+          "Wähle die Stufe, die deinem Spiegelbild am nächsten kommt. Pro Stufe gibt es eine KI-Referenzillustration. Genauigkeit grob ca. ±4–5 %.",
+      "bodyfat_result": "Geschätzter KFA",
+      "bodyfat_ref_section_title": "Referenz: Silhouetten (ungefähr)",
+      "bodyfat_ref_section_hint":
+          "Illustrationen nur zur groben Einordnung — echter KFA hängt von Genetik, Wasser, Licht ab.",
+      "bodyfat_apply_result": "Als KFA übernehmen",
+      "bodyfat_invalid_input": "Bitte alle Felder plausibel ausfüllen.",
+      "bodyfat_vis_m_1": "Ripped — tiefe Bauchdefinition, sichtbare Adern (Bodybuilder-Form)",
+      "bodyfat_vis_m_2": "Athletisch — klares Sixpack, deutliche Muskeldefinition",
+      "bodyfat_vis_m_3": "Fit — Sixpack bei Anspannung sichtbar, flacher Bauch",
+      "bodyfat_vis_m_4": "Durchschnitt — Bauch weicher, keine sichtbaren Bauchmuskeln",
+      "bodyfat_vis_m_5": "Leichter Ansatz — Bauchansatz, weichere Linien",
+      "bodyfat_vis_m_6": "Deutlicher Fettansatz — Bauch rundet deutlich, kaum Muskel-Definition",
+      "bodyfat_vis_f_1": "Sehr athletisch — klare Muskeldefinition, sichtbare Bauchlinien",
+      "bodyfat_vis_f_2": "Athletisch — fit, leicht sichtbare Bauchmuskeln, definierte Arme",
+      "bodyfat_vis_f_3": "Fit — straff, flacher Bauch, sanfte Definition",
+      "bodyfat_vis_f_4": "Durchschnitt — weiche Konturen, keine sichtbaren Bauchmuskeln",
+      "bodyfat_vis_f_5": "Kurviger — mehr Fett an Hüfte/Oberschenkeln, weicher Bauch",
+      "bodyfat_vis_f_6": "Deutlicher Ansatz — rundlicher Bauch und Hüfte",
+
+      // Day picker / reset / weight
+      "day_balance_prefix": "Bilanz",
+      "reset_day_title": "Tag zurücksetzen",
+      "reset_day_body": "Alle Tracking-Einträge löschen?",
+      "settings_reset_day_tile": "Tracking-Tag leeren",
+      "settings_reset_day_sub":
+          "Gilt für den Tag, der im Tracking (Kalender) ausgewählt ist — wie der frühere Button oben.",
+      "macro_bar_footnote_meal_slot": "· Mahlzeiten-Zentrum (g)",
+      "weight_time_label": "Gewogen um",
+      "weight_kpi_with_time": "{k} kg · {t} Uhr",
+      "weight_form_pick": "Form-Update (Foto, optional)",
+      "weight_form_pick_gallery": "Galerie",
+      "weight_form_pick_camera": "Kamera",
+      "weight_form_where_hint":
+          "Gespeichertes Foto: hier in der Vorschau, unter Tag-Details (Tageszeile) und in der Tages-Bilanz.",
+      "reset": "Reset",
+      "enter_weight": "Gewicht eintragen",
+      "invalid_input": "Ungültige Eingabe!",
+      "settings_weight_block_title": "Gewicht",
+      "settings_auto_weight_morning": "Waage morgens automatisch",
+      "settings_auto_weight_morning_sub":
+          "Zwischen 5:00 und 12:00 Uhr öffnet sich das Dialogfenster für das Gewicht, falls für heute noch keines eingetragen ist (höchstens einmal pro Tag). Du kannst es schließen, ohne etwas zu speichern — dann erscheint es an diesem Tag nicht erneut.",
+
+      // Settings
+      "mode_everyday": "Alltag",
+      "mode_cut": "Aggressiv Cut",
+      "mode_bulk": "Lean Bulk",
+      "mode_advanced": "Advanced",
+      "open_calculator": "Rechner öffnen",
+      "daily_goals": "Tagesziele",
+      "goal_protein": "Protein Ziel",
+      "goal_carbs": "Kohlenhydrate Ziel",
+      "goal_fat": "Fett Ziel",
+      "goal_kcal_label": "Kalorien Ziel",
+      "target_short": "Ziel",
+      "range_hint":
+          "Bleib im Korridor — du musst nicht punktgenau treffen, nur zwischen den Werten landen.",
+      "range_hint_bilanz":
+          "Gold: weiche Tagesempfehlung (rollierende Wochen-Bilanz) — ändert nicht deine echten Tagesziele/Makro-Korridore.",
+      "week_band_nudged_caption":
+          "Korridor-Anzeige leicht an die 6-Tage-Bilanz davor angepasst (nur Anzeige).",
+      "display_rec_kcal": "Bilanz-Empfehlung heute: {v} kcal",
+      "intake_streak_note":
+          "Hinweis: An {n} Tagen in Folge weicht dein kcal-Log deutlich vom Tagesziel ab — ggf. Rhythmus checken (Stress, Einschätzung, bewusste Ausnahmen).",
+      "recipe_ingredients": "Zutaten",
+      "recipe_instructions": "Anleitung",
+      "mode_age_hint":
+          "Aggressiv Cut: 16–50 Jahre · Advanced: ab 16 Jahren",
+      "mode_blocked_title": "Achtung — gesundheitliches Risiko",
+      "mode_blocked_cut_too_young":
+          "Aggressiv Cut ist erst ab 16 Jahren empfohlen. In der Wachstumsphase braucht dein Körper mehr Energie — nicht weniger. Wechsle in den Alltag-Modus für eine ausgewogene Versorgung.",
+      "mode_blocked_cut_too_old":
+          "Ab 50+ ist ein aggressiver Cut nicht mehr empfehlenswert — das Risiko für Muskelverlust, Hormonschwankungen und Knochendichte-Verlust ist zu hoch. Bleib im Alltag-Modus oder wähle Lean Bulk für sanftes Form-Halten.",
+      "mode_blocked_advanced_too_young":
+          "Advanced setzt einen ausgewachsenen Stoffwechsel voraus — erst ab 16 Jahren freigeschaltet. Nutze bis dahin den Alltag-Modus für sichere, ausgewogene Werte.",
+      "mode_blocked_age_missing":
+          "Bitte trage zuerst dein Alter im SOL Calculator ein, bevor du diesen Modus aktivierst.",
+      "mode_blocked_use_alltag": "Zu Alltag wechseln",
+      "mode_blocked_cancel": "Abbrechen",
+      "gender_label": "Geschlecht",
+      "gender_male": "Mann",
+      "gender_female": "Frau",
+      "cheatday_title": "Cheatday",
+      "cheatday_open": "Cheatday verwalten",
+      "cheatday_open_short": "Cheatday",
+      "cheatday_active_today": "Heute ist Cheatday aktiv.",
+      "cheatday_warning_title": "Sei dir bewusst",
+      "cheatday_warning_body":
+          "Sei dir bewusst, was du tust.\n\nEin kontrollierter Cheatday ist okay — solange du zu jedem Moment Herr/Frau deiner Sinne bleibst.\n\nDieser Modus erkauft heutige Freiheit mit Fortschritt der nächsten Tage. Triff die Entscheidung nüchtern, nicht aus dem Affekt.",
+      "cheatday_continue": "Bewusst aktivieren",
+      "cheatday_cancel": "Lieber nicht",
+      "cheatday_choose_sacrifice": "Wieviele Tage Fortschritt opferst du?",
+      "cheatday_sacrifice_one": "1 Tag",
+      "cheatday_sacrifice_n": "{n} Tage",
+      "cheatday_sacrifice_hint":
+          "Angenommener Tages-Defizit-Topf: ca. {def} kcal (Maintenance − Tagesziel). Mit {n} opferten Tagen: +{extra} kcal (heute ≈{total} statt {base} kcal). Die opferten Tage danach strikt im Plan halten.",
+      "cheatday_use_crashout": "Crashout (statt 1–4 Tage)",
+      "cheatday_crashout_explainer":
+          "Crashout: keine Obergrenze, nur Mindest-Eiweiß und Mindest-Fett müssen gedeckt sein. Zählt als 2 Cheatdays. Nutzbar wenn die Bremsen wirklich gerissen sind — bewusst, nicht im Wahn.",
+      "cheatday_credits_label": "Cheatday-Konto diesen Monat",
+      "cheatday_credits_format": "{used} von {max} verbraucht",
+      "cheatday_bonus_earned":
+          "Bonus aktiv (+1) — du opferst nur kleine Häppchen, das wird belohnt.",
+      "cheatday_bonus_hint":
+          "Bonus-Cheatday: wenn ALLE deine Cheats des Monats max. 2 Tage opfern, bekommst du einen 5. dazu.",
+      "cheatday_no_credits":
+          "Diesen Monat keine Credits mehr. Nächster Monat startet wieder mit 4.",
+      "cheatday_already_active": "Heute ist bereits ein Cheatday aktiv.",
+      "cheatday_remove": "Cheatday wieder entfernen",
+      "cheatday_removed": "Cheatday für heute entfernt.",
+      "cheatday_activated": "Cheatday aktiviert. Bleib bei Sinnen.",
+      "cheatday_summary_normal":
+          "Opfer: {n} Tage · +{extra} kcal (Defizit ≈{def} kcal/Tag) → heute ≈{total} kcal (Basis {base} kcal)",
+      "cheatday_summary_crashout":
+          "Crashout · keine Obergrenze · nur Mindest-Eiweiß/Fett",
+      "cheatday_active_banner_title": "Cheatday aktiv",
+      "cheatday_active_banner_subtitle":
+          "Bewusst essen, kontrolliert genießen — morgen liefern.",
+      "cheatday_min_only": "Nur Minimum",
+      "cheatday_no_max": "kein Maximum",
+      "cheatday_credits_short": "{used}/{max} Credits",
+      "cheatday_budget_title": "Cheatday-Kontingent (Advanced)",
+      "cheatday_budget_hint":
+          "Standard: 4 pro Monat plus 1 Bonus, wenn alle Cheats max. 2 Tage opfern. Im Advanced-Modus kannst du stattdessen ein fixes Monats-Maximum wählen.",
+      "cheatday_budget_use_sol": "SOL-Regel (4+Bonus)",
+      "cheatday_budget_max_slider": "Eigenes Monats-Maximum",
+      "cheatday_budget_foot": "Aktuell: {used} von {max} Credits diesen Monat",
+      "cheatday_bonus_hint_manual":
+          "Manuelles Monats-Maximum aktiv — kein auto-Bonus.",
+      "cheatday_kcal_readout_title": "Kcal am Cheat-Tag",
+      "cheatday_kcal_readout_main": "≈{total} kcal Ziel heute",
+      "cheatday_kcal_readout_plus":
+          "+{extra} kcal über dein normales Tagesziel ({base} kcal)",
+      "cheatday_kcal_readout_per":
+          "≈{per_day} kcal pro opfertem Fortschritts-Tag × {n}",
+      "cheatday_kcal_readout_no_deficit":
+          "Kein geplantes Tages-Defizit — kein Bonus über dein Basisziel ({base} kcal).",
+      "cheatday_kcal_readout_crashout":
+          "Crashout: kein festes Tages-Maximum, daher kein kcal-Ziel in einer Zahl.",
+      "cheatday_kcal_banner_line":
+          "Heute ≈{total} kcal · +{extra} kcal (≈{per_day} kcal je Opfer-Tag × {n})",
+      "cheatday_sacrifice_foot": "Die opferten Tage danach streng im Plan halten.",
+      "cheatday_activated_with_kcal":
+          "Cheatday aktiv — heute ≈{total} kcal Ziel (≈{per_day} kcal × {n} opferte Tage).",
+      "edit_goals_advanced": "Ziele bearbeiten (Advanced)",
+      "goals_auto_note": "In Auto-Modi durch Formel gesteuert",
+      "formula_info": "Formel-Info",
+      "formula_current_masses": "Aktuelle Massen",
+      "formula_maintenance": "Maintenance",
+      "formula_macro_title": "Makro-Formeln",
+      "formula_macro_protein": "• Protein = 2,5 g × Körpergewicht",
+      "formula_macro_fat": "• Fett: Alltag 0,9 g · Lean Bulk 1,0 g · Diät 0,75 g × Körpergewicht",
+      "formula_macro_carbs": "• Kohlenhydrate = Restkalorien",
+      "formula_kcal_title": "Kalorien-Logik nach Modus",
+      "formula_kcal_everyday": "• Alltag: Kalorien = Maintenance",
+      "formula_kcal_cut_prefix": "• Aggressiv Cut: Defizit = Fettmasse × ",
+      "formula_kcal_cut_suffix": " kcal (altersangepasst)",
+      "formula_kcal_cut_current": "→ aktuelles Defizit: ",
+      "formula_kcal_bulk": "• Lean Bulk: sauberer Überschuss (ca. +150 bis +300 kcal)",
+      "formula_kcal_hint":
+          "Hinweis: Ab höherem Alter wird das Defizit konservativer gesetzt, um Muskelverlust zu vermeiden.",
+
+      "goals_dialog_title": "Tagesziele",
+
+      // Day note
+      "day_note": "Notiz",
+      "no_note": "Keine Notiz",
+      "edit_note": "Notiz bearbeiten",
+      "note_hint": "Gedanken zum Tag, Training, Gefühl...",
+      "meal_note": "Mahlzeiten-Notiz",
+      "meal_note_hint":
+          "Nur für diese Mahlzeit an diesem Tag (z. B. was du isst, planst, Gefühl, Hinweise zur Gruppe).",
+      "meal_note_checklist_sub":
+          "Häkchen = erledigt, Text wird durchgestrichen. Mehrere Zeilen mit „+ Zeile“ — z. B. Elektrolyte nicht vergessen.",
+      "meal_note_add_line": "Zeile hinzufügen",
+      "meal_note_line_hint": "z. B. + Elektrolyte, Extra-Portion …",
+      "meal_note_remove_line": "Zeile entfernen",
+      "meal_expand_inline": "Makro-Tabelle ein- und ausklappen",
+      "meal_open_tracked": "Getrackte Lebensmittel & Mengen",
+      "meal_add_menu": "Food, Generator oder KI Foto",
+      "meal_tracked_popup_title": "Getrackt: {m}",
+      "meal_tracked_empty":
+          "Noch nichts in dieser Mahlzeit. ⊕: Food, Generator oder KI Foto.",
+      "track_edit_mode_g": "g",
+      "track_edit_mode_kcal": "kcal",
+      "track_edit_portion_hint":
+          "Einheit & Menge scrollen oder Zahl antippen — Makros live.",
+      "track_portion_manual_title": "Menge eingeben",
+      "track_mode_short_protein": "P",
+      "track_mode_short_carbs": "KH",
+      "track_mode_short_fat": "F",
+      "track_edit_grams_only":
+          "Nur g möglich (kein verwertbarer Nährwert/100 g für kcal o. Makros).",
+      "meal_compact_gestures_hint":
+          "Pfeil: Makros. Titel: getrackte Einträge. ⊕: Food, Generator, KI Foto.",
+
+      // Alltag distribution slider
+      "alltag_distribution": "Verteilung",
+      "alltag_performance": "Performance",
+      "alltag_relaxed": "Entspannt",
+      "alltag_distribution_hint":
+          "Performance = strikte Meal-Verteilung, leicht weniger kcal. Entspannt = gleichmäßiger, leicht mehr kcal. Zusätzlich: weichere %-Korridore pro Mahlzeit (Fett am weitesten), etwas breiteres Tages-kcal·Band, Fett-Plan ~0,9 g/kg (Minimum 0,6 g/kg).",
+      "alltag_kcal_change_label": "kcal-Anpassung",
+      "alltag_apply": "Übernehmen",
+      "alltag_applied_msg": "Verteilung & kcal aktualisiert.",
+      "meal_order_title": "Reihenfolge der Mahlzeiten",
+      "meal_order_hint":
+          "Halte das Ziehen-Symbol gedrückt und ordne die Mahlzeiten im Tagesablauf neu. Pre + Post bleiben als Block zusammen.",
+      "meal_order_free_hint":
+          "Im Alltag- und Advanced-Modus: jede Mahlzeit einzeln ziehbar — auch Pre- und Post-Workout getrennt. Stift: umbenennen (nur sichtbar in diesen Modi).",
+      "meal_order_free_sub": "Pre/Post getrennt · frei positionierbar",
+      "meal_order_rename": "Mahlzeit umbenennen",
+      "meal_rename_title": "Mahlzeit-Name",
+      "meal_rename_label": "Name im Tracking",
+      "meal_order_block_hint": "Pre + Post — fester Block",
+      "meal_order_snacks_locked":
+          "Snacks bleiben immer oben und lassen sich nicht verschieben.",
+      "commitment_title": "Commitment — Vollgas",
+      "commitment_body":
+          "Dieser Modus arbeitet am Maximum dessen, was sinnvoll und gesund vertretbar ist. Du weißt: das ist harte Arbeit — und du wählst sie bewusst. Du hältst dich an den Plan, auch wenn’s unbequem ist — sonst wäre jeder leicht im Ziel.",
+      "commitment_quote":
+          "„Disziplin heißt: dem Unbequemen nachzustreben — so, als wäre es dir das Liebste auf der Welt.“",
+      "commitment_checkbox":
+          "Ich nehme das bewusst in Kauf und bleibe fokussiert, auch wenn es unangenehm ist.",
+      "commitment_confirm": "Ich committe",
+      "commitment_decline": "Zurück",
+      "mode_aggressive_badge": "JETZT GEHT ES LOS — Intensiv-Phase",
+      "mode_aggressive_sub":
+          "Aggressiv Cut / Lean Bulk: kein Dauerfeuer im Komfort. Volle Konsequenz, volle Fokuslinie.",
+
+      "activity_level_title": "Aktivitätslevel",
+      "activity_level_hint":
+          "Unabhängig von Extra-Schritten. Steuert deine Maintenance-kcal in allen Modi — Protein und Fett bleiben fix, Kohlenhydrate passen sich an.",
+      "activity_level_very_active": "Sehr aktiv",
+      "activity_level_normal": "Normal",
+      "activity_level_low": "Wenig Alltag",
+      "formula_activity_line":
+          "• Aktivität ({label}): Faktor ×{factor} auf BMR",
+
+      "cut_movement_block_title": "Bewegung & Cardio (Aggressiv Cut)",
+      "cut_movement_block_hint":
+          "Defizit und Carbs hängen mit deinem Alltag zusammen: extra Cardio braucht Energie — weniger Bewegung erlaubt ein strafferes Defizit. Extra-Schritte (3.000–10.000) geben zusätzliche kcal, fast vollständig als Kohlenhydrate.",
+      "cut_want_label": "Ich will",
+      "cut_style_more_cardio": "Mehr Cardio",
+      "cut_style_standard": "Standard",
+      "cut_style_less_move": "Weniger Bewegung",
+      "cut_style_hint":
+          "Mehr Cardio: etwas milderes Defizit. Weniger Bewegung: etwas stärkeres Defizit (nur wenn du dich kaum bewegst). Standard: die SOL-Formel wie bisher.",
+      "cut_baseline_steps_title": "Extra-Schritte (Standard für deine Ziele)",
+      "cut_baseline_steps_body":
+          "Fester Wert für die kcal-Berechnung — z. B. weil du meist viel unterwegs bist. Beim aggressiven Cut ist der Zuschlag absichtlich klein (max. ca. 150 kcal, typisch eher ~100–150, kein großer Essens-Bonus).",
+      "cut_steps_short": "Extra-Schritte",
+      "cut_baseline_kcal_foot":
+          "≈ +{k} kcal aus Schritten (bei deinem Gewicht) bei {steps} Extra-Schritten.",
+      "cut_day_card_title": "Extra-Schritte — diesen Tag",
+      "cut_day_override_on": "Heute: eigener Wert (überschreibt den Standard).",
+      "cut_day_uses_baseline": "Heute: Standard aus den Einstellungen.",
+      "cut_day_kcal_line":
+          "Zusatz aus Schritten: ca. +{k} kcal Carbs · {steps} Extra-Schritte",
+      "cut_day_reset_baseline": "Auf Standard aus Einstellungen zurücksetzen",
+
+      // Advanced preset slider
+      "advanced_preset": "Preset",
+      "advanced_preset_cut": "Aggressiv Cut",
+      "advanced_preset_maintain": "Maintenance",
+      "advanced_preset_bulk": "Dirty Bulk",
+      "advanced_preset_hint":
+          "Richtung wählen: je weiter außen, desto näher am gesunden Maximum. Du kannst die Makros zusätzlich manuell anpassen.",
+      "apply_preset": "Preset übernehmen",
+
+      // Post-tracking blessing
+      "blessing": "Der Mensch lebt nicht vom Brot allein.",
+
+      "language_name_de": "Deutsch",
+      "language_name_en": "English",
+
+      "settings_ui_hints_title": "Hinweise zur Oberfläche",
+      "settings_ui_hints_body":
+          "Tageskarte (oben): Tippen öffnet Tag, Serie, Gewicht usw.\n\n"
+          "Makro-Bereiche: Balken = Ist im Korridor. Die früher unter den Balken stehende kursive Erklärung zu Anpassung und Tages-Bilanz findest du hier.\n\n"
+          "Weiche Tages-kcal: die Empfehlung nudgelt erst sichtbar, wenn mindestens drei Tage in Folge etwas geloggt wurde — damit einzelne Tage alles nicht verzerren.\n\n"
+          "Kcal je Mahlzeit — Einfach: ein Balken (Ist), zwei Marken (Unter- und Obergrenze), Zielmitte oben; rechts Puffer für Rot. — Fortgeschritten: Balken = Ist, vertikale Linie = Untergrenze, grün im Band.\n\n"
+          "Auf die Mahlzeiten-Zeile tippen: Makros & Einträge. Workout-Block: tippen teilt Pre/Post; dazu Titelzeile, Pfeil, ⊕-Menü (Food, Generator, Foto) wie in der ausgeklappten Ansicht.\n\n"
+          "7-Tage-Summe im Tages-Dialog: rollierend, Endtag = gewählter Tag.\n\n"
+          "Datenbank: „Highlights“ per Tippen auf- und zuklappen.\n\n"
+          "Im Generator: bei langen Lebensmittel-Listen erscheint die Scroll-Leiste rechts.\n\n"
+          "Nicht-Diät: Beim Pre-Workout ist der %-Korridor für Eiweiß an der Mahlzeit absichtlich niedriger (rund 5–14% der kcal des Slots) — 15–20% gehören fachlich eher ins Post-Workout (bzw. Abend in der Diät), nicht als Schwerpunkt fürs Pre.",
+    },
+    "en": {
+      "intro": "Intro",
+      "database": "Database",
+      "tracking": "Tracking",
+      "settings": "Settings",
+      "settings_appearance": "Appearance",
+      "settings_appearance_sub":
+          "Dark (default) or light preset — applies to the whole app immediately.",
+      "settings_theme_dark": "Dark",
+      "settings_theme_light": "Light",
+      "language": "Language",
+
+      "intro_section_einleitung": "Introduction",
+      "intro_section_bildung_title": "Unlock learning & app features",
+      "intro_section_bildung_sub":
+          "Placement, unlock quiz, deep-dive topics, infographic, and learning quizzes (stages 1–3) — work through them in order.",
+      "intro_hero_title": "SOL — Soldier of Light",
+      "intro_hero_sub":
+          "Not another calorie counter. SOL is active control: plan, execute, optimize.",
+      "intro_hero_caption":
+          "Stylized scene: the path forward and staying consistent—whether you’re new or a long way in.",
+      "intro_concept_title": "The concept",
+      "intro_concept_body":
+          "SOL doesn't force you into rigid plans — it gives you a system.\nYou set your goals; SOL distributes macros intelligently across your meals and suggests the right combination.",
+      "intro_terms_cut_bulk_title": "Aggressive Cut & Lean Bulk",
+      "intro_terms_cut_bulk_body":
+          "Aggressive Cut: a very strict diet phase — a clear calorie deficit and tight adherence, so you lose fat while doing your best to keep muscle.\n\nLean Bulk: clean, controlled muscle building — a modest surplus and focused macros so you grow without piling on unnecessary fat.",
+      "intro_mode_title": "The four modes",
+      "intro_mode_body":
+          "Maintenance: hold your current mass, flexible everyday eating.\nAggressive Cut: clear deficit while protecting muscle.\nLean Bulk: clean surplus for growth without fat gain.\nAdvanced: manual control or preset slider (Aggressive Cut ↔ Dirty Bulk).",
+      "intro_why_macros_title": "Why macros — not calories",
+      "intro_why_macros_body":
+          "First, the frame: food is meant to fuel you. What you eat beyond your needs for a long time, your body happily stores as fat — a reserve.\n\nCalories only tell you how much you ate. Macros tell you what your body does with it. That's why SOL asks only for macros — calories are derived.\n\nA calorie deficit alone doesn't mean fat loss: without enough protein, your body burns muscle. With enough protein and the right distribution, you protect muscle and target fat specifically.",
+      "intro_body_title": "How your body works",
+      "intro_body_body":
+          "Fat is an energy store. Surplus calories get stored — no matter if from fat, carbs or protein. A deficit draws from that store. What actually gets burned depends on your hormonal and nutrient profile. Building blocks: 1 g protein = 4 kcal, 1 g carbs = 4 kcal, 1 g fat = 9 kcal. In a deficit, your body may also tap muscle protein — so \"eat less\" without protein is not enough.\n\n• High protein (in SOL, up to 2.5 g/kg BW) → signal: \"keep muscle\".\n• Enough fat (0.75 g/kg BW) → hormones stay stable.\n• Carbs as the remainder → energy for training and brain.\n\nThat's why SOL's macro priority is: Protein → Fat → Carbs.",
+      "intro_macro_title": "Macro priority",
+      "intro_macro_body":
+          "1. Protein: protects muscle, keeps you full, high thermic effect.\n2. Fat: hormones, cell membranes, nutrient uptake, recovery.\n3. Carbs: energy for performance and brain — scaled to your target.",
+      "intro_recognize_macros_title": "Recognizing macros in food (short)",
+      "intro_recognize_macros_body":
+          "Rough rules for eyeballing and shopping — exact numbers are in the database per 100 g.\n\n• Complex carbs: starch-heavy — e.g. potatoes, rice, oats, whole grains, pasta, legumes.\n• Simple carbs: sweet stuff and fast hits — sugar, fruit & fructose in juices, soda, many pastries; zero-cal sweeteners don’t count as sugar here (almost no kcal).\n• Protein: rule of thumb — often foods that are solid/chunky: meat, fish, eggs, quark/cottage cheese, cheese, tofu (pure oil or pure sugar syrup isn’t protein).\n• Fat: oily, buttery, creamy, nuts, seeds, avocado, dairy fat — lots of energy in a small volume.",
+      "intro_how_title": "How to use SOL",
+      "intro_how_body":
+          "1. Settings: pick a mode, enter weight and body fat — SOL calculates your macros, calories are derived. Weekly charts/balances live in Settings too.\n2. Tracking: add foods per meal, or use the Generator for smart combinations.\n3. Daily: log weight, add notes, reset the day if needed.",
+      "intro_prepost_title": "Pre & Post Workout — Performance",
+      "intro_prepost_body":
+          "Pre- and post-workout meals aren’t ordinary meals — they’re tuned for performance.\n\nPre-workout: you give your body the part of the day’s energy it actually needs before training — fast-available carbs to top up glycogen, a bit of protein to protect muscle. You don’t walk into the gym tired, you walk in loaded.\n\nPost-workout: right after training the tanks are empty — glycogen is used up, muscle fibres are stressed. That’s exactly when your body absorbs nutrients most efficiently. Carbs refill the stores, protein kicks off repair. This is the window where training actually turns into growth.\n\nThat’s why these two meals stay together as a block in SOL — they belong to the training and are planned together.",
+      "intro_mindset_title": "Mindset",
+      "intro_mindset_body":
+          "Discipline beats motivation. Every meal is a decision. SOL gives you the structure — you bring the execution.",
+      "intro_infographic_title": "Nutrition at a glance",
+      "intro_infographic_caption":
+          "The same story as your Notion one-pager — as a clean SOL-style schematic (no cartoon asset), plus the colored cards below in your language.",
+      "intro_infographic_illustration_lead":
+          "Quick map: a functional mix (fuel, hormones, muscle) vs. quick excess (more body-fat storage). Details are in the tiles — same logic as your overview.",
+      "intro_infographic_hero_schematic_title": "Structure & energy (schematic)",
+      "intro_infographic_hero_chip_carbs": "Carbs · fuel",
+      "intro_infographic_hero_chip_fat": "Fat · hormones",
+      "intro_infographic_hero_chip_protein": "Protein · muscle",
+      "intro_infographic_hero_center_goal":
+          "Functional mix: everyday life, training, recovery",
+      "intro_infographic_hero_excess_path":
+          "Lots of sugary + hard-fat combos / chronic surplus → body fat as a \"reserve tank\" more than performance",
+      "intro_infographic_green_title": "Healthy fats",
+      "intro_infographic_green_body":
+          "The body needs them for hormones and restorative sleep, among other jobs.\n\nPart of the calories goes to messengers, cell structure, and repair — you usually need only a modest share. Examples: avocado, olive oil, nuts.\n\nOnly a little is needed — also for heart health, hormone balance, and sleep.",
+      "intro_infographic_orange_title": "Healthy carbs = energy",
+      "intro_infographic_orange_body":
+          "Steady fuel for the day, brain, and training — e.g. potatoes, rice, oats, legumes, whole grain.\n\nSimple vs complex (worth spotting day to day): complex carbs (starch, often with fiber) usually release energy more slowly and keep you fuller longer. Simple carbs (sugar, sweet drinks, lots of white flour) hit faster and can pack many kcal without much volume — in SOL you can see sugar and “complex” lines in the database.",
+      "intro_infographic_blue_title": "Protein",
+      "intro_infographic_blue_body":
+          "Builds and repairs tissue (including muscle) and helps satiety — e.g. salmon, beef, eggs, quark or cottage cheese.\n\nStrength training & muscle retention: often 1.4–2.5 g protein per kg body weight (e.g. 80 kg: about 112–200 g per day). To keep or build muscle, plan toward the upper half of that band — SOL typically uses up to 2.5 g/kg as an explainable default ceiling.",
+      "intro_infographic_red_title": "Sugary carbs & unhealthy fats",
+      "intro_infographic_red_body":
+          "Burgers, fries, donuts, bacon, a lot of deep-fried food: calories add up fast, often with little fiber and satiety.\n\nA common pattern: very sugary drinks and snacks together with lots of hard/saturated fat — that mix makes a chronic surplus easy.\n\nExcess energy from these combos tends to be stored as body fat.",
+      "intro_infographic_red_storage":
+          "What you don’t need right now is often stashed as fat — “stored energy” for harder days (a reserve).",
+      "intro_infographic_split_title": "Common daily calorie split (rule of thumb)",
+      "intro_infographic_split_carbs": "50 %\nCarbs",
+      "intro_infographic_split_protein": "30 %\nProtein",
+      "intro_infographic_split_fat": "20 %\nFat",
+      "intro_infographic_split_note":
+          "SOL derives your macros from weight, body fat, and goal — 50/30/20 is not a fixed rule here.",
+      "intro_infographic_summary_title": "Takeaways",
+      "intro_infographic_summary_1": "Protein = repair → growth → strength",
+      "intro_infographic_summary_2": "Healthy fats = important, but only in small amounts.",
+      "intro_infographic_summary_3":
+          "Complex carbs = energy — chronic excess tends to be stored as fat.",
+      "intro_edu_title": "Learning stages (quiz)",
+      "intro_edu_sub":
+          "Topics: SOL, macros & training (same thread as a Notion-style plan). Short, playful questions. Stage 2 unlocks after stage 1 is fully correct; stage 3 after 1 and 2 are done.",
+      "intro_edu_stufe_label": "Stage {n}",
+      "intro_edu_start": "Quiz",
+      "intro_edu_dialog_title": "Stage {n}",
+      "intro_edu_wrong": "Not quite—try another answer.",
+      "intro_edu_locked": "Finish the previous stage fully first.",
+      "intro_edu_stufe_done": "Stage {n} done—nice work!",
+      "intro_locked_hint":
+          "Full text unlocks after you pass the unlock quiz (max. 3 tries per day).",
+      "intro_unlock_title": "Unlock the write-ups",
+      "intro_unlock_sub":
+          "Read the first two topics, then take the short check (3 questions). That reveals the rest of the intro, the infographic, and the learning stages — later, each block can gate app features.",
+      "intro_unlock_button": "Open unlock quiz",
+      "intro_unlock_attempts": "Tries today: {n} / {m}",
+      "intro_unlock_limit": "At most 3 tries per day. Try again tomorrow — or get them all right in one go.",
+      "intro_unlock_passed_snack": "Write-ups unlocked — good luck with SOL.",
+      "intro_unlock_dialog_title": "Introduction — unlock check",
+      "intro_unlock_q1": "Which best describes SOL?",
+      "intro_unlock_q1_o0":
+          "A flexible system: your goals map to macros per meal — not a rigid weekly menu.",
+      "intro_unlock_q1_o1": "A fixed 7-day plan you must never adjust or skip.",
+      "intro_unlock_q1_o2": "Only a calorie target; how you split P/C/F barely matters.",
+      "intro_unlock_q2": "Typical macro priority in SOL (first concern)?",
+      "intro_unlock_q2_o0":
+          "Protein first (muscle & satiety), then sensible fat, then mostly carbs for energy",
+      "intro_unlock_q2_o1": "As few calories as possible, whether from sugar or protein only.",
+      "intro_unlock_q2_o2": "Fat must be zero or you cannot make progress.",
+      "intro_unlock_q3": "Why have a sensible fat minimum (rule of thumb per kg body weight)?",
+      "intro_unlock_q3_o0": "Only for taste, with no other role in the body.",
+      "intro_unlock_q3_o1":
+          "For hormone- and cell-related building blocks — not optional filler.",
+      "intro_unlock_q3_o2": "Fat fully replaces every calorie from carbohydrates.",
+      "placement_quiz_title": "Placement — knowledge check",
+      "placement_quit": "Exit",
+      "placement_gate_msg":
+          "Finish the short placement quiz in Introduction first.",
+      "placement_banner_title": "Placement required",
+      "placement_banner_body":
+          "Seven quick questions on nutrition & macros (including simple vs. complex carbs; aligned with your Notion-style overview). We set your starting tier (1–3). Then Database, Tracking, and Settings unlock.",
+      "placement_start": "Start placement",
+      "placement_done_snack": "Starting tier {n} · {c}/{m} correct. Let’s go!",
+      "placement_badge": "Placement: tier {n}",
+      "intro_knowledge_bar_title": "Knowledge",
+      "intro_knowledge_line": "{p} / {t} learning-check questions answered",
+      "intro_outro_title": "Ready?",
+      "intro_outro_body":
+          "You can reread this anytime. To get started: set your mode, weight, and body fat in Settings — then log your meals in Tracking. Plan first, day-to-day second.",
+      "intro_outro_settings": "Open Settings",
+      "intro_outro_tracking": "Open Tracking",
+      "edu_l1q1": "Which role does protein play most of all in the body?",
+      "edu_l1q1_o0": "Mainly the brain’s fastest fuel",
+      "edu_l1q1_o1": "Build and repair tissue (including muscle)",
+      "edu_l1q1_o2": "Hormone production only",
+      "edu_l1q2": "What do healthy fats usually support in a modest, appropriate amount?",
+      "edu_l1q2_o0": "Hormone balance, cell structure; also sleep and recovery",
+      "edu_l1q2_o1": "So you can drop all carbs",
+      "edu_l1q2_o2": "The body does not need fat at all",
+      "edu_l1q3":
+          "In practice, what’s the main difference between complex vs. (mostly) simple carbohydrates?",
+      "edu_l1q3_o0":
+          "Complex carbs (starch, often with fiber) usually fill you longer and raise blood sugar more gently; simple ones act faster (sugar, many sodas, white flour pastries, …).",
+      "edu_l1q3_o1": "There’s no real difference — it’s all marketing",
+      "edu_l1q3_o2": "Simple carbs are always the healthier choice",
+      "edu_l2q1": "If you eat much more than you burn for a long time, the typical outcome is:",
+      "edu_l2q1_o0": "It all leaves the body unused",
+      "edu_l2q1_o1": "Energy is often stored as body fat, among other places",
+      "edu_l2q1_o2": "Only protein is stored that way",
+      "edu_l2q2": "Common rough pie-chart splits (carb / protein / fat, % of kcal) look like",
+      "edu_l2q2_o0": "20 / 50 / 30",
+      "edu_l2q2_o1": "50 / 30 / 20",
+      "edu_l2q2_o2": "10 / 80 / 10",
+      "edu_l3q1": "A lot of very sugary, fried, and ultra-processed food typically means that",
+      "edu_l3q1_o0": "You gain lean muscle with no training",
+      "edu_l3q1_o1": "Dense kcal add up fast and weight gain (often fat) gets more likely",
+      "edu_l3q1_o2": "Body fat cannot change",
+      "edu_l3q2": "Why is protein at the front in SOL (and good practice), especially in a deficit?",
+      "edu_l3q2_o0": "It signals the body to keep lean mass in reach",
+      "edu_l3q2_o1": "Protein cannot be used for energy at all",
+      "edu_l3q2_o2": "Carbs do not matter and can be ignored",
+
+      "daily_overview": "Daily overview",
+      "kcal_merge_button": "Combined meal",
+      "kcal_merge_title": "Combined meal",
+      "kcal_merge_day_line":
+          "Day target (mid) {goal} kcal · eaten {eaten} kcal · left {rest} kcal",
+      "kcal_merge_scope_title": "Choose meals",
+      "kcal_merge_scope_all": "All meals",
+      "kcal_merge_scope_selected": "Selected meals",
+      "kcal_merge_meal_split": "Split by meal",
+      "kcal_merge_pre_warn_title": "Performance note (pre-workout)",
+      "kcal_merge_pre_warn_body":
+          "Pre-workout is performance-based — merging with other meals may affect training. Continue anyway?",
+      "kcal_merge_combined_title": "Combined meal",
+      "kcal_merge_combined_line":
+          "Total: {eaten} / {target} kcal ({delta})",
+      "kcal_merge_combined_rest": "Still open: {rest} kcal",
+      "kcal_merge_combined_eaten": "Eaten: {eaten} kcal",
+      "kcal_merge_open_short": "{v} open",
+      "kcal_merge_combined_includes": "Includes: {m}",
+      "kcal_merge_mode_on": "Enable",
+      "kcal_merge_mode_off": "Disable",
+      "kcal_merge_locked_title": "In combined meal",
+      "kcal_merge_locked_body":
+          "This meal is bundled — track via the combined meal section above.",
+      "kcal_merge_open_combined": "Go to combined meal",
+      "kcal_merge_pick_target_title": "Add to which meal?",
+      "kcal_merge_open_generator": "Open generator",
+      "continue_btn": "Continue anyway",
+      "ok": "OK",
+      "volume_day_kpi": "Total food volume today (g)",
+      "volume_meal_kpi": "Meal amount",
+      "rec_kcal_streak_hint":
+          "Note: the soft daily kcal tip only nudges upward after 3+ logged days in a row. If your body isn’t changing, follow the green daily band first.",
+      "meal_kcal_mode_title": "Meal kcal display",
+      "meal_kcal_mode_sub": "Simple: target center + green band. Advanced: min/max numbers as now.",
+      "meal_kcal_mode_simple": "Simple",
+      "meal_kcal_mode_advanced": "Advanced",
+      "settings_last_meal_kcal_title": "Last meal (kcal)",
+      "settings_last_meal_kcal_sub":
+          "For the last non-snack meal (usually dinner) the kcal band can follow what is left for the day — chosen once per day.",
+      "settings_last_meal_track_prompt": "Ask before logging",
+      "settings_last_meal_track_prompt_sub":
+          "When on: before the first add (food, generator, AI) for that meal, choose macro band vs. day remainder. Off = always use the macro band.",
+      "last_meal_kcal_prompt_title": "Last meal kcal for today",
+      "last_meal_kcal_prompt_body":
+          "Use your macro band from the split, or the rest of the day after other meals? You can also reserve a snack share.",
+      "last_meal_kcal_mode_macro": "Macro band (target split, as before)",
+      "last_meal_kcal_mode_remainder": "Day remainder (day kcal minus other meals / snack reserve)",
+      "last_meal_kcal_reserve_snacks": "Keep the planned snack band (mid) open for Snacks",
+      "meal_kcal_simple_target": "Target center: {k} kcal",
+      "meal_kcal_simple_bar_min": "Lower",
+      "meal_kcal_simple_bar_max": "Upper",
+      "meal_kcal_simple_hint":
+          "One bar: your actual kcal. Two marks: lower and upper. ~10% extra width past the top mark for the red over zone. Target center is above. Green in band, gold below, red over.",
+      "meal_kcal_advanced_bar_legend":
+          "Bar: logged kcal. Vertical line: lower bound. Green when within range.",
+      "barcode_food_in_db_title": "Already in your database",
+      "barcode_food_in_db_body": "This code matches a saved food — track it or create another entry (e.g. new batch).",
+      "db_duplicate_name_title": "Name already used",
+      "db_duplicate_name_body":
+          "You already have a custom food with this name. Compare the values — you can cancel or add another entry anyway.",
+      "db_duplicate_existing_label": "Saved item",
+      "db_duplicate_add_anyway": "Add anyway",
+      "db_duplicate_barcode_title": "Barcode already in your database",
+      "db_duplicate_barcode_body":
+          "This barcode is already linked. Only one custom entry is allowed per barcode — you cannot save a second one with the same code.",
+      "dialog_got_it": "OK",
+      "barcode_add_to_track": "Add to tracking",
+      "barcode_new_copy": "Create from preview",
+      "track_edit_grams": "Edit amount (g)",
+      "surplus_cheat_title": "Big surplus? Name it to stay in control",
+      "surplus_cheat_body":
+          "Only conscious eating and clear decisions make lasting success. Eating more once in a while is fine—what matters is keeping control, staying the one who decides, and not handing food the power over your mood. You can mark a cheat day to stay honest on the books—or keep going if that fits you.",
+      "surplus_mark_cheat": "Cheat day & plan",
+      "surplus_later": "Not now",
+      "daily_over_title": "Daily kcal over your target",
+      "daily_over_body": "So far: {eaten} kcal · goal: {goal} kcal — surplus +{over} kcal.",
+      "daily_over_steps_est":
+          "Rule of thumb: about {steps} extra walking steps ≈ +{kcal} kcal for your weight (rough estimate; movement is not a perfect offset).",
+      "daily_over_steps_cap":
+          "In «Cut» (Diät) mode, SOL can only credit up to +{cap} kcal from «Extra steps (today)» — if your surplus is larger, that won’t cover all of it in the app.",
+      "daily_over_apply_steps": "Apply extra steps (in SOL)",
+      "daily_over_cheat": "Log a cheat day & stay honest",
+      "daily_over_ignore": "Ignore: weaker control & focus",
+      "daily_over_ignore_body":
+          "Then measurable progress is easier to sideline, your body is more likely to store excess as fat, and quick, often hyper‑palatable calories tend to nudge people away from clear choices. You still decide—SOL keeps logging honestly.",
+      "daily_over_snack_steps": "Extra steps for today updated (+{k} kcal in the plan, within SOL’s cap).",
+      "daily_over_steps_no_diet":
+          "Raising plan steps like this is available in «Cut» (Diät) mode. The number above is a rough real-world ballpark only.",
+      "week_recap_kcal_stack": "Approx. kcal “saved” this week (cut, where applicable): {k} kcal",
+      "week_recap_fat_eq_line": "Rough fat-mass equivalent (~7000 kcal ≈ 1 kg): ≈ {f} kg",
+      "settings_lock_widget_hint":
+          "Lock screen widget: on Android/iOS, add a widget/shortcut in system settings; the app does not yet ship a built-in tile for that.",
+      "day": "Day",
+      "day_today": "Today",
+      "day_week_details": "7-day stats (details)",
+      "weekly_balance_kpi": "Week Δ (kg)",
+      "tracking_streak_label": "Streak",
+      "tracking_streak_hint":
+          "Consecutive days with at least one log, counting back from today. Nothing logged today = 0.",
+      "day_context_tap": "Day, streak, weight …",
+      "day_context_modal_title": "Day — details",
+      "week_balances_move_to_settings":
+          "Weekly charts and balances: Settings → Weekly balances.",
+      "week_chart_kcal_caption": "Avg kcal/day (recent weeks, older on the left)",
+      "week_chart_weight_caption":
+          "Scale change per week in kg (green +, red −; line at 0)",
+      "week_chart_no_weight_data":
+          "Not enough scale entries in these weeks — no weekly Δ.",
+      "week_balances_list_header": "All weeks (list)",
+      "goal_kcal": "Target kcal",
+      "actual_kcal": "Actual kcal",
+      "weight": "Weight",
+      "weekly_balance": "Weekly balance (calendar week, week start in settings)",
+      "week_start_settings": "Week start (balance & weekly recap)",
+      "week_start_hint":
+          "Monday is common in the EU, Sunday in many US-style apps. Sets which day your week starts (weight delta, recap).",
+      "week_start_dialog_title": "Choose week start",
+      "week_start_dialog_body":
+          "For the weekly balance and recap: which weekday starts your week? (We recommend Monday or Sunday.)",
+      "week_start_monday": "Monday",
+      "week_start_sunday": "Sunday",
+      "week_recap_title": "Last week — recap",
+      "week_recap_sub": "A quick look at the completed week up to yesterday. Consistency matters.",
+      "week_recap_kcal_avg": "Avg intake: {k} kcal/day (7d through week end)",
+      "week_recap_deficit": "Avg day balance: {d} kcal/day · sum: {s} kcal (goal − log, days with a goal)",
+      "week_recap_target_avg": "Avg goal: ~{g} kcal/day (days with a goal)",
+      "week_recap_weight_delta": "Scale Δ this week: {w} kg (first → last log)",
+      "week_recap_weight_avg": "Avg weight: {w} kg (n={n} entries)",
+      "week_recap_ok": "Continue",
+      "week_recap_encourage_cut":
+          "Good rhythm — discipline with a deficit is the game. Keep going — stay on it.",
+      "week_recap_encourage_bulk": "Gaining well takes time. Push training, eat smart, stay consistent.",
+      "week_recap_encourage_neutral": "Read the data, nudge the plan, keep showing up. You’re in the game.",
+      "meal_kcal_tap_hint": "Tap: macros & items",
+      "meal_kcal_day_share": "Share of day kcal target: {s}",
+      "week_balances_title": "Weekly balances",
+      "week_balances_sub":
+          "Charts and table — calendar weeks; week start as in “Week start”.",
+      "week_balance_open": "View weekly balances",
+      "calendar_pick_title": "Pick a day",
+      "calendar_weekstart_legend": "Background: your week-start day (balance week).",
+      "week_list_period": "Period: {from} – {to}",
+      "week_list_goalband": "Day kcal band (week avg, ±2%): {lo} – {hi} (avg {mid} kcal)",
+      "weekday_1": "Mon",
+      "weekday_2": "Tue",
+      "weekday_3": "Wed",
+      "weekday_4": "Thu",
+      "weekday_5": "Fri",
+      "weekday_6": "Sat",
+      "weekday_7": "Sun",
+      "protein_last_meal_nudge":
+          "Protein first: you’re at least 20g short of today’s target and you’re in your last main meal (snacks not counted) — prioritize protein now.",
+      "week_rollup_subtitle": "7-day view (rolling window, ends on the selected day)",
+      "week_rollup_intake_l": "Avg. intake (7d rolling):",
+      "week_rollup_deficit_day_l": "Avg. daily balance (goal − log, days with a cap):",
+      "week_rollup_deficit_sum_l": "7-day sum (goal − log, same days):",
+      "week_rollup_target_band_l": "Day kcal band (avg., ±2%):",
+      "week_rollup_target_band_v": "{lo} – {hi} (avg. {mid} kcal)",
+      "week_rollup_w_avg_l": "Avg. weight (logged days in the window, 7d):",
+      "day_balance_sec_today": "Today (log)",
+      "day_balance_sec_weight": "Weight",
+      "day_balance_sec_calendar": "This calendar week",
+      "day_balance_cw_sub":
+          "From your week start through this day. Week start: Settings → Week start.",
+      "day_balance_cw_row_label": "Change (scale, calendar week)",
+      "day_balance_sec_rolling7": "Last 7 days (rolling)",
+      "day_balance_sec_context": "Interpretation (model)",
+      "week_rollup_f_cut_l1":
+          "Fat-mass equivalent from 7-day kcal balance: ≈ {eq} kg/week (rule of thumb: 7000 kcal ≈ 1 kg fat).",
+      "week_rollup_f_cut_l2":
+          "Rough sustainable-loss ceiling (from body-fat reserve): ≈ {cap} kg/week.",
+      "week_rollup_f_cut_l3": "Scale change on the week: {wa} kg",
+      "week_rollup_f_bulk_l1":
+          "Kcal surplus ≈ {eq} kg mass eq./week (not all lean tissue or fat).",
+      "week_rollup_f_bulk_l2": "Practical upper bound: ≈ {cap} kg/week",
+      "week_rollup_f_bulk_l3": "Scale change on the week: {wa} kg",
+      "week_rollup_f_neutral_l1": "7-day sum (goal − log, days with a cap): {kcal7} kcal",
+      "week_rollup_f_neutral_l2": "Scale change: {wa} kg",
+      "week_mood_title": "How satisfied are you with this week’s performance?",
+      "week_mood_great": "Very satisfied",
+      "week_mood_ok": "It’s fine",
+      "week_mood_low": "Not so much",
+      "week_mood_text_great":
+          "When the plan is clicking, you can be proud. Keep pushing — you’re in rare air. Be proud: you are one of the few who show up. Be the person you want to be as a role model, and make it a little truer every day.",
+      "week_mood_text_ok":
+          "Don’t borrow stress. Your body has its own tempo: the scale wobbles, a few days later it can look very different, and in a surplus performance often bounces back after 1–2 real recovery days. Trust your body and focus on what you can steer: full gas in training, clean nutrition—stay on the levers you control.",
+      "week_mood_text_low":
+          "Tough weeks happen. Water, volume, training, recovery, hormones: the scale can mislead for a while, and that’s normal. No panic. Stay consistent and patient—you’re still steering the inputs that actually matter.",
+      "calories": "Calories",
+      "protein": "Protein",
+      "carbs": "Carbs",
+      "fat": "Fat",
+      "of_which_sugar": "of which sugar",
+      "details": "Details",
+      "add_food": "Add food",
+      "track_move_menu": "Move…",
+      "track_move_title": "Move to which meal?",
+      "track_move_hint":
+          "Food and grams stay the same — only the meal label changes.",
+      "track_move_target_label": "Target meal",
+      "track_move_confirm": "Move",
+      "track_move_none": "No other meal to move to.",
+      "track_food_menu_tooltip": "Move or delete",
+      "track_barcode": "Scan barcode (Open Food Facts)",
+      "generator": "Generator",
+      "track_add_ai_photo": "AI photo",
+      "kcal_shorthand": "kcal",
+
+      "meal_pre_workout": "Pre-Workout",
+      "meal_post_workout": "Post-Workout",
+      "meal_pre_paren": "before training",
+      "meal_post_paren": "after training",
+      "meal_main": "Main meal",
+      "meal_evening": "Dinner",
+      "meal_evening_first": "Breakfast",
+      "meal_evening_middle": "Lunch",
+      "meal_snacks": "Snacks",
+      "tracking_meals_block_title": "Meals",
+      "tracking_workout_block_title": "Workout",
+      "tracking_workout_sub_kcal": "∑ {k} kcal · pre+post",
+      "tracking_workout_popup_title": "Pre- & post-workout",
+      "workout_block_title_tooltip":
+          "Tap: pre- and post-workout open separately (items, macros, tracking)",
+      "workout_block_tap_split_hint":
+          "Tap the title to see pre- and post-workout split below.",
+      "pre_workout_carb_tip":
+          "Tip: 30–90 min before training favor complex carbs (about 15–20 % of your daily carb target), right before training favor simple (about 10–15 %).",
+      "pre_workout_carb_bar_complex": "Carbs · complex",
+      "pre_workout_carb_bar_simple": "Carbs · simple",
+      "pre_workout_carb_hint_complex_timing": "Aim: earlier (~30–90 min)",
+      "pre_workout_carb_hint_simple_timing": "Aim: right before training",
+
+      "cat_all": "All",
+      "cat_carbs": "Carbs",
+      "cat_protein": "Protein",
+      "cat_fat": "Fat",
+      "cat_fiber": "Fiber",
+      "cat_recipes": "Recipes",
+      "cat_fruit": "Fruit",
+      "cat_vegetable": "Vegetables",
+      "db_also_in": "Also under",
+      "type_all": "All",
+      "type_cut": "Cut",
+      "type_bulk": "Bulk",
+      "type_cut_full": "Cut (high volume)",
+      "type_bulk_full": "Bulk (low volume)",
+
+      "food_database": "Food database",
+      "db_highlights_title": "SOL — suggestions (top by source)",
+      "db_highlights_collapse_hint": "Tap to show suggestions & how to read the order",
+      "db_highlights_sub":
+          "Set Type below to Diet or Bulk. In each row, slots 1–2 are best for that goal, 3 is neutral (kcal near the middle), 4–5 lean to the other goal — still fine to eat, but often harder to hit your focus. With Type set to All: diet picks first, then neutral, then bulk. The small number is position (1–5). For protein, favorites may appear first; numbers follow the visible order left to right.",
+      "db_hl_protein": "Protein (2+2+1 · g / 100 g)",
+      "db_hl_fat": "Fat (2+2+1 · g / 100 g)",
+      "db_hl_fiber": "Fiber (2+2+1 · g / 100 g)",
+      "db_hl_carbs_c": "Carbs — complex (2+2+1)",
+      "db_hl_carbs_s": "Carbs — simple (2+2+1)",
+      "db_hl_recipes": "Recipes (suggestions, max 5)",
+      "db_highlights_foot":
+          "Full database below; filter by source and category. Barcode: Open Food Facts; quick add: name + optional photo reference.",
+      "db_user_star_label": "Your highlight (softer frame)",
+      "db_user_star_hint":
+          "For your own foods only. Shown depending on type filter: diet, bulk, or general — subtler than SOL top picks.",
+      "db_user_star_off": "None",
+      "db_user_star_diet": "Diet",
+      "db_user_star_bulk": "Bulk",
+      "db_user_star_all": "General",
+      "db_personal_rating_section": "Your rating (1–3)",
+      "db_personal_rating_hint":
+          "Optional — how this food works for you. Narrow the list with the filters below.",
+      "db_personal_rating_performance": "Performance",
+      "db_personal_rating_tolerance": "Tolerance",
+      "db_personal_rating_off": "—",
+      "db_personal_rating_perf_1": "weak",
+      "db_personal_rating_perf_2": "ok",
+      "db_personal_rating_perf_3": "top",
+      "db_personal_rating_tol_1": "poor",
+      "db_personal_rating_tol_2": "ok",
+      "db_personal_rating_tol_3": "good",
+      "db_personal_rating_performance_short": "Perf.",
+      "db_personal_rating_tolerance_short": "Tol.",
+      "db_personal_filter_performance": "Performance filter",
+      "db_personal_filter_tolerance": "Tolerance filter",
+      "db_personal_filter_button": "My ratings",
+      "db_personal_filter_sheet_title": "Filter by rating",
+      "db_personal_filter_sheet_hint":
+          "Optional — filters your 1–3 ratings from the food card.",
+      "db_personal_filter_reset": "Reset filters",
+      "db_personal_filter_active": "Active: {s}",
+      "db_personal_filter_all": "All",
+      "db_personal_filter_only3": "only 3",
+      "db_personal_filter_min2": "≥ 2",
+      "db_personal_filter_rated": "rated",
+      "db_personal_filter_none": "none",
+      "db_source_filter_label": "Source",
+      "db_source_all": "All",
+      "db_source_mine": "My foods",
+      "db_source_sol": "SOL catalog",
+      "recipe_flavor_filter_label": "Flavor (sweet / savory)",
+      "recipe_flavor_all": "All",
+      "recipe_flavor_sweet": "Sweet",
+      "recipe_flavor_salty": "Savory",
+      "food_flavor_none": "Not set",
+      "db_carb_source_tile": "Carb source",
+      "db_carb_source_sheet_title": "Choose carb source",
+      "db_carb_source_tile_sub": "Sustained vs. quick energy",
+      "db_carb_source_intro":
+          "“Complex” carbs usually deliver energy more slowly; “simple” carbs are available fast. This works alongside your listed sugar in the macros.",
+      "db_carb_source_complex_blurb": "More whole foods, legumes, longer satiety",
+      "db_carb_source_simple_blurb": "Faster to absorb (sugar, juice, etc.)",
+      "db_edit_food": "Edit food",
+      "meal_gen_optional_recipe": "Optional: add a recipe",
+      "db_barcode_add": "Barcode Scanner",
+      "ai_settings_title": "AI meal (photo)",
+      "ai_settings_sub":
+          "Enter a Gemini API key from Google AI Studio (free tier may be available). Your photo is sent to Google for analysis — use only if you are OK with that.",
+      "ai_settings_key_label": "Gemini API key",
+      "ai_tracker_tooltip": "Photo meal (AI estimates foods & grams)",
+      "ai_no_key": "Add an API key in Settings first.",
+      "ai_open_settings": "Settings",
+      "ai_pick_source": "Choose photo",
+      "ai_pick_source_sub": "Camera or gallery — good light, dish mostly visible.",
+      "ai_gallery": "Gallery",
+      "ai_camera": "Camera",
+      "ai_analyzing": "AI is analyzing the photo…",
+      "ai_error_empty": "No matching foods found.",
+      "ai_error_empty_db": "No foods in the database yet.",
+      "ai_error_net": "API error — check network, key, or quota.",
+      "ai_error_timeout": "Request timed out — try again.",
+      "ai_error_blocked": "Request blocked — try a different photo.",
+      "ai_review_title": "Review AI suggestion",
+      "ai_add_all": "Add all",
+      "ai_unmatched_line": "No confident match for “{n}” — please pick a food.",
+      "grams_short": "g",
+      "db_quick_name_add": "Quick: name (optional photo)",
+      "db_off_preview_title": "Review & save (per 100 g)",
+      "db_off_category": "Category in SOL",
+      "db_off_error": "Network or service error — try again.",
+      "db_off_not_found": "Product not found in Open Food Facts.",
+      "db_barcode_short": "Code too short — scan full barcode.",
+      "db_quick_title": "Quick & lazy",
+      "db_quick_body":
+          "Name only; macros start at 0/100g — fill in the card later (or use the barcode). Optional reference photo, no text recognition yet.",
+      "db_quick_snap": "Reference photo (camera)",
+      "db_quick_snack":
+          "Photo in cache — please enter values in the food card later.",
+      "db_food_photo_label": "Photo (optional)",
+      "db_food_photo_pick_gallery": "Gallery",
+      "db_food_photo_pick_camera": "Camera",
+      "db_food_photo_remove": "Remove photo",
+      "carb_tag_complex": "Complex",
+      "carb_tag_simple": "Simple",
+      "filter": "Filter",
+      "search_food": "Search food...",
+      "mode": "Mode",
+      "delete": "Delete",
+      "values_per_100g": "Values per 100g",
+      "save": "Save",
+      "name": "Name",
+      "carbs_total": "Carbs (total)",
+      "of_which_fiber": "of which fiber",
+      "of_which_complex": "of which complex",
+
+      "meal_macros_title_suffix": "macros %",
+      "meal_macro_day_share_hint":
+          "Center % = your share of the daily target. Min/max = allowed band. Bars do not use leftover kcal.",
+      "meal_macro_pct_from": "Min (%)",
+      "meal_macro_pct_to": "Max (%)",
+      "meal_macro_save_invalid_band":
+          "Invalid: use 0–100 and min ≤ max for each macro.",
+      "meal_macro_grams_daily_share": "of daily target",
+      "meal_macro_combined_input_hint":
+          "One line: e.g. 20, 5–12 %, 40 g, 10–20 g. Without a range: use buffer (Advanced, below).",
+      "meal_macro_combined_label_suffix": "%, g, from–to",
+      "meal_macro_adv_buffer_title": "Buffer (±) per macro (this meal)",
+      "meal_macro_adv_buffer_body":
+          "For a single % per macro: min–max = center ± buffer. Three sliders — left = tight, right = loose. If you type an explicit min–max, that wins; buffers apply only to single-number rows.",
+      "meal_macro_adv_buffer_p": "± percentage points · protein",
+      "meal_macro_adv_buffer_c": "± percentage points · carbs",
+      "meal_macro_adv_buffer_f": "± percentage points · fat",
+      "meal_macro_kcal_band_preview":
+          "This meal (kcal from % min/max): {lo} – {hi} kcal",
+      "meal_macro_slider_band_live":
+          "Live: {lo}–{hi} %  →  {g1}–{g2} g (day share)",
+      "meal_macro_slider_no_buffer_for_explicit_range":
+          "Range from the text field – buffer slider has no effect here.",
+      "meal_macro_parse_invalid":
+          "Could not read input. Use a number, %, g, or a from–to range (e.g. 5–10 or 5–10 %).",
+      "free_suffix": "free",
+      "edit_meal_percent_tooltip": "Adjust distribution",
+      "meal_percent_locked_tooltip":
+          "The macro distribution is fixed in this mode. Switch to Advanced to set it yourself.",
+      "macro_bar_footnote_of_day": "· of day",
+      "settings_meal_macro_section_title": "Macro distribution",
+      "settings_meal_macro_section_sub":
+          "The % in the bar = share of your daily g for this view. The % you enter in the dialog = your target per meal (100% per macro in total).",
+      "settings_meal_macro_col_protein": "Day shares: protein (per meal)",
+      "settings_meal_macro_col_carbs": "Day shares: carbs (per meal)",
+      "settings_meal_macro_col_fat": "Day shares: fat (per meal)",
+      "settings_meal_macro_bands_list": "Center & min–max per meal",
+      "settings_meal_macro_column_hint": "Free: {f}% = {g} g",
+      "settings_meal_macro_sum_all": "Total: {s}% (of 100%)",
+      "settings_meal_macro_remainder_all": "Still available: {r}% = {g} g",
+      "settings_meal_macro_excess_all": "Exceeds 100% by {o}%.",
+      "settings_meal_macro_editor_hint":
+          "Slider per meal — total max 100%.",
+      "settings_input_invalid": "Enter a number 0–100 in each field.",
+
+      "distribution_too_high":
+          "Too high: per macro the sum can be 100% max.",
+
+      "meal_generator_title": "Meal Generator",
+      "meal": "Meal",
+      "missing_protein": "Missing protein",
+      "missing_carbs": "Missing carbs",
+      "missing_fat": "Missing fat",
+      "protein_source": "Protein source",
+      "carbs_source": "Carb source",
+      "fat_source": "Fat source",
+      "recommendation": "Suggestion",
+      "achieved": "Achieved",
+      "gen_step_1": "1 · Pick protein",
+      "gen_step_2": "2 · Pick carbs",
+      "gen_step_3": "3 · Pick fat",
+      "gen_step_review": "4 · Grams & confirm",
+      "gen_none": "— None (skip this source)",
+      "gen_search": "Search…",
+      "gen_back": "Back",
+      "gen_suggest": "Quick suggestion (all 3 sources)",
+      "gen_suggest_no_foods":
+          "The database is missing an item for this mode/category. Try another mode or add manually.",
+      "gen_review_explain": "Here are the suggested grams. Adjust if you like, then add to tracking.",
+      "gen_warn_skipped": "You skipped “{m}” while still {g} g short — you’ll rarely match your goal like this.",
+      "gen_warn_mismatch": "This combo is fairly far from your remaining needs (rough total gap ~{s} g across macros).",
+      "gen_grams_field": "Amount (g), editable",
+      "gen_food_per_100_short": "per 100 g",
+      "gen_food_list_scroll_hint": "Scroll the list — scrollbar on the right",
+      "gen_meal_macro_preset": "Macro split (this meal)",
+      "gen_meal_macro_hint":
+          "Percent of daily goal (same as meal settings). “Missing …” below uses this.",
+      "gen_meal_macro_reset": "Match settings",
+      "gen_meal_macro_save": "Save to meal split",
+      "gen_recipe_ideas_title": "SOL recipe ideas",
+      "gen_recipe_ideas_sub":
+          "One sweet & one savory pick (top suggestion for your mode).",
+      "gen_pick_recipe": "Use as recipe",
+      "gen_no_recipe_pick": "No matching recipe in the database.",
+      "abbr_protein": "P",
+      "abbr_carbs": "k",
+      "abbr_fat": "F",
+      "fallback_note": "Note: approximate calculation (combo hard to solve exactly).",
+      "add_to_tracking": "Add to tracking",
+
+      "choose_food": "Choose food",
+      "track_carb_subfilter_label": "Sub-type",
+      "track_sol_suggestion": "SOL suggestion (top pick for your nutrition mode)",
+      "grams": "Grams",
+      "add": "Add",
+      "track_input_mode": "Input",
+      "track_mode_grams": "Grams (amount)",
+      "track_mode_kcal": "Kilocalories (target)",
+      "track_mode_protein": "Protein (target, g)",
+      "track_mode_carbs": "Carbs (target, g)",
+      "track_mode_fat": "Fat (target, g)",
+      "track_value_label": "Value",
+      "track_preview": "→ about {g} g",
+      "track_error_bad":
+          "Invalid number, or 0 in per-100g data for that target. Use grams or another target.",
+      "recipe_info_tooltip": "Recipe: image, ingredients, steps",
+      "recipe_ai_generate": "Generate (AI) image",
+      "recipe_ai_placeholder_hint":
+          "No photo yet. Create a matching image with KI (Imagen) – same API key as in settings (Google AI Studio; Imagen may need to be enabled).",
+      "recipe_ai_key_hint": "Add your API key in settings.",
+      "recipe_ai_error": "Could not create image (check quota, API, or Imagen model).",
+      "recipe_base_grams": "1 serving = {g} g (reference for tracking)",
+      "track_recipe_portion_tab": "Serving",
+      "track_recipe_grams_tab": "Grams",
+      "track_recipe_portion_label": "Number of servings",
+      "track_recipe_grams_label": "Amount (g)",
+      "track_recipe_presets": "Quick",
+      "track_advanced": "Target (advanced)",
+      "track_back_simple": "Simple",
+      "track_recipe_result": "→ {g} g · {kcal} kcal · P {p} · C {c} · F {f}",
+      "track_recipe_no_base":
+          "No reference serving set — use grams or advanced.",
+
+      "sol_calculator": "SOL calculator",
+      "weight_kg": "Weight (kg)",
+      "bodyfat_pct": "Body fat estimate (%)",
+
+      "bodyfat_estimate_btn": "Estimate body fat",
+      "bodyfat_estimator_title": "Body fat estimator",
+      "bodyfat_what_title": "What is body fat %?",
+      "bodyfat_what_body":
+          "Body fat percentage (BF%) is the share of your weight that is fat — the rest is fat-free mass (muscle, organs, water, bone).\n\nSOL uses your BF% to compute your basal metabolism and thus your calorie needs (via fat-free mass). Protein and fat scale directly with bodyweight (2.5 g/kg BW for protein, 0.75 g/kg BW for fat). The more accurate your BF%, the sharper your kcal targets.\n\nReference: men ~10–15% = athletic, ~16–20% = normal, >22% = visible fat gain. Women physiologically run ~8–10 points higher.",
+      "bodyfat_method": "Method",
+      "bodyfat_method_tape": "Tape (Navy)",
+      "bodyfat_method_visual": "Visual match",
+      "bodyfat_sex": "Sex",
+      "bodyfat_sex_male": "Male",
+      "bodyfat_sex_female": "Female",
+      "bodyfat_height": "Height (cm)",
+      "bodyfat_waist": "Waist (cm, at navel, relaxed)",
+      "bodyfat_neck": "Neck (cm, below Adam's apple)",
+      "bodyfat_hip": "Hip (cm, widest point)",
+      "bodyfat_navy_hint":
+          "Measure in the morning, relaxed, don't suck in. Accuracy ~±3%.",
+      "bodyfat_visual_hint":
+          "Pick the level closest to your mirror image. Each level has an AI reference illustration. Roughly ~±4–5%.",
+      "bodyfat_result": "Estimated BF%",
+      "bodyfat_ref_section_title": "Reference silhouettes (approx.)",
+      "bodyfat_ref_section_hint":
+          "Illustrations are only a rough guide — real BF% varies with genetics, water, lighting.",
+      "bodyfat_apply_result": "Use as BF%",
+      "bodyfat_invalid_input": "Please fill all fields with plausible values.",
+      "bodyfat_vis_m_1": "Ripped — deep ab definition, visible vascularity (bodybuilder look)",
+      "bodyfat_vis_m_2": "Athletic — clear six-pack, strong muscle definition",
+      "bodyfat_vis_m_3": "Fit — six-pack visible when flexed, flat stomach",
+      "bodyfat_vis_m_4": "Average — softer stomach, no visible abs",
+      "bodyfat_vis_m_5": "Slight paunch — softer lines, belly building up",
+      "bodyfat_vis_m_6": "Clear fat gain — round belly, little muscle definition",
+      "bodyfat_vis_f_1": "Very athletic — clear muscle definition, visible ab lines",
+      "bodyfat_vis_f_2": "Athletic — fit, slightly visible abs, defined arms",
+      "bodyfat_vis_f_3": "Fit — toned, flat stomach, soft definition",
+      "bodyfat_vis_f_4": "Average — soft contours, no visible abs",
+      "bodyfat_vis_f_5": "Curvier — more fat at hips/thighs, softer belly",
+      "bodyfat_vis_f_6": "Clear fat gain — rounder belly and hips",
+      "age": "Age",
+      "calc_note":
+          "Note: from around 45 the deficit is set more conservatively (muscle protection).",
+      "calc_required_for_mode":
+          "Enter weight, body fat and age, then tap Apply — required to switch mode.",
+      "cancel": "Cancel",
+      "apply": "Apply",
+      "got_it": "Got it",
+      "deviation_warning_title": "Stick to your plan — focus, discipline!",
+      "deviation_warning_ack": "Understood, I'll stay on track",
+      "deviation_warning_cut_attention": "Heads up!",
+      "deviation_warning_cut_body":
+          "Your numbers are already at the maximum of what's healthy. Anything you cut beyond that only burns muscle — not fat.\n\nYour body can break down at most around 70 kcal per kg of body fat per day. Anything more you try on your own goes against nature and against your own discipline.\n\nStick to your plan — that's how you reach the goal faster than with misplaced ambition.",
+      "deviation_warning_bulk_body":
+          "You've been clearly off your plan for a few days. Eating more doesn't mean growing faster — the surplus lands as fat, not muscle.\n\nStick to your numbers. Clean growth needs patience and discipline, not blind overshoot.",
+      "deviation_warning_motto":
+          "\"Man does not live by bread alone.\" 🌞",
+
+      "day_balance_prefix": "Balance",
+      "reset_day_title": "Reset day",
+      "reset_day_body": "Delete all tracking entries?",
+      "settings_reset_day_tile": "Clear tracking day",
+      "settings_reset_day_sub":
+          "For the day selected in Tracking (calendar) — same as the old top button.",
+      "macro_bar_footnote_meal_slot": "· meal center (g)",
+      "weight_time_label": "Weighed at",
+      "weight_kpi_with_time": "{k} kg · {t}",
+      "weight_form_pick": "Form update (optional photo)",
+      "weight_form_pick_gallery": "Gallery",
+      "weight_form_pick_camera": "Camera",
+      "weight_form_where_hint":
+          "Saved photo: preview here, under day details (day row), and in day balance.",
+      "reset": "Reset",
+      "enter_weight": "Enter weight",
+      "invalid_input": "Invalid input!",
+      "settings_weight_block_title": "Weight",
+      "settings_auto_weight_morning": "Open weight dialog in the morning",
+      "settings_auto_weight_morning_sub":
+          "Between 5:00 and 12:00, the weight dialog appears if you have not logged weight for today (at most once). You can dismiss it without saving — it will not show again that day.",
+
+      "mode_everyday": "Maintenance",
+      "mode_cut": "Aggressive Cut",
+      "mode_bulk": "Lean Bulk",
+      "mode_advanced": "Advanced",
+      "open_calculator": "Open calculator",
+      "daily_goals": "Daily goals",
+      "goal_protein": "Protein goal",
+      "goal_carbs": "Carbs goal",
+      "goal_fat": "Fat goal",
+      "goal_kcal_label": "Calories goal",
+      "target_short": "Goal",
+      "range_hint":
+          "Stay inside the corridor — no need to hit a single point, just land between the values.",
+      "range_hint_bilanz":
+          "Amber: soft daily hint (rolling week balance) — does not change your real day targets or macro bands.",
+      "week_band_nudged_caption":
+          "The band readout nudges slightly with your 6-day prior balance (display only).",
+      "display_rec_kcal": "Balance hint today: {v} kcal",
+      "intake_streak_note":
+          "Note: for {n} days in a row, kcal log differs a lot from your daily target — check rhythm (stress, estimates, or planned breaks).",
+      "recipe_ingredients": "Ingredients",
+      "recipe_instructions": "Instructions",
+      "mode_age_hint":
+          "Aggressive Cut: ages 16–50 · Advanced: 16+",
+      "mode_blocked_title": "Caution — health risk",
+      "mode_blocked_cut_too_young":
+          "Aggressive Cut is only recommended from age 16. While your body is still developing it needs more energy — not less. Switch to Alltag mode for a balanced setup.",
+      "mode_blocked_cut_too_old":
+          "Aggressive Cut is no longer advisable from 50+ — the risk of muscle loss, hormonal swings and bone density loss is too high. Stay in Alltag mode or pick Lean Bulk to gently maintain.",
+      "mode_blocked_advanced_too_young":
+          "Advanced assumes a fully developed metabolism — unlocked from age 16. Use Alltag mode until then for safe, balanced numbers.",
+      "mode_blocked_age_missing":
+          "Please enter your age in the SOL Calculator first before activating this mode.",
+      "mode_blocked_use_alltag": "Switch to Alltag",
+      "mode_blocked_cancel": "Cancel",
+      "gender_label": "Gender",
+      "gender_male": "Male",
+      "gender_female": "Female",
+      "cheatday_title": "Cheatday",
+      "cheatday_open": "Manage cheatday",
+      "cheatday_open_short": "Cheatday",
+      "cheatday_active_today": "Today is a cheatday.",
+      "cheatday_warning_title": "Be aware",
+      "cheatday_warning_body":
+          "Be aware of what you’re doing.\n\nA controlled cheatday is okay — as long as you stay in command of yourself the whole time.\n\nThis mode buys today’s freedom with the progress of the next days. Make the call sober — never out of impulse.",
+      "cheatday_continue": "Activate consciously",
+      "cheatday_cancel": "Better not",
+      "cheatday_choose_sacrifice": "How many days of progress do you sacrifice?",
+      "cheatday_sacrifice_one": "1 day",
+      "cheatday_sacrifice_n": "{n} days",
+      "cheatday_sacrifice_hint":
+          "Assumed daily deficit: ~{def} kcal (maintenance − target). With {n} days sacrificed: +{extra} kcal (today ≈{total} vs. {base} kcal). Keep the sacrificed days clean afterward.",
+      "cheatday_use_crashout": "Crashout (instead of 1–4 days)",
+      "cheatday_crashout_explainer":
+          "Crashout: no upper limit, only minimum protein & fat must be covered. Counts as 2 cheatdays. Use it when the brakes have truly snapped — consciously, not in a frenzy.",
+      "cheatday_credits_label": "Cheatday balance this month",
+      "cheatday_credits_format": "{used} of {max} used",
+      "cheatday_bonus_earned":
+          "Bonus active (+1) — you only sacrifice small amounts, that’s rewarded.",
+      "cheatday_bonus_hint":
+          "Bonus cheatday: if ALL your cheats this month sacrifice ≤ 2 days, you get a 5th one.",
+      "cheatday_no_credits":
+          "No more credits this month. New month starts again at 4.",
+      "cheatday_already_active": "Today already has a cheatday active.",
+      "cheatday_remove": "Remove cheatday again",
+      "cheatday_removed": "Cheatday removed for today.",
+      "cheatday_activated": "Cheatday activated. Stay in control.",
+      "cheatday_summary_normal":
+          "Sacrifice: {n} d · +{extra} kcal (≈{def} kcal/d deficit) → today ≈{total} kcal (base {base} kcal)",
+      "cheatday_summary_crashout":
+          "Crashout · no upper limit · minimum protein/fat only",
+      "cheatday_active_banner_title": "Cheatday active",
+      "cheatday_active_banner_subtitle":
+          "Eat consciously, enjoy in control — deliver tomorrow.",
+      "cheatday_min_only": "Minimum only",
+      "cheatday_no_max": "no maximum",
+      "cheatday_credits_short": "{used}/{max} credits",
+      "cheatday_budget_title": "Cheatday budget (Advanced)",
+      "cheatday_budget_hint":
+          "Default: 4 per month plus 1 bonus if every cheat sacrifices ≤2 days. In Advanced you can set a fixed monthly cap instead.",
+      "cheatday_budget_use_sol": "SOL rule (4+bonus)",
+      "cheatday_budget_max_slider": "Custom monthly max",
+      "cheatday_budget_foot": "This month: {used} of {max} credits",
+      "cheatday_bonus_hint_manual": "Custom monthly cap — no auto-bonus rule.",
+      "cheatday_kcal_readout_title": "Calories on cheat day",
+      "cheatday_kcal_readout_main": "≈{total} kcal target today",
+      "cheatday_kcal_readout_plus":
+          "+{extra} kcal over your normal daily target ({base} kcal)",
+      "cheatday_kcal_readout_per":
+          "≈{per_day} kcal per sacrificed progress day × {n}",
+      "cheatday_kcal_readout_no_deficit":
+          "No planned daily deficit — no bonus above your base target ({base} kcal).",
+      "cheatday_kcal_readout_crashout":
+          "Crashout: no fixed daily cap, so no single kcal number.",
+      "cheatday_kcal_banner_line":
+          "Today ≈{total} kcal · +{extra} kcal (≈{per_day} kcal per sacrificed day × {n})",
+      "cheatday_sacrifice_foot": "Keep the sacrificed days after on plan.",
+      "cheatday_activated_with_kcal":
+          "Cheatday on — today ≈{total} kcal target (≈{per_day} kcal × {n} sacrificed days).",
+      "edit_goals_advanced": "Edit goals (Advanced)",
+      "goals_auto_note": "Auto mode: goals driven by formula",
+      "formula_info": "Formula info",
+      "formula_current_masses": "Current masses",
+      "formula_maintenance": "Maintenance",
+      "formula_macro_title": "Macro formulas",
+      "formula_macro_protein": "• Protein = 2.5 g × body weight",
+      "formula_macro_fat": "• Fat: Alltag 0.9 g · Lean Bulk 1.0 g · Cut 0.75 g × bodyweight",
+      "formula_macro_carbs": "• Carbs = remaining calories",
+      "formula_kcal_title": "Calorie logic by mode",
+      "formula_kcal_everyday": "• Maintenance: calories = maintenance",
+      "formula_kcal_cut_prefix": "• Aggressive Cut: deficit = fat mass × ",
+      "formula_kcal_cut_suffix": " kcal (age adjusted)",
+      "formula_kcal_cut_current": "→ current deficit: ",
+      "formula_kcal_bulk": "• Lean Bulk: clean surplus (approx. +150 to +300 kcal)",
+      "formula_kcal_hint":
+          "Note: at higher age the deficit is set more conservatively to protect muscle.",
+
+      "goals_dialog_title": "Daily goals",
+
+      "day_note": "Note",
+      "no_note": "No note",
+      "edit_note": "Edit note",
+      "note_hint": "Thoughts, training, how you feel...",
+      "meal_note": "Meal note",
+      "meal_note_hint":
+          "Only for this meal on this day (e.g. what you eat, plans, how you feel, notes for the slot).",
+      "meal_note_checklist_sub":
+          "Check = done, text is struck through. Add lines to remember e.g. electrolytes. „Add line“ for more items.",
+      "meal_note_add_line": "Add line",
+      "meal_note_line_hint": "e.g. + electrolytes, extra scoop…",
+      "meal_note_remove_line": "Remove line",
+      "meal_expand_inline": "Show or hide macro table",
+      "meal_open_tracked": "Tracked foods & amounts",
+      "meal_add_menu": "Add food, generator, or AI photo",
+      "meal_tracked_popup_title": "Tracked: {m}",
+      "meal_tracked_empty":
+          "Nothing here yet. + for food, generator, or AI photo.",
+      "track_edit_mode_g": "g",
+      "track_edit_mode_kcal": "kcal",
+      "track_edit_portion_hint":
+          "Scroll unit and amount, or tap the value — macros update live.",
+      "track_portion_manual_title": "Enter amount",
+      "track_mode_short_protein": "P",
+      "track_mode_short_carbs": "C",
+      "track_mode_short_fat": "F",
+      "track_edit_grams_only": "g only (no usable per-100g kcal or macros).",
+      "meal_compact_gestures_hint":
+          "Arrow: macros. Title: entries. + : food, generator, or AI photo.",
+
+      "alltag_distribution": "Distribution",
+      "alltag_performance": "Performance",
+      "alltag_relaxed": "Relaxed",
+      "alltag_distribution_hint":
+          "Performance = stricter meal split, slightly fewer kcal. Relaxed = more even, slightly more kcal. Also: looser per-meal % bands (widest for fat), slightly wider daily kcal band, fat target ~0.9 g/kg (minimum 0.6 g/kg).",
+      "alltag_kcal_change_label": "kcal adjustment",
+      "alltag_apply": "Apply",
+      "alltag_applied_msg": "Distribution & kcal updated.",
+      "meal_order_title": "Meal order",
+      "meal_order_hint":
+          "Long-press the drag handle and reorder the meals through the day. Pre + Post stay together as one block.",
+      "meal_order_free_hint":
+          "In Alltag & Advanced: every meal is its own row — Pre- and Post-Workout can be split and moved anywhere. Pencil: rename (only in these modes).",
+      "meal_order_free_sub": "Pre/Post split · free ordering",
+      "meal_order_rename": "Rename meal",
+      "meal_rename_title": "Meal name",
+      "meal_rename_label": "Name in tracking",
+      "meal_order_block_hint": "Pre + Post — locked block",
+      "meal_order_snacks_locked":
+          "Snacks always stay on top and can’t be reordered.",
+      "commitment_title": "Commitment — full send",
+      "commitment_body":
+          "This mode runs at the high end of what’s sane and healthy. It’s not comfortable — and you’re choosing it on purpose. You follow the plan when it’s hard, because that’s the point.",
+      "commitment_quote":
+          "“Discipline means going after what’s uncomfortable — as if it were the dearest thing in the world to you.”",
+      "commitment_checkbox":
+          "I accept the trade‑offs and I stay focused, even when it’s uncomfortable.",
+      "commitment_confirm": "I commit",
+      "commitment_decline": "Not now",
+      "mode_aggressive_badge": "HERE WE GO — intensity phase",
+      "mode_aggressive_sub":
+          "Aggressive cut / lean bulk: not a comfort cruise. Full consequence, full focus.",
+
+      "activity_level_title": "Activity level",
+      "activity_level_hint":
+          "Independent of extra steps. Sets your maintenance kcal in every mode — protein and fat stay fixed, carbs adjust.",
+      "activity_level_very_active": "Very active",
+      "activity_level_normal": "Normal",
+      "activity_level_low": "Low everyday",
+      "formula_activity_line":
+          "• Activity ({label}): factor ×{factor} on BMR",
+
+      "cut_movement_block_title": "Movement & cardio (aggressive cut)",
+      "cut_movement_block_hint":
+          "Deficit and carbs match your day: extra cardio needs fuel — very low movement allows a tighter deficit. Extra steps (3,000–10,000) add kcal, mostly as carbs.",
+      "cut_want_label": "I want",
+      "cut_style_more_cardio": "More cardio",
+      "cut_style_standard": "Standard",
+      "cut_style_less_move": "Less movement",
+      "cut_style_hint":
+          "More cardio: slightly milder deficit. Less movement: slightly stronger deficit (for truly low-activity days). Standard: classic SOL math.",
+      "cut_baseline_steps_title": "Extra steps (your default for targets)",
+      "cut_baseline_steps_body":
+          "Baseline for kcal (e.g. you move a lot). On an aggressive cut the step add-on stays small (cap ~150 kcal, usually ~100–150 — not a big food bonus).",
+      "cut_steps_short": "Extra steps",
+      "cut_baseline_kcal_foot":
+          "≈ +{k} kcal from steps (at your weight) with {steps} extra steps.",
+      "cut_day_card_title": "Extra steps — this day",
+      "cut_day_override_on": "Today: custom value (overrides default).",
+      "cut_day_uses_baseline": "Today: using settings default.",
+      "cut_day_kcal_line":
+          "From steps: ~+{k} kcal carbs · {steps} extra steps",
+      "cut_day_reset_baseline": "Reset to settings default",
+
+      "advanced_preset": "Preset",
+      "advanced_preset_cut": "Aggressive Cut",
+      "advanced_preset_maintain": "Maintenance",
+      "advanced_preset_bulk": "Dirty Bulk",
+      "advanced_preset_hint":
+          "Pick a direction: the further out, the closer to the healthy limit. You can still tweak macros manually.",
+      "apply_preset": "Apply preset",
+
+      "blessing": "Man shall not live by bread alone.",
+
+      "language_name_de": "Deutsch",
+      "language_name_en": "English",
+
+      "settings_ui_hints_title": "On-screen help",
+      "settings_ui_hints_body":
+          "Daily card (top): tap opens day, streak, weight, and more.\n\n"
+          "Macro bands: the bars are your actual intake in range. The old italic note about how adjustment and the day balance work is here.\n\n"
+          "Soft daily kcal nudge: only after 3+ logged days in a row, so a couple of off days don’t swing it.\n\n"
+          "Meal kcal — simple: one bar (actual kcal), two marks (lower/upper), target line above, extra room on the right for red. — advanced: bar = kcal, vertical = lower band edge, green in range.\n\n"
+          "Tap a meal row: macros & line items. Workout: tap to split pre/post; title row, chevron, + menu (food, generator, photo) as when expanded.\n\n"
+          "7-day block in the day sheet: rolling window ending on the selected day.\n\n"
+          "Database: tap “Highlights” to expand or collapse.\n\n"
+          "Generator: long food lists show the scrollbar on the right.\n\n"
+          "Outside cut mode, pre-workout’s protein % band is intentionally low (about 5–14% of that meal’s kcal) — the 15–20% range is a better fit for post (and some cut slots), not a pre focus.",
+    },
+  };
+
+  String t(String key) {
+    return _translations[languageCode]?[key] ??
+        _translations["de"]?[key] ??
+        key;
+  }
+
+  // Übersetzung mit {placeholder} Substitution.
+  String tFmt(String key, Map<String, Object> args) {
+    var s = t(key);
+    args.forEach((k, v) {
+      s = s.replaceAll("{$k}", v.toString());
+    });
+    return s;
+  }
+
+  String _tMeal(String mealId) {
+    switch (mealId) {
+      case "Workout":
+        return t("tracking_workout_block_title");
+      case "Pre-Workout":
+        return t("meal_pre_workout");
+      case "Post-Workout":
+        return t("meal_post_workout");
+      case "Main Meal":
+        return t("meal_main");
+      case "Evening Meal":
+        return _chronoLabelForEveningMeal() ?? t("meal_evening");
+      case "Snacks":
+        return t("meal_snacks");
+      case _kMergedMealCardId:
+        return t("kcal_merge_combined_title");
+      default:
+        return mealId;
+    }
+  }
+
+  String _tWeekdayShort(int w) {
+    if (w < 1 || w > 7) return "?";
+    return t("weekday_$w");
+  }
+
+  /// Links in der App-Bar: z. B. [SO 26.04] statt doppelt „Tracking“ (Tab-Leiste).
+  String _trackingAppBarDateTitle() {
+    final d = dateFromKey(selectedDayKey);
+    final wd = _tWeekdayShort(d.weekday).toUpperCase();
+    final day = d.day.toString().padLeft(2, "0");
+    final month = d.month.toString().padLeft(2, "0");
+    return "$wd $day.$month";
+  }
+
+  String _tCat(String cat) {
+    switch (cat) {
+      case "Alle":
+        return t("cat_all");
+      case "Carbs":
+        return t("cat_carbs");
+      case "Protein":
+        return t("cat_protein");
+      case "Fett":
+        return t("cat_fat");
+      case "Ballaststoffe":
+        return t("cat_fiber");
+      case "Rezepte":
+        return t("cat_recipes");
+      case "Obst":
+        return t("cat_fruit");
+      case "Gemüse":
+        return t("cat_vegetable");
+      default:
+        return cat;
+    }
+  }
+
+  String _foodCategoryLabelsLine(Food f) {
+    final u = <String>[f.category, ...f.extraCategories];
+    final seen = <String>{};
+    final keys = <String>[];
+    for (final c in u) {
+      if (c.isNotEmpty && seen.add(c)) {
+        keys.add(c);
+      }
+    }
+    return keys.map((c) => _tCat(c)).join(" · ");
+  }
+
+  String _tTypeFilter(String type) {
+    switch (type) {
+      case "Alle":
+        return t("type_all");
+      case "Diät":
+        return t("type_cut");
+      case "Aufbau":
+        return t("type_bulk");
+      default:
+        return type;
+    }
+  }
+
+  String _tFullType(String type) {
+    if (type.startsWith("Diät")) return t("type_cut_full");
+    if (type.startsWith("Aufbau")) return t("type_bulk_full");
+    return type;
+  }
+
+  String _tModeName(String mode) {
+    switch (mode) {
+      case "Alltag":
+        return t("mode_everyday");
+      case "Diät":
+        return t("mode_cut");
+      case "Aufbau":
+        return t("mode_bulk");
+      case "Advanced":
+        return t("mode_advanced");
+      default:
+        return mode;
+    }
+  }
+
+  String _tActivityLevelName(String level) {
+    switch (level) {
+      case "very_active":
+        return t("activity_level_very_active");
+      case "low_everyday":
+        return t("activity_level_low");
+      default:
+        return t("activity_level_normal");
+    }
+  }
+
+  double _activityFactor() {
+    switch (activityLevel) {
+      case "very_active":
+        return 1.725;
+      case "low_everyday":
+        return 1.375;
+      default:
+        return 1.55;
+    }
+  }
+
+  void _recalculateNutritionTargets() {
+    if (nutritionMode == "Advanced") {
+      _applyAdvancedPreset();
+    } else {
+      _applyAutoNutritionTargets();
+    }
+  }
+
+  void _initDefaultFoods() {
+    // CARBS
+    foodDatabase.addAll([
+      Food(
+        name: "Cornflakes (ungesüßt)",
+        protein: 10,
+        carbs: 84,
+        sugar: 3,
+        fiber: 4,
+        fat: 2,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+      ),
+      Food(
+        name: "Kartoffel",
+        protein: 2,
+        carbs: 17,
+        sugar: 0.8,
+        fiber: 2.1,
+        fat: 0.1,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+        extraCategories: const ["Gemüse"],
+      ),
+      // Schnelle süßliche KH-Quelle, Makros grob in Kartoffel-Nähe (Hungerbremser),
+      // Stil: Grieß/Milchreis/Hafer/Flakes, wenig Salz, wenig Vorbereitung.
+      Food(
+        name: "Grieß-Hafer-Instantbrei (süß, 2–3 min)",
+        protein: 2.2,
+        carbs: 17,
+        sugar: 3.2,
+        fiber: 1.0,
+        fat: 0.3,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+        portionHint:
+            "Heißes Wasser/Milch aufgießen, kurz quellen — süß, kaum salzig. Kcal/100 g ähnlich wie Kartoffel, Geschmack eher Grieß/Milchreis/Hafer/Flakes.",
+      ),
+      Food(
+        name: "Reis",
+        protein: 7,
+        carbs: 78,
+        sugar: 0.1,
+        fiber: 0.4,
+        fat: 0.3,
+        category: "Carbs",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+      ),
+      Food(
+        name: "Weizengrieß",
+        protein: 11,
+        carbs: 72,
+        sugar: 0.5,
+        fiber: 1,
+        fat: 1,
+        category: "Carbs",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+      ),
+      Food(
+        name: "Haferflocken",
+        protein: 10,
+        carbs: 66,
+        sugar: 0.6,
+        fiber: 10.6,
+        fat: 7,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+      ),
+      Food(
+        name: "Datteln",
+        protein: 2,
+        carbs: 75,
+        sugar: 66,
+        fiber: 6.7,
+        fat: 0.3,
+        category: "Carbs",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+        carbKind: "einfach",
+        extraCategories: const ["Obst"],
+      ),
+      Food(
+        name: "Süßkartoffel",
+        protein: 1.6,
+        carbs: 20,
+        sugar: 4.2,
+        fiber: 3,
+        fat: 0.1,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+        extraCategories: const ["Gemüse"],
+      ),
+      Food(
+        name: "Nudeln (Weizen)",
+        protein: 12,
+        carbs: 71,
+        sugar: 1.1,
+        fiber: 1.8,
+        fat: 1.1,
+        category: "Carbs",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+        carbKind: "komplex",
+      ),
+      Food(
+        name: "Banane",
+        protein: 1.1,
+        carbs: 23,
+        sugar: 12,
+        fiber: 2.6,
+        fat: 0.3,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "einfach",
+        extraCategories: const ["Obst"],
+      ),
+    ]);
+
+    // PROTEIN
+    foodDatabase.addAll([
+      Food(
+        name: "Magerquark",
+        protein: 12,
+        carbs: 3,
+        sugar: 0.3,
+        fiber: 0,
+        fat: 0.2,
+        category: "Protein",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/magerquark_basic.png",
+      ),
+      Food(
+        name: "Hähnchen Brust",
+        protein: 31,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 3.6,
+        category: "Protein",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Protein Shake",
+        protein: 25,
+        carbs: 5,
+        sugar: 1,
+        fiber: 0,
+        fat: 2,
+        category: "Protein",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Rindfleisch",
+        protein: 26,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 11,
+        category: "Protein",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Lachs",
+        protein: 25,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 13,
+        category: "Protein",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Eier",
+        protein: 13,
+        carbs: 1.1,
+        sugar: 0.4,
+        fiber: 0,
+        fat: 11,
+        category: "Protein",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Seitan",
+        protein: 25,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 0.5,
+        category: "Protein",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "EAAs",
+        protein: 20,
+        carbs: 1,
+        sugar: 0.5,
+        fiber: 0,
+        fat: 0,
+        category: "Protein",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Tofu",
+        protein: 15,
+        carbs: 2,
+        sugar: 0.3,
+        fiber: 1,
+        fat: 9,
+        category: "Protein",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Käse (fettarm)",
+        protein: 28,
+        carbs: 0.7,
+        sugar: 0.1,
+        fiber: 0,
+        fat: 9,
+        category: "Protein",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+    ]);
+
+    // FETT
+    foodDatabase.addAll([
+      Food(
+        name: "Nüsse",
+        protein: 14,
+        carbs: 20,
+        sugar: 4,
+        fiber: 9,
+        fat: 49,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Avocado",
+        protein: 3,
+        carbs: 9,
+        sugar: 0.7,
+        fiber: 7,
+        fat: 15,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+        extraCategories: const ["Obst"],
+      ),
+      Food(
+        name: "Olivenöl",
+        protein: 0,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 100,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Kokosöl",
+        protein: 0,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 100,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Butter",
+        protein: 0.7,
+        carbs: 0.1,
+        sugar: 0.1,
+        fiber: 0,
+        fat: 81,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Erdnussbutter",
+        protein: 25,
+        carbs: 16,
+        sugar: 5,
+        fiber: 6,
+        fat: 50,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Chia Samen",
+        protein: 14,
+        carbs: 42,
+        sugar: 0,
+        fiber: 34,
+        fat: 31,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Leinsamen",
+        protein: 18,
+        carbs: 29,
+        sugar: 1.5,
+        fiber: 27,
+        fat: 42,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Walnüsse",
+        protein: 9,
+        carbs: 7,
+        sugar: 1.4,
+        fiber: 6,
+        fat: 66,
+        category: "Fett",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+      ),
+    ]);
+
+    // BALLASTSTOFFE
+    foodDatabase.addAll([
+      Food(
+        name: "TK Beeren Mix",
+        protein: 1,
+        carbs: 12,
+        sugar: 9,
+        fiber: 7,
+        fat: 0.3,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Obst"],
+      ),
+      Food(
+        name: "Erdbeeren",
+        protein: 0.7,
+        carbs: 8,
+        sugar: 4.9,
+        fiber: 2,
+        fat: 0.3,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Obst"],
+      ),
+      Food(
+        name: "Broccoli",
+        protein: 2.8,
+        carbs: 7,
+        sugar: 1.4,
+        fiber: 2.4,
+        fat: 0.4,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Gemüse"],
+      ),
+      Food(
+        name: "Spinat",
+        protein: 2.7,
+        carbs: 3.6,
+        sugar: 0.4,
+        fiber: 2.2,
+        fat: 0.4,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Gemüse"],
+      ),
+      Food(
+        name: "Blumenkohl",
+        protein: 1.9,
+        carbs: 5,
+        sugar: 1.9,
+        fiber: 2.4,
+        fat: 0.3,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Gemüse"],
+      ),
+      Food(
+        name: "Hafer Kleie",
+        protein: 17,
+        carbs: 66,
+        sugar: 0.6,
+        fiber: 10.7,
+        fat: 7,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+      ),
+      Food(
+        name: "Karotte",
+        protein: 0.9,
+        carbs: 10,
+        sugar: 4.7,
+        fiber: 2.8,
+        fat: 0.2,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Gemüse"],
+      ),
+      Food(
+        name: "Zucchini",
+        protein: 1.2,
+        carbs: 3.1,
+        sugar: 1.2,
+        fiber: 1,
+        fat: 0.4,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Gemüse"],
+      ),
+      Food(
+        name: "Birne",
+        protein: 0.4,
+        carbs: 15,
+        sugar: 9.8,
+        fiber: 3.1,
+        fat: 0.1,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Obst"],
+      ),
+      Food(
+        name: "Kiwi",
+        protein: 1.1,
+        carbs: 15,
+        sugar: 6.2,
+        fiber: 3,
+        fat: 0.5,
+        category: "Ballaststoffe",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        extraCategories: const ["Obst"],
+      ),
+    ]);
+
+    // REZEPTE — krasse Eigenkreationen von DON (s. [_buildSolDefaultRecipeFoods]).
+    foodDatabase.addAll(_buildSolDefaultRecipeFoods());
+    foodDatabase.addAll(_extraDefaultFoods());
+  }
+
+  /// SOL-Standard-Rezepte (auch nach [food]-Merge genutzt, falls je Eintrag fehlt).
+  List<Food> _buildSolDefaultRecipeFoods() {
+    // Werte: per 100g (gekocht/zubereitet). portionHint = empfohlene Portion.
+    return [
+      Food(
+        name: "Eiweißwolken",
+        // 1 Portion ≈ 200g Backung: 144 kcal, 28.1g E, 6.8g K, 0.4g F
+        // → per 100g: ~72 kcal, 14.0g E, 3.4g K (3.0g Zucker, 1.1g Ballast), 0.2g F
+        protein: 14.0,
+        carbs: 3.4,
+        sugar: 3.0,
+        fiber: 1.1,
+        fat: 0.2,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/eiweisswolken.png",
+        basePortionGrams: 200,
+        portionHint: "1 Portion ≈ 200g · 144 kcal",
+        ingredients: [
+          "250 g Eiklar (frisch)",
+          "10 ml Steviapura flüssig",
+          "9 g Zimt",
+          "Optional: TK-Blaubeeren oben drauf",
+        ],
+        instructions: [
+          "Ofen auf 170°C Umluft vorheizen.",
+          "Eiklar 10 min mit dem Mixer steif schlagen, Stevia & Zimt einrühren.",
+          "Pro Wolke 2 gehäufte EL auf ein Backblech mit Backpapier setzen — optional Blaubeeren oben drauf.",
+          "15 min bei 170°C backen.",
+          "Topping-Tipp: kalorienarme Vanille-Soße oder Magerquark-Eiweiß-Shake.",
+        ],
+        recipeFlavor: "sweet",
+      ),
+      Food(
+        name: "Grießpudding",
+        // 1 Portion (Ofen/Form) ≈ 280g: ~241 kcal
+        // → pro 100g: ~86 kcal, 4,0g E, 14g K, 1,3g F
+        protein: 4.0,
+        carbs: 14.0,
+        sugar: 8.0,
+        fiber: 0.2,
+        fat: 1.3,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/griesspudding.png",
+        basePortionGrams: 280,
+        portionHint: "1 Portion (Ofen) ≈ 280g · ~241 kcal — klassisch mit Milch & Grieß, süß",
+        ingredients: [
+          "500 ml fettarme Milch (1,5 %)",
+          "50 g Weizengrieß (Hartweizen)",
+          "1 Prise Salz",
+          "Süßung (Zucker / Erythrit / anderes) nach Geschmack",
+          "Optional: 1 Eigelb für Cremigkeit",
+          "Optional: Vanille, Zitronenschale, Kompott als Topping",
+        ],
+        instructions: [
+          "Milch leicht salzen, erhitzen (fast kochen, nicht spritzen lassen). Grieß einrieseln, 8–10 min unter ständigem Rühren köcheln, bis dickflüssig.",
+          "Süßung und optional Vanille oder Zitronenschale einrühren. Optional Eigelb temperieren (etwas heiße Masse hinein, dann in den Rest) und unterrühren — vom Herd nehmen.",
+          "Masse in eine ofenfeste Form geben, bei 160–180 °C Umluft ca. 15–20 min goldgelb backen, oder stattdessen warm aus dem Topf in Schalen: fertig ist der Pudding. Abkühlen, Kompott oben drauf, portionieren.",
+        ],
+        recipeFlavor: "sweet",
+      ),
+      Food(
+        name: "Milchreis (süß, klassisch)",
+        // 1 Portion (Topf) ≈ 300g: ~335 kcal
+        // → pro 100g: ~112 kcal, 2,5g E, 22g K, 1,2g F
+        protein: 2.5,
+        carbs: 22.0,
+        sugar: 7.0,
+        fiber: 0.1,
+        fat: 1.2,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/milchreis_suess.png",
+        basePortionGrams: 300,
+        portionHint: "1 Portion ≈ 300g · ~335 kcal — süß, viel Volumen",
+        ingredients: [
+          "200 ml fettarme Milch (1,5 %)",
+          "200 ml Wasser (oder 400 ml Milch, wenn du fettiger magst — dann Werte anders rechnen)",
+          "100 g Reis (Milchreis- oder Rundkorn)",
+          "1 Prise Salz",
+          "Süßung und optional Vanille, Zimt, etwas Butter- oder Mandelaroma",
+        ],
+        instructions: [
+          "Reis kalt in Milch+Wasser mit Salz aufkochen, Hitze runter, zugedeckt 25–35 min garen (je nach Reis) — viel rühren, damit nichts anbrennt, evtl. Flüssigkeit nachgießen.",
+          "Wenn der Reis weich: Süßung, Vanille, Zimt abschmecken, bei Bedarf noch 1 Löffel griechischer Joghurt oder etwas fettreduzierte Creme (optional) untermischen.",
+          "Warm oder kalt, mit Beeren, Apfelmus oder Kompott servieren — portionieren (typisch 300 g).",
+        ],
+        recipeFlavor: "sweet",
+      ),
+      Food(
+        name: "Grieß Pre-Workout",
+        // 1 Portion ≈ 550g (gekocht): 444 kcal, 43g E, 60g K, 2.7g F
+        // → per 100g: ~81 kcal, 7.9g E, 10.8g K (3.5g Zucker, 0.7g Ballast), 0.5g F
+        protein: 7.9,
+        carbs: 10.8,
+        sugar: 3.5,
+        fiber: 0.7,
+        fat: 0.5,
+        category: "Rezepte",
+        type: "Aufbau (Wenig Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/griess_preworkout.png",
+        basePortionGrams: 550,
+        portionHint: "1 Portion ≈ 550g · 444 kcal — perfekt vor dem Training",
+        ingredients: [
+          "60 g Hartweizengrieß",
+          "45 g Whey/Eiweißpulver (Geschmack nach Wahl)",
+          "100 g Obstsalat (frisch oder TK)",
+          "300 ml heißes Wasser",
+          "2 g Zimt (1 TL)",
+          "2 g Speisesalz (2 Prisen)",
+          "Süßungsmittel nach Geschmack",
+        ],
+        instructions: [
+          "Wasserkocher an: 300 ml heißes Wasser.",
+          "Grieß, Salz, Zimt und Süßungsmittel in eine Schüssel geben.",
+          "Heißes Wasser drüber gießen und kräftig anrühren — Grieß zieht in 1–2 min an.",
+          "Kurz abkühlen lassen, dann Eiweißpulver einrühren (sonst denaturiert es).",
+          "Obstsalat oder TK-Beeren oben drauf — fertig.",
+          "Tipp: 60–90 min vor dem Training essen, schnelle Carbs für volle Glykogen-Speicher.",
+        ],
+        recipeFlavor: "sweet",
+      ),
+      Food(
+        name: "Magerquark Proteinshake",
+        // 1 Portion (250 g Quark) ≈ 395 g fertig: 189 kcal · doppelte Portion (500 g Quark) ≈ 790 g
+        // → per 100g: ~48 kcal, 8.2g E, 3.3g K (2.5g Zucker, 0.5g Ballast), 0.15g F
+        protein: 8.2,
+        carbs: 3.3,
+        sugar: 2.5,
+        fiber: 0.5,
+        fat: 0.15,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/magerquark_shake.png",
+        basePortionGrams: 395,
+        portionHint:
+            "Eine Portion: 250 g Magerquark (fertig ~395 g, 189 kcal). Doppelte Portion: 500 g Magerquark (fertig ~790 g, 378 kcal) — Beeren, Wasser usw. wie angegeben verdoppeln.",
+        ingredients: [
+          "250 g Magerquark = 1 Portion · für die doppelte Portion: 500 g Magerquark",
+          "40 g TK-Beerenmischung (1 Portion) bzw. 80 g (doppelte Portion)",
+          "100 ml Wasser (1 Portion) bzw. 200 ml (doppelte Portion)",
+          "Süßungsmittel nach Geschmack",
+          "Cut-Geheimtipp: Eiswürfel mit dazu für mehr Volumen & Sättigung",
+        ],
+        instructions: [
+          "1 Portion = 250 g Magerquark; alles doppelt wiegen, wenn du 500 g Magerquark nimmst (doppelte Portion).",
+          "TK-Beeren mit Wasser und Süßungsmittel in den Mixer geben.",
+          "Im Cut: Eiswürfel mit dazu — gibt deutlich mehr Volumen und sättigt besser.",
+          "Kurz mixen bis cremig.",
+          "Magerquark dazugeben und nochmal kurz untermixen — fertig.",
+        ],
+        recipeFlavor: "sweet",
+      ),
+      Food(
+        name: "Magerquark Kräuter-Dip",
+        // 1 Portion (Batch) ≈ 320 g: 209 kcal — Magerquark, Wasser, Knoblauch, Kräuter, Zitrone
+        // → per 100g: ~65 kcal, 12.2g E, 2.8g K (1.0g Zucker, 0.2g Ballast), 0.4g F
+        protein: 12.2,
+        carbs: 2.8,
+        sugar: 1.0,
+        fiber: 0.2,
+        fat: 0.4,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/magerquark_dip.png",
+        recipeFlavor: "salty",
+        basePortionGrams: 320,
+        portionHint: "1 Portion ≈ 320 g · 209 kcal · Defi / Diät",
+        ingredients: [
+          "Magerquark (z. B. Berchtesgadener Land), 250 g (½ Portionen)",
+          "Mineralwasser, still, 50 ml",
+          "Knoblauch, frisch, 1 Stück (ca. 3 g) — oder + Knoblauchpulver: ½ EL (ca. 4 g)",
+          "Dill, frisch, ½ TL (ca. 2,5 g)",
+          "Speisesalz, 1 Prise (ca. 1 g)",
+          "Schwarzer Pfeffer, ½ EL (ca. 3 g)",
+          "Zitronensaft, frisch, 1 EL (ca. 6 ml)",
+        ],
+        instructions: [
+          "Magerquark in einer Schüssel mit dem Mineralwasser glatt rühren (besser verrühren, weniger klumpig).",
+          "Knoblauch fein pressen; Dill hacken. Mit Pfeffer, Salz, optional Knoblauchpulver unterrühren.",
+          "Zitronensaft dazu — abschmecken, bei Bedarf nachwürzen.",
+          "Eignet sich als Dressing, auf Reis, zu Rohkost — oder die Variante „Gurkensalat“ mit Gurkenscheiben.",
+        ],
+      ),
+      Food(
+        name: "Gurken Salat (High-Protein)",
+        // Basis wie Dip (320g) + 200 g Gurke: ~241 kcal, ~520 g; pro 100g: ~7.9g E, 2,7g K, 0,3g F, ~46 kcal
+        protein: 7.9,
+        carbs: 2.7,
+        sugar: 1.0,
+        fiber: 0.4,
+        fat: 0.3,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        imagePath: "assets/recipes/gurkensalat_protein.png",
+        recipeFlavor: "salty",
+        basePortionGrams: 520,
+        portionHint:
+            "1 Portion (Dip + 200 g Gurke in Scheiben) ≈ 520 g · ~241 kcal — viel Volumen, viel Protein",
+        ingredients: [
+          "Gleiche Basis wie Magerquark Kräuter-Dip: Magerquark, Wasser, Knoblauch, Dill, Salz, Pfeffer, Zitronensaft (s. Dip-Rezept).",
+          "Gurke, frisch, in Scheiben, 200 g",
+        ],
+        instructions: [
+          "Dip nach Magerquark Kräuter-Dip zubereiten.",
+          "Gurke waschen, in dünne Scheiben schneiden.",
+          "Gurke untermischen — kurz ziehen lassen, abschmecken. Hohes Volumen, wenig kcal, hoher Proteingehalt pro Portion.",
+        ],
+      ),
+    ];
+  }
+
+  void _ensureMissingSolDefaultRecipes() {
+    final have = foodDatabase.map((f) => f.name).toSet();
+    for (final def in _buildSolDefaultRecipeFoods()) {
+      if (!have.contains(def.name)) {
+        foodDatabase.add(def);
+        have.add(def.name);
+      }
+    }
+  }
+
+  void _migrateLegacyDefaultRecipeNames() {
+    const legacy = <String, String>{
+      "Magerquark-Kräuter-Dip": "Magerquark Kräuter-Dip",
+      "High-Protein Gurkensalat": "Gurken Salat (High-Protein)",
+      "Griesspudding": "Grießpudding",
+      "Grießpudding (Ofen)": "Grießpudding",
+      "Milchreis (süß)": "Milchreis (süß, klassisch)",
+    };
+    for (final e in legacy.entries) {
+      final tag = userDbStarByName.remove(e.key);
+      if (tag != null) userDbStarByName[e.value] = tag;
+      final perf = userFoodPerformanceByName.remove(e.key);
+      if (perf != null) userFoodPerformanceByName[e.value] = perf;
+      final tol = userFoodToleranceByName.remove(e.key);
+      if (tol != null) userFoodToleranceByName[e.value] = tol;
+    }
+    for (final t in trackedFoods) {
+      if (!t.food.isDefault) continue;
+      final newName = legacy[t.food.name];
+      if (newName == null) continue;
+      for (final x in foodDatabase) {
+        if (x.name == newName) {
+          t.food = x;
+          break;
+        }
+      }
+    }
+  }
+
+  void _updateMealTotals() {
+    _mealTotals = {};
+    final keys = [...meals, _kMergedMealCardId];
+    for (var meal in keys) {
+      final foods = trackedFoods
+          .where((f) => f.meal == meal && f.dayKey == selectedDayKey)
+          .toList();
+      _mealTotals[meal] = {
+        "protein": foods.fold(0.0, (s, e) => s + e.protein),
+        "carbs": foods.fold(0.0, (s, e) => s + e.carbs),
+        "sugar": foods.fold(0.0, (s, e) => s + e.sugar),
+        "fiber": foods.fold(0.0, (s, e) => s + e.fiber),
+        "fat": foods.fold(0.0, (s, e) => s + e.fat),
+        "calories": foods.fold(0.0, (s, e) => s + e.calories),
+        "grams": foods.fold(0.0, (s, e) => s + e.grams),
+      };
+    }
+  }
+
+  Future<void> _openMoveTrackedFoodDialog(TrackedFood f, String fromMeal) async {
+    final targets = meals.where((m) => m != fromMeal).toList();
+    if (targets.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("track_move_none"))),
+      );
+      return;
+    }
+    var pick = targets.first;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (c2, setL) => AlertDialog(
+          title: Text(t("track_move_title")),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                t("track_move_hint"),
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white60,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                f.food.name,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "${f.grams.toStringAsFixed(1)} g",
+                style: const TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: pick,
+                decoration: _touchInputDecoration(t("track_move_target_label")),
+                dropdownColor: const Color(0xFF1F1F1F),
+                items: targets
+                    .map(
+                      (m) => DropdownMenuItem(
+                        value: m,
+                        child: Text(_displayMealName(m)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  setL(() => pick = v);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (f.meal == pick) {
+                  Navigator.pop(ctx);
+                  return;
+                }
+                setState(() {
+                  f.meal = pick;
+                });
+                _updateMealTotals();
+                _saveAppState();
+                _applyDailyKcalOverSchedule();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: Text(t("track_move_confirm")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double? _safeDouble(String input) {
+    try {
+      return double.parse(input);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("invalid_input"))),
+      );
+      return null;
+    }
+  }
+
+  /// Wie [double.tryParse], versteht Komma — ohne SnackBar (für Live-Eingabe).
+  double? _tryParseUserNumber(String raw) {
+    final t = raw.trim().replaceAll(",", ".");
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+
+  String _recipeTrackPreviewLine(Food food, double g) {
+    final kc = food.calories * g / 100.0;
+    final p = food.protein * g / 100.0;
+    final c = food.carbs * g / 100.0;
+    final f0 = food.fat * g / 100.0;
+    return tFmt("track_recipe_result", {
+      "g": g.toStringAsFixed(1),
+      "kcal": kc.toStringAsFixed(0),
+      "p": p.toStringAsFixed(1),
+      "c": c.toStringAsFixed(1),
+      "f": f0.toStringAsFixed(1),
+    });
+  }
+
+  Widget _foodCardDetailContent(
+    Food food, {
+    bool showUserDelete = false,
+    double imageHeight = 180,
+    /// Wenn true: großes Bild oben in [ExpansionTile] & Co. Rezept-Dialog
+    /// stellt das Bild separat (PIP) dar; dann [hideTopImage] = true.
+    bool hideTopImage = false,
+    /// Datenbank-Liste: P/C/F-Rahmen grau / SOL-Gold / eigener Favorit.
+    bool useDatabasePcfStyling = false,
+  }) {
+    final pcfBlock = useDatabasePcfStyling
+        ? _dbPcfFrameForKind(
+            _dbPcfFrameKindForListCard(food),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: _foodPcfRow(food, compact: false),
+          )
+        : _goldMacroFrame(
+            child: _foodPcfRow(food, compact: false),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (food.imagePath != null && !hideTopImage) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: _foodImageWidget(
+              food.imagePath!,
+              width: double.infinity,
+              height: imageHeight,
+              fit: BoxFit.cover,
+              error: const SizedBox.shrink(),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        pcfBlock,
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 8, right: 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildMacroSubRow(
+                  "  └─ ${t("of_which_sugar")}", food.sugar, "g", _carbColor),
+              _buildMacroSubRow(
+                  "  └─ ${t("of_which_fiber")}", food.fiber, "g", _fiberColor),
+              _buildMacroSubRow("  └─ ${t("of_which_complex")}", food.complexCarbs,
+                  "g", _carbColor),
+            ],
+          ),
+        ),
+        if (food.recipeFlavor != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.local_dining_outlined,
+                  size: 16, color: Color(0xFFAAAAAA)),
+              const SizedBox(width: 6),
+              Text(
+                "${t("recipe_flavor_filter_label")}: ${food.recipeFlavor == "sweet" ? t("recipe_flavor_sweet") : t("recipe_flavor_salty")}",
+                style: const TextStyle(
+                    fontSize: 12, color: Colors.white70, height: 1.25),
+              ),
+            ],
+          ),
+        ],
+        if (food.category == "Carbs") ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(
+                _inferredCarbKind(food) == "einfach"
+                    ? Icons.bolt_outlined
+                    : Icons.grain,
+                size: 16,
+                color: const Color(0xFFAAAAAA),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  "${t("db_carb_source_tile")}: ${(_inferredCarbKind(food) == "einfach" ? t("carb_tag_simple") : t("carb_tag_complex"))} — ${t("db_carb_source_tile_sub")}",
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white70, height: 1.3),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 4),
+        Center(
+          child: Text(
+            "∑ ${food.calories.toStringAsFixed(1)} kcal / 100 g",
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Colors.white.withValues(alpha: 0.45),
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 4),
+          child: Divider(height: 1, color: Color(0xFF3A3A3A)),
+        ),
+        if (food.basePortionGrams != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            tFmt("recipe_base_grams", {
+              "g": food.basePortionGrams!.toStringAsFixed(0),
+            }),
+            style: const TextStyle(
+                color: Colors.white60, fontSize: 12, fontStyle: FontStyle.italic),
+          ),
+        ],
+        if (food.portionHint != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: const Color(0xFFD4AF37).withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.scale_outlined,
+                    color: Color(0xFFD4AF37), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    food.portionHint!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (food.ingredients.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Icon(Icons.shopping_basket_outlined,
+                  color: Color(0xFFD4AF37), size: 18),
+              const SizedBox(width: 6),
+              Text(
+                t("recipe_ingredients"),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...food.ingredients.map(
+            (ing) => Padding(
+              padding: const EdgeInsets.only(left: 6, top: 2, bottom: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("•  ", style: TextStyle(color: Colors.white70)),
+                  Expanded(
+                    child: Text(
+                      ing,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (food.instructions.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Icon(Icons.menu_book_outlined,
+                  color: Color(0xFFD4AF37), size: 18),
+              const SizedBox(width: 6),
+              Text(
+                t("recipe_instructions"),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...List.generate(food.instructions.length, (i) {
+            return Padding(
+              padding: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    margin: const EdgeInsets.only(top: 1, right: 8),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFFD4AF37), width: 1.4),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      "${i + 1}",
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFD4AF37),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      food.instructions[i],
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+        if (useDatabasePcfStyling) ...[
+          const SizedBox(height: 12),
+          _foodCardPersonalRatingSection(food),
+        ],
+        if (useDatabasePcfStyling && !food.isDefault) ...[
+          const SizedBox(height: 12),
+          Text(
+            t("db_user_star_label"),
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFFAAAAAA),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t("db_user_star_hint"),
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: Colors.white38,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: () {
+              final opts = <({String? k, String lab})>[
+                (k: null, lab: t("db_user_star_off")),
+                (k: "diat", lab: t("db_user_star_diet")),
+                (k: "aufbau", lab: t("db_user_star_bulk")),
+                (k: "all", lab: t("db_user_star_all")),
+              ];
+              return opts
+                  .map(
+                    (o) => FilterChip(
+                      label: Text(o.lab, style: const TextStyle(fontSize: 12)),
+                      selected: o.k == null
+                          ? !userDbStarByName.containsKey(food.name)
+                          : userDbStarByName[food.name] == o.k,
+                      onSelected: (_) {
+                        setState(() {
+                          if (o.k == null) {
+                            userDbStarByName.remove(food.name);
+                          } else {
+                            userDbStarByName[food.name] = o.k!;
+                          }
+                        });
+                        _saveAppState();
+                      },
+                    ),
+                  )
+                  .toList();
+            }(),
+          ),
+        ],
+        if (showUserDelete)
+          Padding(
+            padding: const EdgeInsets.only(top: 12.0),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    foodDatabase.removeWhere((f) => f.name == food.name);
+                    userDbStarByName.remove(food.name);
+                    userFoodPerformanceByName.remove(food.name);
+                    userFoodToleranceByName.remove(food.name);
+                  });
+                  _saveAppState();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                ),
+                child: Text(t("delete")),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showRecipeInfoDialog(
+    Food food, {
+    bool useDatabasePcfStyling = true,
+  }) {
+    final h = MediaQuery.sizeOf(context).height * 0.88;
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 22),
+          child: SizedBox(
+            width: 440,
+            height: h,
+            child: Container(
+            constraints: const BoxConstraints(maxWidth: 440),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0xFF3A3A3A),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+                  title: Text(
+                    food.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!food.isDefault)
+                        IconButton(
+                          tooltip: t("db_edit_food"),
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: Color(0xFFD4AF37),
+                          ),
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _openEditUserFoodDialog(food);
+                          },
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                SolRecipeHeroImage(
+                  foodName: food.name,
+                  imageAssetPath: food.imagePath,
+                  portionHint: food.portionHint,
+                  firstInstructionLine: food.instructions.isNotEmpty
+                      ? food.instructions.first
+                      : null,
+                  apiKey: geminiApiKey,
+                  t: t,
+                  height: 200,
+                ),
+                const Divider(height: 1, color: Color(0xFF2A2A2A)),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                    child: _foodCardDetailContent(
+                      food,
+                      showUserDelete: useDatabasePcfStyling && !food.isDefault,
+                      imageHeight: 200,
+                      hideTopImage: true,
+                      useDatabasePcfStyling: useDatabasePcfStyling,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Aus g / kcal / Makro-Ziel (pro gewählte Food: Werte pro 100 g) → Menge in g.
+  double? _gramsForTrackedAdd(Food food, String inputMode, String text) {
+    final v = _tryParseUserNumber(text);
+    if (v == null || v <= 0) return null;
+    return _gramsFromTrackInputDisplay(food, inputMode, v);
+  }
+
+  /// Anzeigewert (g, kcal, g Makro) für eine bekannte Menge in g.
+  double? _trackDisplayValueForGrams(Food food, String inputMode, double grams) {
+    if (grams <= 0) return null;
+    switch (inputMode) {
+      case "grams":
+        return grams;
+      case "kcal":
+        if (food.calories <= 0) return null;
+        return grams * food.calories / 100.0;
+      case "protein":
+        if (food.protein <= 0) return null;
+        return grams * food.protein / 100.0;
+      case "carbs":
+        if (food.carbs <= 0) return null;
+        return grams * food.carbs / 100.0;
+      case "fat":
+        if (food.fat <= 0) return null;
+        return grams * food.fat / 100.0;
+      default:
+        return null;
+    }
+  }
+
+  /// [inputMode] + Zahl aus dem Feld → g (wie [ _gramsForTrackedAdd ], aber ohne String-Parsing).
+  double? _gramsFromTrackInputDisplay(
+      Food food, String inputMode, double v) {
+    if (v <= 0) return null;
+    switch (inputMode) {
+      case "grams":
+        return v;
+      case "kcal":
+        if (food.calories <= 0) return null;
+        return v * 100.0 / food.calories;
+      case "protein":
+        if (food.protein <= 0) return null;
+        return v * 100.0 / food.protein;
+      case "carbs":
+        if (food.carbs <= 0) return null;
+        return v * 100.0 / food.carbs;
+      case "fat":
+        if (food.fat <= 0) return null;
+        return v * 100.0 / food.fat;
+      default:
+        return null;
+    }
+  }
+
+  List<String> _foodTrackModesFor(Food food) {
+    bool allowed(String m) {
+      switch (m) {
+        case "grams":
+          return true;
+        case "kcal":
+          return food.calories > 0.01;
+        case "protein":
+          return food.protein > 0.01;
+        case "carbs":
+          return food.carbs > 0.01;
+        case "fat":
+          return food.fat > 0.01;
+        default:
+          return false;
+      }
+    }
+
+    const order = ["grams", "kcal", "protein", "carbs", "fat"];
+    return order.where(allowed).toList();
+  }
+
+  String _trackModeShortLabel(String mode) {
+    switch (mode) {
+      case "grams":
+        return t("track_edit_mode_g");
+      case "kcal":
+        return t("track_edit_mode_kcal");
+      case "protein":
+        return t("track_mode_short_protein");
+      case "carbs":
+        return t("track_mode_short_carbs");
+      case "fat":
+        return t("track_mode_short_fat");
+      default:
+        return mode;
+    }
+  }
+
+  Widget _trackPortionMacroPreview(Food food, double grams) {
+    if (grams <= 0) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Text(
+        _recipeTrackPreviewLine(food, grams),
+        style: const TextStyle(
+          color: Color(0xFFD4AF37),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveIndex = placementDone ? selectedIndex : 0;
+    Widget currentScreen;
+    switch (effectiveIndex) {
+      case 0:
+        currentScreen = introScreen();
+        break;
+      case 1:
+        currentScreen = databaseScreen();
+        break;
+      case 2:
+        currentScreen = trackingScreen();
+        break;
+      case 3:
+        currentScreen = settingsScreen();
+        break;
+      default:
+        currentScreen = trackingScreen();
+    }
+
+    return Scaffold(
+      body: currentScreen,
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: effectiveIndex,
+        onTap: (i) {
+          if (!placementDone && i != 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(t("placement_gate_msg")),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            return;
+          }
+          setState(() => selectedIndex = i);
+        },
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
+        items: [
+          BottomNavigationBarItem(
+              icon: const Icon(Icons.menu_book), label: t("intro")),
+          BottomNavigationBarItem(
+              icon: const Icon(Icons.storage), label: t("database")),
+          BottomNavigationBarItem(
+              icon: const Icon(Icons.track_changes), label: t("tracking")),
+          BottomNavigationBarItem(
+              icon: const Icon(Icons.settings), label: t("settings")),
+        ],
+      ),
+    );
+  }
+
+  // ---------------- DATABASE ----------------
+
+  static const int kIntroUnlockMaxSessionsPerDay = 3;
+
+  /// Später: einzelne [featureId] pro Aufschritt koppeln. Aktuell: globale Freigabe.
+  bool isIntroAppFeatureUnlocked(String featureId) {
+    if (featureId.isEmpty) return false;
+    return introTheoryUnlocked;
+  }
+
+  /// Gesperrte Themen-Platzhalter (ohne Freischalten-Karte) — nur unter „Bildung …“.
+  List<Widget Function()> _introLockedPlaceholderThunks() {
+    return [
+      () => _introLockedSectionRow(title: t("intro_why_macros_title")),
+      () => _introLockedSectionRow(title: t("intro_body_title")),
+      () => _introLockedSectionRow(title: t("intro_macro_title")),
+      () => _introLockedSectionRow(title: t("intro_recognize_macros_title")),
+      () => _introLockedSectionRow(title: t("intro_infographic_title")),
+      () => _introLockedSectionRow(title: t("intro_how_title")),
+      () => _introLockedSectionRow(title: t("intro_prepost_title")),
+      () => _introLockedSectionRow(title: t("intro_mindset_title")),
+    ];
+  }
+
+  /// Abschnitts-Überschrift: zuerst „Einleitung“, danach „Bildung & freischalten“.
+  Widget _introSectionHeader(
+    String titleKey, {
+    String? subtitleKey,
+    bool extraTop = false,
+  }) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(6, extraTop ? 20 : 6, 6, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t(titleKey),
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+              color: Color(0xFFD4AF37),
+            ),
+          ),
+          if (subtitleKey != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              t(subtitleKey),
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.4,
+                color: context.sol.muted,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openIntroUnlockQuiz() async {
+    if (introTheoryUnlocked || !mounted) return;
+    final todayK = dateKeyFromDate(DateTime.now());
+    if (introUnlockSessionDayKey != todayK) {
+      setState(() {
+        introUnlockSessionDayKey = todayK;
+        introUnlockSessionsToday = 0;
+      });
+    }
+    if (introUnlockSessionsToday >= kIntroUnlockMaxSessionsPerDay) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t("intro_unlock_limit")),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    setState(() {
+      introUnlockSessionsToday = introUnlockSessionsToday + 1;
+    });
+    unawaited(_saveAppState());
+    final ok = await IntroUnlockQuiz.run(
+      context,
+      t: t,
+      title: t("intro_unlock_dialog_title"),
+      wrongMsg: t("intro_edu_wrong"),
+    );
+    if (!ok || !mounted) return;
+    setState(() {
+      introTheoryUnlocked = true;
+    });
+    unawaited(_saveAppState());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(t("intro_unlock_passed_snack")),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _introUnlockCalloutCard() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          iconColor: const Color(0xFFD4AF37),
+          collapsedIconColor: Colors.white54,
+          title: Row(
+            children: [
+              const Icon(
+                Icons.quiz,
+                color: Color(0xFFD4AF37),
+                size: 26,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  t("intro_unlock_title"),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFD4AF37),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          children: [
+            Text(
+              t("intro_unlock_sub"),
+              style: const TextStyle(
+                fontSize: 14.5,
+                height: 1.6,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              tFmt("intro_unlock_attempts", {
+                "n": introUnlockSessionsToday.toString(),
+                "m": kIntroUnlockMaxSessionsPerDay.toString(),
+              }),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: _openIntroUnlockQuiz,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFD4AF37),
+                foregroundColor: const Color(0xFF1A1A1A),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: Text(
+                t("intro_unlock_button"),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _introLockedSectionRow({required String title}) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      color: const Color(0xFF1A1A1A).withValues(alpha: 0.7),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: Colors.white.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.check_circle_outline,
+              size: 26,
+              color: Colors.white.withValues(alpha: 0.3),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    t("intro_locked_hint"),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Titel: „SOL“ + Untertitel in Cinzel (SOL engerer Lauf, Satz etwas lockerer).
+  Widget _introHeroTitleText() {
+    final s = t("intro_hero_title");
+    final solRoman = GoogleFonts.cinzel(
+      color: context.sol.onCard,
+      fontSize: 26,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 2.2,
+      height: 1.2,
+    );
+    final solSubtitle = GoogleFonts.cinzel(
+      color: context.sol.onCard,
+      fontSize: 24,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.2,
+      height: 1.25,
+    );
+    // Em- oder Geviertstrich nach „SOL“ (Übersetzungen)
+    final m = RegExp(r'^(SOL)(\s*[\u2014\u2013\-]\s*)').firstMatch(s);
+    if (m != null) {
+      return Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: m.group(1), style: solRoman),
+            TextSpan(text: m.group(2), style: solSubtitle),
+            TextSpan(text: s.substring(m.end), style: solSubtitle),
+          ],
+        ),
+        maxLines: 4,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    return Text(
+      s,
+      maxLines: 4,
+      overflow: TextOverflow.ellipsis,
+      style: solRoman,
+    );
+  }
+
+  /// Intro-Held: Mann/Frau mit Jesus — abhängig von [genderCode].
+  String _introHeroImageAsset() => genderCode == "female"
+      ? "assets/intro/hero_generations_female.png"
+      : "assets/intro/hero_generations_male.png";
+
+  /// Heldenbereich: immer geöffnet (kein Accordion), Titel wie App-Theme.
+  Widget _introHeroBlock() {
+    final w = MediaQuery.sizeOf(context).width;
+    final cap = (w * 1.8).round().clamp(600, 1200);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _introHeroTitleText(),
+            const SizedBox(height: 12),
+            Text(
+              t("intro_hero_sub"),
+              style: TextStyle(
+                color: context.sol.muted,
+                fontSize: 15.5,
+                height: 1.62,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: AspectRatio(
+                aspectRatio: 2.05,
+                child: RepaintBoundary(
+                  child: Image.asset(
+                    _introHeroImageAsset(),
+                    fit: BoxFit.cover,
+                    cacheWidth: cap,
+                    filterQuality: FilterQuality.low,
+                    gaplessPlayback: true,
+                    isAntiAlias: false,
+                    errorBuilder: (_, __, ___) {
+                      return Container(
+                        color: const Color(0xFF1A1A1A),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.terrain,
+                          size: 56,
+                          color: Color(0xFF4A4A4A),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              t("intro_hero_caption"),
+              style: TextStyle(
+                color: context.sol.soft,
+                fontSize: 12.5,
+                height: 1.5,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget introScreen() {
+    final itemFactories = <Widget Function()>[
+      () => _introSectionHeader("intro_section_einleitung"),
+      _introHeroBlock,
+      () => _introExpandCard(
+            t("intro_concept_title"),
+            t("intro_concept_body"),
+            initiallyExpanded: true,
+          ),
+      () => _introExpandCard(
+            t("intro_terms_cut_bulk_title"),
+            t("intro_terms_cut_bulk_body"),
+          ),
+      () => _introExpandCard(t("intro_mode_title"), t("intro_mode_body")),
+      () => _introSectionHeader(
+            "intro_section_bildung_title",
+            subtitleKey: "intro_section_bildung_sub",
+            extraTop: true,
+          ),
+      if (!placementDone) () => _introPlacementGateCard(),
+      if (!introTheoryUnlocked) () => _introUnlockCalloutCard(),
+      if (!introTheoryUnlocked) ..._introLockedPlaceholderThunks(),
+      if (introTheoryUnlocked) ...<Widget Function()>[
+        () => _introExpandCard(
+            t("intro_why_macros_title"), t("intro_why_macros_body")),
+        () =>
+            _introExpandCard(t("intro_body_title"), t("intro_body_body")),
+        () =>
+            _introExpandCard(t("intro_macro_title"), t("intro_macro_body")),
+        () => _introExpandCard(
+              t("intro_recognize_macros_title"),
+              t("intro_recognize_macros_body"),
+            ),
+        () => _introInfographicBlock(),
+        () => _introExpandCard(t("intro_how_title"), t("intro_how_body")),
+        () =>
+            _introExpandCard(t("intro_prepost_title"), t("intro_prepost_body")),
+        () =>
+            _introExpandCard(t("intro_mindset_title"), t("intro_mindset_body")),
+        _introEducationBlock,
+        _introOutroBlock,
+      ],
+    ];
+    return Scaffold(
+      appBar: AppBar(title: Text(t("intro"))),
+      body: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(10, 20, 10, 48),
+        // Mehr prä-gebauter Bereich, damit große Karten/ Bilder nicht erst beim Sichtbarwerden decodiert werden.
+        cacheExtent: 1200,
+        itemCount: itemFactories.length,
+        // true: gescrollte Abschnitte behalten State — vermeidet ruckeliges Neuladen/Bild-Decode beim Zurückscrollen.
+        addAutomaticKeepAlives: true,
+        itemBuilder: (context, i) {
+          return itemFactories[i]();
+        },
+      ),
+    );
+  }
+
+  /// Abschluss der Einleitung: aufklappbar.
+  Widget _introOutroBlock() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          iconColor: const Color(0xFFD4AF37),
+          collapsedIconColor: Colors.white54,
+          title: Text(
+            t("intro_outro_title"),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              height: 1.35,
+              color: Color(0xFFD4AF37),
+            ),
+          ),
+          children: [
+            Text(
+              t("intro_outro_body"),
+              style: const TextStyle(
+                fontSize: 14.5,
+                height: 1.65,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: () => setState(() => selectedIndex = 3),
+              child: Text(t("intro_outro_settings")),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () => setState(() => selectedIndex = 2),
+              child: Text(t("intro_outro_tracking")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const Color _igGreen = Color(0xFF2E7D4A);
+  static const Color _igOrange = Color(0xFFCC8C3A);
+  static const Color _igBlue = Color(0xFF3B7EB8);
+  static const Color _igRed = Color(0xFFBA5C5C);
+  static const Color _igSplitOrange = Color(0xFFE6A23C);
+  static const Color _igSplitBlue = Color(0xFF3D7AB8);
+  static const Color _igSplitGreen = Color(0xFF3A8F5E);
+
+  Widget _introInfographicPieRowOnly(Widget Function(String) splitLabel) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 50,
+            child: Container(
+              color: _igSplitOrange,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              child: Center(
+                child: splitLabel(t("intro_infographic_split_carbs")),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 30,
+            child: Container(
+              color: _igSplitBlue,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              child: Center(
+                child: splitLabel(t("intro_infographic_split_protein")),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 20,
+            child: Container(
+              color: _igSplitGreen,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
+              child: Center(
+                child: splitLabel(t("intro_infographic_split_fat")),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Speicher-“Hamster”-Idee der Notion-Grafik, optisch dezent im SOL-Look.
+  Widget _introInfographicStorageCallout() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F1514),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _igRed.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.savings_outlined,
+            size: 20,
+            color: Color.lerp(_igRed, Colors.white, 0.2)!,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              t("intro_infographic_red_storage"),
+              style: const TextStyle(
+                fontSize: 13.5,
+                height: 1.45,
+                color: Colors.white70,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _introInfographicSummaryBlock() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t("intro_infographic_summary_title"),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFD4AF37),
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final key in <String>[
+          "intro_infographic_summary_1",
+          "intro_infographic_summary_2",
+          "intro_infographic_summary_3",
+        ]) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '▸ ',
+                  style: TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    t(key),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      height: 1.45,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 50/30/20-Balken + Merksätze (Nebeneinander auf breitem Layout).
+  Widget _introInfographicSplitAndSummary() {
+    Widget splitLabel(String s) {
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: Text(
+          s,
+          textAlign: TextAlign.center,
+          maxLines: 3,
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+            color: Colors.white,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          t("intro_infographic_split_title"),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFFCCCCCC),
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Builder(
+          builder: (context) {
+            final pie = _introInfographicPieRowOnly(splitLabel);
+            final summary = _introInfographicSummaryBlock();
+            if (MediaQuery.sizeOf(context).width < 480) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  pie,
+                  const SizedBox(height: 16),
+                  summary,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 55,
+                  child: pie,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 45,
+                  child: summary,
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        Text(
+          t("intro_infographic_split_note"),
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.5,
+            color: Colors.white54,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Kompakt-Diagramm im SOL-Look (Gold-Rand, Akzentfarben) statt externer Pixelgrafik.
+  Widget _igHeroLane(Color accent, IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withValues(alpha: 0.55)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: accent, size: 22),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: Color.lerp(accent, Colors.white, 0.2),
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _introInfographicHeroSchematic() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+              width: 1.2,
+            ),
+            color: const Color(0xFF12100E),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                t("intro_infographic_hero_schematic_title"),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFD4AF37),
+                  letterSpacing: 0.35,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _igHeroLane(
+                      _igOrange,
+                      Icons.grain,
+                      t("intro_infographic_hero_chip_carbs"),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _igHeroLane(
+                      _igGreen,
+                      Icons.nightlight_outlined,
+                      t("intro_infographic_hero_chip_fat"),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _igHeroLane(
+                      _igBlue,
+                      Icons.fitness_center,
+                      t("intro_infographic_hero_chip_protein"),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Icon(
+                  Icons.arrow_downward,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.35),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.5),
+                  ),
+                  color: const Color(0xFF1A1814),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.bolt,
+                      color: Color(0xFFD4AF37),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        t("intro_infographic_hero_center_goal"),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFE7D9C3),
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFF1F1210),
+                  border: Border.all(color: _igRed.withValues(alpha: 0.42)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_outlined,
+                      color: _igRed,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        t("intro_infographic_hero_excess_path"),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          t("intro_infographic_illustration_lead"),
+          style: const TextStyle(
+            fontSize: 12.8,
+            height: 1.45,
+            color: Colors.white54,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _introInfographicAccentSection({
+    required Color accent,
+    required String title,
+    required String body,
+    List<Widget> extra = const [],
+  }) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        iconColor: accent,
+        collapsedIconColor: Colors.white38,
+        leading: Container(
+          width: 4,
+          constraints: const BoxConstraints(minHeight: 28),
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+            color: Color.lerp(accent, Colors.white, 0.15),
+            height: 1.25,
+          ),
+        ),
+        children: [
+          Text(
+            body,
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.5,
+              color: Colors.white70,
+            ),
+          ),
+          ...extra,
+        ],
+      ),
+    );
+  }
+
+  Widget _introInfographicBlock() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              iconColor: const Color(0xFFD4AF37),
+              collapsedIconColor: Colors.white54,
+              title: Text(
+                t("intro_infographic_title"),
+                style: const TextStyle(
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.35,
+                  height: 1.35,
+                  color: Color(0xFFE7D9C3),
+                  fontFamily: 'Georgia',
+                ),
+              ),
+              children: [
+                _introInfographicHeroSchematic(),
+                const SizedBox(height: 10),
+                Text(
+                  t("intro_infographic_caption"),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.6,
+                    color: Colors.white60,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFF2C2C2C)),
+          _introInfographicAccentSection(
+            accent: _igGreen,
+            title: t("intro_infographic_green_title"),
+            body: t("intro_infographic_green_body"),
+          ),
+          const Divider(height: 1, color: Color(0xFF2C2C2C)),
+          _introInfographicAccentSection(
+            accent: _igOrange,
+            title: t("intro_infographic_orange_title"),
+            body: t("intro_infographic_orange_body"),
+          ),
+          const Divider(height: 1, color: Color(0xFF2C2C2C)),
+          _introInfographicAccentSection(
+            accent: _igBlue,
+            title: t("intro_infographic_blue_title"),
+            body: t("intro_infographic_blue_body"),
+          ),
+          const Divider(height: 1, color: Color(0xFF2C2C2C)),
+          _introInfographicAccentSection(
+            accent: _igRed,
+            title: t("intro_infographic_red_title"),
+            body: t("intro_infographic_red_body"),
+            extra: [
+              const SizedBox(height: 10),
+              _introInfographicStorageCallout(),
+            ],
+          ),
+          const Divider(height: 1, color: Color(0xFF2C2C2C)),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              iconColor: const Color(0xFFD4AF37),
+              collapsedIconColor: Colors.white54,
+              title: Text(
+                t("intro_infographic_split_title"),
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFCCCCCC),
+                ),
+              ),
+              children: [
+                _introInfographicSplitAndSummary(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _introEducationBlock() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          iconColor: const Color(0xFFD4AF37),
+          collapsedIconColor: Colors.white54,
+          title: Text(
+            t("intro_edu_title"),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              height: 1.35,
+              color: Color(0xFFD4AF37),
+            ),
+          ),
+          children: [
+            if (placementDone) ...[
+              Text(
+                tFmt("placement_badge", {"n": placementLevel.toString()}),
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF8BC4A8),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                t("intro_knowledge_bar_title"),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFCCCCCC),
+                ),
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: kEducationQuestions.isEmpty
+                      ? 0
+                      : _educationPassedIds.length /
+                          kEducationQuestions.length,
+                  minHeight: 8,
+                  backgroundColor: Colors.white10,
+                  color: const Color(0xFFD4AF37),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                tFmt("intro_knowledge_line", {
+                  "p": _educationPassedIds.length.toString(),
+                  "t": kEducationQuestions.length.toString(),
+                }),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              t("intro_edu_sub"),
+              style: const TextStyle(
+                fontSize: 14.5,
+                height: 1.65,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 16),
+            for (int level = 1; level <= 3; level++) _introEducationRow(level),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _introPlacementGateCard() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: const Color(0xFF221A0E),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0xFF8B7355), width: 1.2),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          iconColor: const Color(0xFFD4AF37),
+          collapsedIconColor: Colors.white54,
+          title: Row(
+            children: [
+              const Icon(
+                Icons.school_outlined,
+                color: Color(0xFFD4AF37),
+                size: 28,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  t("placement_banner_title"),
+                  style: const TextStyle(
+                    fontSize: 17.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFE7D9C3),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          children: [
+            Text(
+              t("placement_banner_body"),
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.55,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => unawaited(_runPlacementQuiz()),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFD4AF37),
+                foregroundColor: const Color(0xFF1A1A1A),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: Text(
+                t("placement_start"),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runPlacementQuiz() async {
+    if (!mounted) return;
+    var lastCorrect = 0;
+    var lastLevel = 1;
+    final ok = await PlacementQuiz.run(
+      context,
+      onMastered: (id) {
+        if (!mounted) return;
+        setState(() {
+          _educationPassedIds.add(id);
+        });
+        unawaited(_saveAppState());
+      },
+      onFinished: (level, correctTotal) {
+        lastLevel = level;
+        lastCorrect = correctTotal;
+        if (!mounted) return;
+        setState(() {
+          placementLevel = level;
+          placementDone = true;
+        });
+        unawaited(_saveAppState());
+      },
+      t: t,
+      title: t("placement_quiz_title"),
+      wrongMsg: t("intro_edu_wrong"),
+    );
+    if (ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tFmt("placement_done_snack", {
+              "n": lastLevel.toString(),
+              "c": lastCorrect.toString(),
+              "m": kPlacementQuestionIds.length.toString(),
+            }),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Widget _introEducationRow(int level) {
+    final acc = educationLevelAccessible(level, _educationPassedIds);
+    final done = educationLevelFullyPassed(level, _educationPassedIds);
+    final levelQs =
+        kEducationQuestions.where((q) => q.level == level).toList()..sort(
+              (a, b) => a.id.compareTo(b.id),
+            );
+    final need = levelQs.length;
+    final got = levelQs.where((q) => _educationPassedIds.contains(q.id)).length;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              done
+                  ? Icons.check_circle
+                  : (acc ? Icons.quiz : Icons.lock_outline),
+              size: 22,
+              color: done
+                  ? const Color(0xFF4CAF50)
+                  : Colors.white.withValues(alpha: 0.6),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tFmt("intro_edu_stufe_label", {"n": level}),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "$got/$need",
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.tonal(
+            onPressed: () {
+              if (!acc) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(t("intro_edu_locked")),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+                return;
+              }
+              unawaited(_runEducationLevelQuiz(level));
+            },
+            child: Text(t("intro_edu_start")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runEducationLevelQuiz(int level) async {
+    if (!educationLevelAccessible(level, _educationPassedIds)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t("intro_edu_locked")),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    final wasAlreadyFull = educationLevelFullyPassed(level, _educationPassedIds);
+    if (!mounted) return;
+    final completed = await EducationLevelQuiz.run(
+      context,
+      level: level,
+      passedIds: _educationPassedIds,
+      onMastered: (id) {
+        if (!mounted) return;
+        setState(() {
+          _educationPassedIds.add(id);
+        });
+        unawaited(_saveAppState());
+      },
+      t: t,
+      levelTitle: tFmt("intro_edu_dialog_title", {"n": level}),
+      wrongMsg: t("intro_edu_wrong"),
+    );
+    if (!completed || !mounted) return;
+    final nowFull = educationLevelFullyPassed(level, _educationPassedIds);
+    if (nowFull && !wasAlreadyFull) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tFmt("intro_edu_stufe_done", {"n": level})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// Textkarte: nur Übersicht sichtbar, Fließtext aufklappbar.
+  /// [initiallyExpanded]: z. B. Helden-Block-Partner (Konzept) direkt lesbar.
+  Widget _introExpandCard(
+    String title,
+    String body, {
+    bool initiallyExpanded = false,
+  }) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          tilePadding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          iconColor: const Color(0xFFD4AF37),
+          collapsedIconColor: Colors.white54,
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+              height: 1.3,
+              color: Color(0xFFD4AF37),
+            ),
+          ),
+          children: [
+            Text(
+              body,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.72,
+                color: context.sol.onCard,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Tagesübersicht: Farbe aus [SolUi] (Hell/Dunkel).
+  Color get _dailyOverviewCardColor => context.sol.dailyCard;
+  Color get _dailyOverviewCardBorder => context.sol.dailyBorder;
+  /// P/C/F-Blöcke in Datenbank (Rahmen, konsistent mit Tageskarte).
+  static const Color _kMacroGoldFrame = Color(0x8ED4AF37);
+
+  Widget _sectionCard({
+    required String title,
+    required Widget child,
+    Widget? titleTrailing,
+    Color? color,
+    ShapeBorder? shape,
+    EdgeInsetsGeometry margin = const EdgeInsets.symmetric(
+      horizontal: 8.0,
+      vertical: 4.0,
+    ),
+    /// Titelzeile tippen (z. B. Tagesübersicht → Lebensmittel je Mahlzeit).
+    VoidCallback? onTitleTap,
+    bool titleSectionExpanded = false,
+    Widget? belowTitle,
+  }) {
+    return Card(
+      margin: margin,
+      color: color,
+      shape: shape,
+      child: Padding(
+        padding: const EdgeInsets.all(10.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (onTitleTap != null)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: onTitleTap,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: context.sol.onCard,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              titleSectionExpanded
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                              size: 24,
+                              color: context.sol.muted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (titleTrailing != null) ...[
+                    const SizedBox(width: 6),
+                    titleTrailing!,
+                  ],
+                ],
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: context.sol.onCard,
+                      ),
+                    ),
+                  ),
+                  if (titleTrailing != null) titleTrailing!,
+                ],
+              ),
+            if (belowTitle != null) ...[
+              const SizedBox(height: 4),
+              belowTitle,
+            ],
+            const SizedBox(height: 8),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pro Mahlzeit aufklappbar: gegessene Lebensmittel (Tagesübersicht).
+  Widget _buildDailyOverviewMealFoodExpansions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final meal in meals)
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              key: ValueKey<String>('daily_foods_$meal'),
+              tilePadding:
+                  const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+              childrenPadding: const EdgeInsets.fromLTRB(10, 0, 4, 6),
+              iconColor: const Color(0xFFD4AF37),
+              collapsedIconColor: context.sol.muted,
+              title: Row(
+                children: [
+                  _mealSlotLeading(meal),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _displayMealName(meal),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: context.sol.onCard,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    "${(_mealTotals[meal]!['calories'] ?? 0.0).round()} kcal",
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.sol.soft,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+              children: [
+                _buildDailyOverviewMealFoodRows(meal),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDailyOverviewMealFoodRows(String meal) {
+    final items = trackedFoods
+        .where(
+          (f) => f.meal == meal && f.dayKey == selectedDayKey,
+        )
+        .toList();
+    if (items.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          t("meal_tracked_empty"),
+          style: TextStyle(
+            color: context.sol.muted,
+            fontSize: 13,
+            height: 1.35,
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final f in items)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    f.food.name,
+                    style: TextStyle(
+                      color: context.sol.onCard,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  "${_fmtGramsKpi(f.grams)} g",
+                  style: TextStyle(
+                    color: context.sol.muted,
+                    fontSize: 12.5,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Tracked Menge in g fürs UI (KPI) — ohne sinnlose Kommastellen.
+  String _fmtGramsKpi(double g) {
+    if (g.isNaN || g.isInfinite) return "0";
+    final r = (g * 10).round() / 10;
+    if (r == r.truncateToDouble()) return r.toStringAsFixed(0);
+    return r.toStringAsFixed(1);
+  }
+
+  /// Advanced-Dialoge: 2 Nachkommastellen, Gleitkomma-Artefakte ausblenden.
+  double _round2(double x) {
+    if (x.isNaN || x.isInfinite) return 0;
+    return (x * 100).round() / 100.0;
+  }
+
+  String _fmtAdv2(double x) => _round2(x).toStringAsFixed(2);
+
+  Widget _kpiLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: context.sol.muted)),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: context.sol.onCard,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Zwischen kcal-Zeile und Makro-Details (wie Tagesübersicht).
+  Widget _categoryExpandDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Divider(
+        height: 1,
+        color: context.sol.soft.withValues(alpha: 0.35),
+      ),
+    );
+  }
+
+  /// Leichter Makro-Hintergrund + feiner Rahmen (einheitlich für P / KH / F).
+  Widget _macroDetailGroupFrame({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: context.sol.soft.withValues(alpha: 0.28),
+          width: 1,
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  String _fmtCenterG(double centerG) => "${centerG.toStringAsFixed(1)} g";
+
+  String _fmtMacroTargetG(
+    double minG,
+    double maxG, {
+    double? centerG,
+    required bool showRange,
+  }) {
+    if (isSelectedDayCrashout) return _fmtRangeG(minG, maxG);
+    if (showRange) return _fmtRangeG(minG, maxG);
+    final c = centerG ?? ((minG + maxG) * 0.5);
+    return _fmtCenterG(c);
+  }
+
+  /// Ist / Ziel: default Zielmitte (eine Zahl); Tap auf die Zahl → Min–Max-Range.
+  Widget _macroTargetKpiLine({
+    required String toggleKey,
+    required String label,
+    required double current,
+    required double minG,
+    required double maxG,
+    double? centerG,
+  }) {
+    final showRange = _macroTargetRangeExpanded.contains(toggleKey);
+    final targetPart = _fmtMacroTargetG(
+      minG,
+      maxG,
+      centerG: centerG,
+      showRange: showRange,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: context.sol.muted)),
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                if (showRange) {
+                  _macroTargetRangeExpanded.remove(toggleKey);
+                } else {
+                  _macroTargetRangeExpanded.add(toggleKey);
+                }
+              });
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              "${current.toStringAsFixed(1)} / $targetPart",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: context.sol.onCard,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Kompakte Zeile (z. B. 7-Tage-Stat in der Tageskarte)
+  Widget _kpiSubLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: context.sol.soft,
+                fontSize: 12,
+                height: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: context.sol.onCard,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Anzeige im Tracking: «Heute» oder Wochentag + Datum (nicht roher ISO-Key).
+  String _dayLabelForKey(String dayKey) {
+    if (dayKey == dateKeyFromDate(DateTime.now())) {
+      return t("day_today");
+    }
+    final d = dateFromKey(dayKey);
+    return "${t("weekday_${d.weekday}")} · ${d.day}.${d.month}.${d.year}";
+  }
+
+  void _showDayContextSheet(
+    BuildContext context, {
+    required String dayKey,
+    required int trackStreak,
+    required double totalGrams,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.sol.dailyCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 18,
+            right: 18,
+            top: 10,
+            bottom: MediaQuery.viewPaddingOf(ctx).bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  t("day_context_modal_title"),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _kpiLine(t("day"), _dayLabelForKey(dayKey)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Tooltip(
+                        message: t("tracking_streak_hint"),
+                        child: Text(
+                          t("tracking_streak_label"),
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (trackStreak > 0)
+                                Text(
+                                  _streakEmojiBar(trackStreak),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    height: 1.1,
+                                  ),
+                                ),
+                              if (trackStreak > 0) const SizedBox(width: 8),
+                              Text(
+                                trackStreak > 0 ? "$trackStreak" : "—",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: trackStreak > 0
+                                      ? const Color(0xFFD4AF37)
+                                      : Colors.white38,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _kpiLine(
+                  t("weight"),
+                  weightHistory[dayKey] != null
+                      ? _weightKpiLine(weightHistory[dayKey]!)
+                      : "-",
+                ),
+                if (weightHistory[dayKey]?.hasFormImage == true)
+                  _weightFormImagePreview(
+                    path: weightHistory[dayKey]!.formImagePath,
+                    b64: weightHistory[dayKey]!.formImageB64,
+                    maxHeight: 160,
+                    onTap: () => _showWeightFormImageFullscreen(
+                      path: weightHistory[dayKey]!.formImagePath,
+                      b64: weightHistory[dayKey]!.formImageB64,
+                    ),
+                  ),
+                _kpiSubLine(
+                  t("volume_day_kpi"),
+                  "${_fmtGramsKpi(totalGrams)} g",
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  t("week_balances_move_to_settings"),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white38,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                InkWell(
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    Future.microtask(_openDayNoteDialog);
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.edit_note,
+                            size: 20, color: Colors.white70),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            (dayNotes[dayKey]?.isNotEmpty ?? false)
+                                ? dayNotes[dayKey]!
+                                : t("no_note"),
+                            style: TextStyle(
+                              fontStyle: (dayNotes[dayKey]?.isNotEmpty ?? false)
+                                  ? FontStyle.normal
+                                  : FontStyle.italic,
+                              color: (dayNotes[dayKey]?.isNotEmpty ?? false)
+                                  ? Colors.white
+                                  : Colors.white70,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          t("day_note"),
+                          style: const TextStyle(
+                            color: Color(0xFFD4AF37),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  InputDecoration _touchInputDecoration(
+    String label, {
+    String? hint,
+    String? helperText,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helperText,
+      helperMaxLines: helperText == null ? 1 : 4,
+      border: const OutlineInputBorder(),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      isDense: false,
+    );
+  }
+
+  void _ensureCurrentDay() {
+    final todayKey = dateKeyFromDate(DateTime.now());
+    if (selectedDayKey != todayKey) {
+      selectedDayKey = todayKey;
+    }
+  }
+
+  // Erinnerungslogik: Schaut die letzten 7 Tage (ohne heute) an und zählt,
+  // an wie vielen Tagen die getrackten kcal um >150 vom Tagesziel abweichen.
+  // Ab 2 solchen Tagen erscheint einmal pro Tag eine Verwarnung
+  // — nur in Aggressiv Cut ("Diät") oder Lean Bulk ("Aufbau").
+  void _checkAndShowDeviationWarning() {
+    if (!mounted) return;
+    if (nutritionMode != "Diät" && nutritionMode != "Aufbau") return;
+    if (goalCalories <= 0) return;
+
+    final todayKey = dateKeyFromDate(DateTime.now());
+    if (lastDeviationWarningKey == todayKey) return;
+
+    final today = DateTime.now();
+    int deviantDays = 0;
+    for (int i = 1; i <= 7; i++) {
+      final d = today.subtract(Duration(days: i));
+      final key = dateKeyFromDate(d);
+      final dayFoods = trackedFoods.where((t) => t.dayKey == key);
+      if (dayFoods.isEmpty) continue;
+      final dayKcal = dayFoods.fold<double>(0, (s, t) => s + t.calories);
+      if ((dayKcal - goalCalories).abs() > 150) {
+        deviantDays++;
+      }
+    }
+
+    if (deviantDays >= 2) {
+      _showDeviationWarning();
+      setState(() {
+        lastDeviationWarningKey = todayKey;
+      });
+      _saveAppState();
+    }
+  }
+
+  void _showDeviationWarning() {
+    final isCut = nutritionMode == "Diät";
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFD4AF37), size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                t("deviation_warning_title"),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isCut) ...[
+                Text(
+                  t("deviation_warning_cut_attention"),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.redAccent,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  t("deviation_warning_cut_body"),
+                  style: const TextStyle(fontSize: 14, height: 1.55),
+                ),
+              ] else ...[
+                Text(
+                  t("deviation_warning_bulk_body"),
+                  style: const TextStyle(fontSize: 14, height: 1.55),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Text(
+                  t("deviation_warning_motto"),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    height: 1.45,
+                    color: Color(0xFFE8C547),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t("deviation_warning_ack")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ───────────── Cheatday-Helpers ─────────────
+
+  // Liefert den ersten Tag des Monats von `dayKey` (YYYY-MM-DD).
+  String _monthKeyOf(String dayKey) {
+    final dt = dateFromKey(dayKey);
+    return "${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}";
+  }
+
+  // Cheatday-Einträge des aktuellen Monats (relativ zu selectedDayKey).
+  List<_CheatDayInfo> _cheatDaysInMonth([String? dayKey]) {
+    final ref = dayKey ?? selectedDayKey;
+    final monthKey = _monthKeyOf(ref);
+    return cheatDays.values.where((c) {
+      return _monthKeyOf(c.dayKey) == monthKey;
+    }).toList()
+      ..sort((a, b) => a.dayKey.compareTo(b.dayKey));
+  }
+
+  // Wieviele Credits diesen Monat schon verbraucht?
+  int _creditsUsedThisMonth([String? dayKey]) {
+    return _cheatDaysInMonth(dayKey).fold(0, (sum, c) => sum + c.credits);
+  }
+
+  // Bonus: alle bisherigen Cheats des Monats hatten sacrificeDays ≤ 2
+  // UND mindestens 1 Cheat war schon, sonst kein Bonus relevant.
+  // Crashouts disqualifizieren NICHT — Crashout hat 0 sacrificeDays.
+  bool _hasBonusCreditEarnedThisMonth([String? dayKey]) {
+    final cheats = _cheatDaysInMonth(dayKey);
+    if (cheats.isEmpty) return false;
+    for (final c in cheats) {
+      if (c.isCrashout) continue;
+      if (c.sacrificeDays > 2) return false;
+    }
+    return true;
+  }
+
+  int _maxCreditsThisMonth([String? dayKey]) {
+    if (nutritionMode == "Advanced" && advancedCheatMonthlyMax != null) {
+      return advancedCheatMonthlyMax!.clamp(1, 20);
+    }
+    return 4 + (_hasBonusCreditEarnedThisMonth(dayKey) ? 1 : 0);
+  }
+
+  int _creditsRemainingThisMonth([String? dayKey]) {
+    return (_maxCreditsThisMonth(dayKey) - _creditsUsedThisMonth(dayKey))
+        .clamp(0, 99);
+  }
+
+  bool isCheatDay(String dayKey) => cheatDays.containsKey(dayKey);
+
+  /// Katch-McArdle BMR × Aktivitätsfaktor — Maintenance für Ziel-kcal.
+  double _maintenanceKcalFromBody() {
+    final fatMassKg = currentWeightKg * (bodyFatPercent / 100.0);
+    final leanMassKg = (currentWeightKg - fatMassKg).clamp(1.0, 500.0);
+    final bmr = 370 + (21.6 * leanMassKg);
+    return bmr * _activityFactor();
+  }
+
+  /// Geplantes Tages-Defizit (nur wenn Ziel unter Maintenance), in kcal.
+  double _plannedDailyDeficitKcal() {
+    if (goalCalories <= 0) return 0;
+    return (_maintenanceKcalFromBody() - goalCalories).clamp(0.0, 20000.0);
+  }
+
+  /// Cheat: Zielkcal = goalCalories + Defizit×Tage; gleiche Makro-Verteilung → Faktor s.
+  double _cheatDayKcalScale(_CheatDayInfo info) {
+    if (info.isCrashout) return 1.0;
+    final g = goalCalories;
+    if (g <= 0) return 1.0;
+    final extra = _plannedDailyDeficitKcal() * info.sacrificeDays;
+    return (g + extra) / g;
+  }
+
+  Map<String, Object> _cheatDaySummaryFmtArgs(_CheatDayInfo info) {
+    final d = _plannedDailyDeficitKcal();
+    final n = info.sacrificeDays;
+    final extra = d * n;
+    final base = goalCalories;
+    final total = base + extra;
+    return {
+      "n": n,
+      "def": d.toStringAsFixed(0),
+      "extra": extra.toStringAsFixed(0),
+      "base": base.toStringAsFixed(0),
+      "total": total.toStringAsFixed(0),
+    };
+  }
+
+  /// Große, sofort sichtbare Kcal-Übersicht (Cheat, nicht Crashout) — Vorschau + aktiver Tag.
+  Widget _buildCheatDayKcalReadoutBlock({
+    required bool isCrashout,
+    required int sacrificeDays,
+  }) {
+    if (isCrashout) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(
+          t("cheatday_kcal_readout_crashout"),
+          style: const TextStyle(
+            color: Colors.white60,
+            fontSize: 12,
+            fontStyle: FontStyle.italic,
+            height: 1.35,
+          ),
+        ),
+      );
+    }
+    final dDef = _plannedDailyDeficitKcal();
+    if (dDef <= 0) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(
+          tFmt("cheatday_kcal_readout_no_deficit", {
+            "base": goalCalories.toStringAsFixed(0),
+          }),
+          style: const TextStyle(
+            color: Colors.white60,
+            fontSize: 12,
+            fontStyle: FontStyle.italic,
+            height: 1.35,
+          ),
+        ),
+      );
+    }
+    final extra = dDef * sacrificeDays;
+    final total = goalCalories + extra;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 4, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1810),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: const Color(0xFFD4AF37).withValues(alpha: 0.45),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t("cheatday_kcal_readout_title"),
+            style: const TextStyle(
+              color: Color(0xFFBDBDBD),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            tFmt("cheatday_kcal_readout_main", {
+              "total": total.toStringAsFixed(0),
+            }),
+            style: const TextStyle(
+              color: Color(0xFFFFE082),
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            tFmt("cheatday_kcal_readout_plus", {
+              "extra": extra.toStringAsFixed(0),
+              "base": goalCalories.toStringAsFixed(0),
+            }),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12.5,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            tFmt("cheatday_kcal_readout_per", {
+              "per_day": dDef.toStringAsFixed(0),
+              "n": sacrificeDays,
+            }),
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11.5,
+              fontStyle: FontStyle.italic,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Effektives kcal-Ziel für `dayKey` — Cheat: Basis + Defizit×opfert Tage.
+  // Crashout = -1 als Sentinel für "kein Maximum" (UI behandelt das).
+  double effectiveGoalKcalForDay(String dayKey) {
+    final info = cheatDays[dayKey];
+    if (info == null) return goalCalories;
+    if (info.isCrashout) return -1; // unbegrenzt
+    return goalCalories * _cheatDayKcalScale(info);
+  }
+
+  // Effektive Makro-Ziele (g) für `dayKey`. Bei Crashout: nur Mindest-Werte
+  // = aktuelle goalProtein / goalFat als Floor; carbs offen.
+  ({double protein, double carbs, double fat}) effectiveMacroGoalsForDay(
+      String dayKey) {
+    final info = cheatDays[dayKey];
+    if (info == null) {
+      return (protein: goalProtein, carbs: goalCarbs, fat: goalFat);
+    }
+    if (info.isCrashout) {
+      // Mindest-Floor: Eiweiß für Muskelschutz, Fett für Hormone.
+      return (protein: goalProtein, carbs: goalCarbs, fat: goalFat);
+    }
+    final s = _cheatDayKcalScale(info);
+    return (
+      protein: goalProtein * s,
+      carbs: goalCarbs * s,
+      fat: goalFat * s,
+    );
+  }
+
+  // ───────────── Cheatday UI ─────────────
+
+  // Banner über dem Daily-Overview an Cheat-Tagen — bewusst nüchtern,
+  // dunkel-grau mit dezentem Warnsymbol, kein Gold/Glanz.
+  Widget _cheatDayBanner(String dayKey) {
+    final info = cheatDays[dayKey]!;
+    final summary = info.isCrashout
+        ? t("cheatday_summary_crashout")
+        : tFmt("cheatday_summary_normal", _cheatDaySummaryFmtArgs(info));
+    final used = _creditsUsedThisMonth(dayKey);
+    final max = _maxCreditsThisMonth(dayKey);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF555555)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            info.isCrashout
+                ? Icons.warning_amber_rounded
+                : Icons.local_fire_department,
+            color: info.isCrashout
+                ? const Color(0xFFE53935)
+                : const Color(0xFFB0B0B0),
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        t("cheatday_active_banner_title"),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      tFmt("cheatday_credits_short",
+                          {"used": used, "max": max}),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  summary,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+                if (!info.isCrashout && _plannedDailyDeficitKcal() > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    tFmt("cheatday_kcal_banner_line", {
+                      "total": (goalCalories * _cheatDayKcalScale(info))
+                          .toStringAsFixed(0),
+                      "extra": (_plannedDailyDeficitKcal() * info.sacrificeDays)
+                          .toStringAsFixed(0),
+                      "per_day": _plannedDailyDeficitKcal().toStringAsFixed(0),
+                      "n": info.sacrificeDays,
+                    }),
+                    style: const TextStyle(
+                      color: Color(0xFFFFE082),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 2),
+                Text(
+                  t("cheatday_active_banner_subtitle"),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Öffnet den Cheatday-Manager für `dayKey`.
+  // Schritt 1: Bewusstseins-Warnung (nur wenn noch nicht aktiv).
+  // Schritt 2: Auswahl Sacrifice 1–4 oder Crashout.
+  Future<void> _openCheatDayManager(String dayKey) async {
+    if (cheatDays.containsKey(dayKey)) {
+      await _showCheatDayActiveDialog(dayKey);
+      return;
+    }
+    final remaining = _creditsRemainingThisMonth(dayKey);
+    if (remaining <= 0) {
+      await _showCheatDayNoCreditsDialog();
+      return;
+    }
+    final wantsToContinue = await _showCheatDayWarningDialog();
+    if (wantsToContinue != true || !mounted) return;
+    await _showCheatDayChoiceDialog(dayKey);
+  }
+
+  Future<bool?> _showCheatDayWarningDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFB0B0B0), size: 26),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                t("cheatday_warning_title"),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            t("cheatday_warning_body"),
+            style: const TextStyle(
+              color: Colors.white,
+              height: 1.5,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t("cheatday_cancel"),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB0B0B0),
+              side: const BorderSide(color: Color(0xFF555555)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t("cheatday_continue")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCheatDayChoiceDialog(String dayKey) {
+    int sacrificeDays = 1;
+    bool useCrashout = false;
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final remaining = _creditsRemainingThisMonth(dayKey);
+          final crashoutFits = remaining >= 2;
+          final dDef = _plannedDailyDeficitKcal();
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1F1F1F),
+            title: Text(
+              t("cheatday_title"),
+              style: const TextStyle(color: Colors.white),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _cheatDayCreditsBlock(dayKey),
+                  const SizedBox(height: 16),
+                  Text(
+                    t("cheatday_choose_sacrifice"),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [1, 2, 3, 4].map((n) {
+                      final selected = !useCrashout && sacrificeDays == n;
+                      return ChoiceChip(
+                        label: Text(
+                          n == 1
+                              ? t("cheatday_sacrifice_one")
+                              : tFmt("cheatday_sacrifice_n", {"n": n}),
+                          style: TextStyle(
+                            color: selected ? Colors.black : Colors.white,
+                          ),
+                        ),
+                        selected: selected,
+                        selectedColor: const Color(0xFFB0B0B0),
+                        backgroundColor: const Color(0xFF2A2A2A),
+                        side: BorderSide(
+                          color: selected
+                              ? const Color(0xFFB0B0B0)
+                              : const Color(0xFF555555),
+                        ),
+                        onSelected: (_) {
+                          setLocal(() {
+                            useCrashout = false;
+                            sacrificeDays = n;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  if (!useCrashout) ...[
+                    _buildCheatDayKcalReadoutBlock(
+                      isCrashout: false,
+                      sacrificeDays: sacrificeDays,
+                    ),
+                    if (dDef > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          t("cheatday_sacrifice_foot"),
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11.5,
+                            fontStyle: FontStyle.italic,
+                            height: 1.35,
+                          ),
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          tFmt("cheatday_sacrifice_hint", {
+                            "def": dDef.toStringAsFixed(0),
+                            "extra": (dDef * sacrificeDays).toStringAsFixed(0),
+                            "n": sacrificeDays,
+                            "base": goalCalories.toStringAsFixed(0),
+                            "total": (goalCalories + dDef * sacrificeDays)
+                                .toStringAsFixed(0),
+                          }),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                  ],
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Divider(color: Colors.white24, height: 1),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t("cheatday_use_crashout"),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Switch(
+                        value: useCrashout,
+                        activeThumbColor: const Color(0xFFE53935),
+                        onChanged: crashoutFits
+                            ? (v) => setLocal(() => useCrashout = v)
+                            : null,
+                      ),
+                    ],
+                  ),
+                  if (!crashoutFits)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(
+                        "Crashout = 2 Credits — nicht genug übrig.",
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  if (useCrashout) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      t("cheatday_crashout_explainer"),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  t("cheatday_cancel"),
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: useCrashout
+                      ? const Color(0xFFE53935)
+                      : const Color(0xFFB0B0B0),
+                  foregroundColor: Colors.black,
+                ),
+                onPressed: () {
+                  setState(() {
+                    cheatDays[dayKey] = _CheatDayInfo(
+                      dayKey: dayKey,
+                      sacrificeDays: useCrashout ? 0 : sacrificeDays,
+                      isCrashout: useCrashout,
+                      activatedAt: DateTime.now(),
+                    );
+                  });
+                  _saveAppState();
+                  Navigator.of(ctx).pop();
+                  final d0 = _plannedDailyDeficitKcal();
+                  final sMsg = !useCrashout && d0 > 0
+                      ? tFmt("cheatday_activated_with_kcal", {
+                          "total": (goalCalories + d0 * sacrificeDays)
+                              .toStringAsFixed(0),
+                          "per_day": d0.toStringAsFixed(0),
+                          "n": sacrificeDays,
+                        })
+                      : t("cheatday_activated");
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(sMsg),
+                      duration: const Duration(seconds: 3),
+                    ),
+                  );
+                },
+                child: Text(t("cheatday_continue")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _cheatDayCreditsBlock(String dayKey) {
+    final used = _creditsUsedThisMonth(dayKey);
+    final max = _maxCreditsThisMonth(dayKey);
+    final bonus = _hasBonusCreditEarnedThisMonth(dayKey);
+    final manualCheatCap =
+        nutritionMode == "Advanced" && advancedCheatMonthlyMax != null;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF555555)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t("cheatday_credits_label"),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            tFmt("cheatday_credits_format",
+                {"used": used, "max": max}),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            manualCheatCap
+                ? t("cheatday_bonus_hint_manual")
+                : (bonus
+                    ? t("cheatday_bonus_earned")
+                    : t("cheatday_bonus_hint")),
+            style: TextStyle(
+              color: !manualCheatCap && bonus
+                  ? const Color(0xFFD4AF37)
+                  : Colors.white54,
+              fontSize: 11,
+              fontStyle:
+                  !manualCheatCap && bonus ? FontStyle.normal : FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCheatDayActiveDialog(String dayKey) {
+    final info = cheatDays[dayKey]!;
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: Text(
+          t("cheatday_title"),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              t("cheatday_already_active"),
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              info.isCrashout
+                  ? t("cheatday_summary_crashout")
+                  : tFmt("cheatday_summary_normal", _cheatDaySummaryFmtArgs(info)),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildCheatDayKcalReadoutBlock(
+              isCrashout: info.isCrashout,
+              sacrificeDays: info.sacrificeDays,
+            ),
+            const SizedBox(height: 12),
+            _cheatDayCreditsBlock(dayKey),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              t("cheatday_cancel"),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE53935)),
+            onPressed: () {
+              setState(() {
+                cheatDays.remove(dayKey);
+              });
+              _saveAppState();
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(t("cheatday_removed")),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+            child: Text(t("cheatday_remove")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCheatDayNoCreditsDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: Text(
+          t("cheatday_title"),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          t("cheatday_no_credits"),
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              t("got_it"),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Prüft ob `mode` mit aktuellem Alter erlaubt ist.
+  // Liefert null wenn ok, sonst den i18n-Key der Warnung.
+  String? _ageBlockReasonForMode(String mode) {
+    if (mode == "Diät") {
+      if (ageYears < 16) return "mode_blocked_cut_too_young";
+      if (ageYears > 50) return "mode_blocked_cut_too_old";
+    }
+    if (mode == "Advanced") {
+      if (ageYears < 16) return "mode_blocked_advanced_too_young";
+    }
+    return null;
+  }
+
+  // Zeigt die Sperr-Warnung und führt optional den Wechsel auf Alltag aus.
+  Future<void> _showModeAgeBlockedDialog(String warningKey) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFD4AF37), size: 26),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                t("mode_blocked_title"),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          t(warningKey),
+          style: const TextStyle(color: Colors.white, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              t("mode_blocked_cancel"),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD4AF37),
+              foregroundColor: Colors.black,
+            ),
+            icon: const Icon(Icons.shield_outlined, size: 18),
+            label: Text(t("mode_blocked_use_alltag")),
+            onPressed: () {
+              setState(() {
+                nutritionMode = "Alltag";
+                _applyAutoNutritionTargets();
+                _applyAlltagMealDistribution();
+                _alltagBalanceDraft = alltagBalance;
+              });
+              _saveAppState();
+              Navigator.of(ctx).pop();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _effectiveCutExtraSteps(String dayKey) {
+    if (cutExtraStepsByDay.containsKey(dayKey)) {
+      return cutExtraStepsByDay[dayKey]!.clamp(3000, 10000);
+    }
+    return cutExtraStepsBaseline.clamp(3000, 10000);
+  }
+
+  int _effectiveCutExtraStepsAdditional(String dayKey) {
+    return (cutExtraStepsAdditionalByDay[dayKey] ?? 0).clamp(0, 10000);
+  }
+
+  int _effectiveCutExtraStepsTotal(String dayKey) {
+    return _effectiveCutExtraSteps(dayKey) +
+        _effectiveCutExtraStepsAdditional(dayKey);
+  }
+
+  /// kcal aus Extra-Schritten (Formel: Gewicht × Schritte × 0.0004).
+  double kcalFromExtraCutSteps(int extraSteps, double weightKg) {
+    if (extraSteps < 3000) return 0;
+    final s = extraSteps.clamp(3000, 20000).toDouble();
+    const kcalPerStepPerKg = 0.0004;
+    return (s * weightKg * kcalPerStepPerKg).clamp(0.0, 20000.0);
+  }
+
+  int _suggestedExtraStepsToCoverInSol(
+    int currentE,
+    double surplusKcal,
+    double w,
+  ) {
+    final k0 = kcalFromExtraCutSteps(currentE, w);
+    final want = surplusKcal;
+    if (want <= 0) return currentE.clamp(3000, 20000);
+    for (var e = currentE; e <= 20000; e += 50) {
+      if (kcalFromExtraCutSteps(e, w) - k0 >= want - 0.5) {
+        return e;
+      }
+    }
+    return 20000;
+  }
+
+  int _walkStepsEstimateForKcal(double kcal, double w) {
+    if (kcal <= 0) return 0;
+    const kcalPerStepPerKg = 0.0004;
+    final safeW = w <= 0 ? 70.0 : w;
+    final s = (kcal / (kcalPerStepPerKg * safeW)).ceil();
+    return ((s / 100).round() * 100).clamp(800, 500000);
+  }
+
+  ({double minKm, double maxKm}) _stepsToKmRangeByGender(int steps) {
+    final s = steps.clamp(0, 500000).toDouble();
+    final (minStepM, maxStepM) = genderCode == "female"
+        ? (0.65, 0.75)
+        : genderCode == "male"
+            ? (0.70, 0.80)
+            : (0.65, 0.80);
+    return (minKm: s * minStepM / 1000.0, maxKm: s * maxStepM / 1000.0);
+  }
+
+  String _fmtStepsKmRange(int steps) {
+    final r = _stepsToKmRangeByGender(steps);
+    return "${r.minKm.toStringAsFixed(1)}–${r.maxKm.toStringAsFixed(1)} km";
+  }
+
+  Future<void> _refreshSyncedSteps({
+    bool requestPermissionsIfNeeded = true,
+  }) async {
+    if (kIsWeb || !mounted || !stepSyncEnabled || _stepSyncBusy) return;
+    _stepSyncBusy = true;
+    try {
+      await _health.configure();
+      if (Platform.isAndroid) {
+        final hcAvailable = await _health.isHealthConnectAvailable();
+        if (!hcAvailable) {
+          if (!mounted) return;
+          setState(() => syncedStepsForSelectedDay = 0);
+          return;
+        }
+      }
+      final types = <HealthDataType>[HealthDataType.STEPS];
+      if (requestPermissionsIfNeeded) {
+        await _health.requestAuthorization(
+          types,
+          permissions: const [HealthDataAccess.READ],
+        );
+      }
+      final d0 = dateFromKey(selectedDayKey);
+      final start = DateTime(d0.year, d0.month, d0.day);
+      final end = start.add(const Duration(days: 1));
+      final steps = await _health.getTotalStepsInInterval(
+        start,
+        end,
+        includeManualEntry: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        syncedStepsForSelectedDay = (steps ?? 0).clamp(0, 500000);
+        _stepSyncLastAt = DateTime.now();
+        _stepSyncLastDayKey = selectedDayKey;
+      });
+      _maybeNotifyStepsGoalReached();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        syncedStepsForSelectedDay = 0;
+      });
+    } finally {
+      _stepSyncBusy = false;
+    }
+  }
+
+  void _maybeScheduleStepSyncRefresh() {
+    if (!stepSyncEnabled || _stepSyncBusy || kIsWeb) return;
+    final now = DateTime.now();
+    final stale = _stepSyncLastAt == null ||
+        now.difference(_stepSyncLastAt!) > const Duration(seconds: 25);
+    final wrongDay = _stepSyncLastDayKey != selectedDayKey;
+    if (stale || wrongDay) {
+      unawaited(_refreshSyncedSteps(requestPermissionsIfNeeded: false));
+    }
+  }
+
+  void _maybeNotifyStepsGoalReached() {
+    if (!mounted || !stepSyncEnabled) return;
+    final dayKey = selectedDayKey;
+    final goalSteps = _effectiveCutExtraStepsTotal(dayKey);
+    final currentSteps = syncedStepsForSelectedDay;
+    final reached = currentSteps >= goalSteps && goalSteps > 0;
+    final already = _stepGoalCelebratedByDay[dayKey] ?? false;
+    if (reached && !already) {
+      _stepGoalCelebratedByDay[dayKey] = true;
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: true,
+          builder: (ctx) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2A33),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF66BB6A), width: 1.2),
+              ),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "🏃‍♂️🔥",
+                    style: TextStyle(fontSize: 34),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    "Du bist eine Maschine, du hast deine Schritte schon voll, weiter so die Sommerform steht vor der Tür!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+    if (!reached && already) {
+      _stepGoalCelebratedByDay[dayKey] = false;
+    }
+  }
+
+  Future<void> _showStepsInfoDialog() async {
+    if (!mounted) return;
+    final goal = _effectiveCutExtraStepsTotal(selectedDayKey);
+    final synced = stepSyncEnabled ? syncedStepsForSelectedDay : 0;
+    final shown = synced > goal ? "$goal+" : synced.toString();
+    final open = (goal - synced).clamp(0, 500000);
+    final source = stepSyncEnabled ? "Health-App (Auto)" : "Manuell";
+    final hasOverride = cutExtraStepsByDay.containsKey(selectedDayKey) ||
+        cutExtraStepsAdditionalByDay.containsKey(selectedDayKey);
+    final kExtra = kcalFromExtraCutSteps(goal, currentWeightKg);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Schritte-Info"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Quelle: $source"),
+            const SizedBox(height: 6),
+            Text("Ziel heute: $goal Schritte"),
+            Text("Erkannt (Leiste): $shown Schritte"),
+            Text("Erkannt (genau): $synced Schritte"),
+            Text("Offen: $open Schritte"),
+            if (hasOverride) ...[
+              const SizedBox(height: 6),
+              Text(t("cut_day_override_on")),
+            ],
+            const SizedBox(height: 10),
+            Text("Distanz: ${_fmtStepsKmRange(goal)}"),
+            Text(
+              tFmt("cut_day_kcal_line", {
+                "k": kExtra.toStringAsFixed(0),
+                "steps": goal,
+              }),
+            ),
+            const SizedBox(height: 6),
+            const Text("Formel: kcal = Gewicht × Schritte × 0.0004"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t("ok")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openStepsSettingsDialog(String dayKey) async {
+    if (!mounted) return;
+    var localSync = stepSyncEnabled;
+    var localBase = _effectiveCutExtraSteps(dayKey);
+    var localExtra = _effectiveCutExtraStepsAdditional(dayKey);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setLocal) {
+          final total = localBase + localExtra;
+          final reached10k =
+              localSync ? syncedStepsForSelectedDay >= 10000 : localBase >= 10000;
+          return AlertDialog(
+            title: const Text("Schritte-Einstellungen"),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    "Deine eingegebenen Schritte werden deinen kcal gegengerechnet. Nimm einen Wert, bei dem du dir sicher bist dass du ihn täglich halten kannst.",
+                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: localSync,
+                    title: const Text("Auto-Sync Health-App"),
+                    subtitle: Text(
+                      localSync
+                          ? "Erkannt: $syncedStepsForSelectedDay"
+                          : "Manuell",
+                    ),
+                    onChanged: kIsWeb
+                        ? null
+                        : (v) => setLocal(() {
+                              localSync = v;
+                            }),
+                  ),
+                  const SizedBox(height: 8),
+                  Text("Basis-Schritte: $localBase"),
+                  Slider(
+                    value: localBase.toDouble(),
+                    min: 3000,
+                    max: 10000,
+                    divisions: 70,
+                    onChanged: (v) => setLocal(() {
+                      localBase = ((v / 100).round() * 100).clamp(3000, 10000);
+                      if (localBase < 10000) localExtra = 0;
+                    }),
+                  ),
+                  if (reached10k) ...[
+                    const SizedBox(height: 4),
+                    Text("Zusatz-Schritte: $localExtra"),
+                    Slider(
+                      value: localExtra.toDouble(),
+                      min: 0,
+                      max: 10000,
+                      divisions: 100,
+                      onChanged: (v) => setLocal(() {
+                        localExtra = ((v / 100).round() * 100).clamp(0, 10000);
+                      }),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Text("Gesamt: $total Schritte"),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx2),
+                child: Text(t("cancel")),
+              ),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    stepSyncEnabled = localSync;
+                    if (localBase == cutExtraStepsBaseline) {
+                      cutExtraStepsByDay.remove(dayKey);
+                    } else {
+                      cutExtraStepsByDay[dayKey] = localBase;
+                    }
+                    if (localExtra <= 0) {
+                      cutExtraStepsAdditionalByDay.remove(dayKey);
+                    } else {
+                      cutExtraStepsAdditionalByDay[dayKey] = localExtra;
+                    }
+                    if (!stepSyncEnabled) syncedStepsForSelectedDay = 0;
+                    _applyAutoNutritionTargets();
+                  });
+                  _saveAppState();
+                  if (stepSyncEnabled && !kIsWeb) {
+                    unawaited(
+                      _refreshSyncedSteps(requestPermissionsIfNeeded: true),
+                    );
+                  }
+                  _maybeNotifyStepsGoalReached();
+                  Navigator.pop(ctx2);
+                },
+                child: Text(t("save")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _applyDailyKcalOverSchedule() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_checkDailyKcalOver());
+    });
+  }
+
+  void _applyAutoNutritionTargets() {
+    if (nutritionMode == "Advanced") return;
+
+    final fatMassKg = currentWeightKg * (bodyFatPercent / 100.0);
+    final leanMassKg = (currentWeightKg - fatMassKg).clamp(1.0, 500.0);
+    final maintenanceKcal = _maintenanceKcalFromBody();
+
+    double ageAdjustedDeficitPerKgFat = 70;
+    if (ageYears >= 45) ageAdjustedDeficitPerKgFat = 60;
+    if (ageYears >= 60) ageAdjustedDeficitPerKgFat = 45;
+
+    double targetKcal = maintenanceKcal;
+    if (nutritionMode == "Diät") {
+      var deficit = fatMassKg * ageAdjustedDeficitPerKgFat;
+      if (cutDeficitStyle == "more_cardio") {
+        deficit *= 0.90;
+      } else if (cutDeficitStyle == "less_move") {
+        deficit *= 1.10;
+      }
+      targetKcal = (maintenanceKcal - deficit).clamp(1200.0, 10000.0);
+      final st = _effectiveCutExtraStepsTotal(selectedDayKey);
+      targetKcal += kcalFromExtraCutSteps(st, currentWeightKg);
+      targetKcal = targetKcal.clamp(1200.0, 10000.0);
+    } else if (nutritionMode == "Aufbau") {
+      final surplus = (leanMassKg * 4.0).clamp(150.0, 300.0);
+      targetKcal = (maintenanceKcal + surplus).clamp(1200.0, 10000.0);
+    } else if (nutritionMode == "Alltag") {
+      // Alltag-Slider beeinflusst kcal leicht:
+      // Performance (0.0) = -100 kcal, Mid (0.5) = 0, Entspannt (1.0) = +100 kcal
+      final alltagOffset = (alltagBalance - 0.5) * 200;
+      targetKcal = (maintenanceKcal + alltagOffset).clamp(1200.0, 10000.0);
+    }
+
+    final protein = 2.5 * currentWeightKg;
+    final double fatG;
+    if (nutritionMode == "Alltag") {
+      final planned = _kAlltagPlanFatGPerKg * currentWeightKg;
+      fatG = math.max(_kMinFatGPerKg * currentWeightKg, planned);
+    } else if (nutritionMode == "Aufbau") {
+      fatG = _kBulkPlanFatGPerKg * currentWeightKg;
+    } else {
+      fatG = _kCutPlanFatGPerKg * currentWeightKg;
+    }
+    final fat = fatG;
+    final carbs = ((targetKcal - (protein * 4.1) - (fat * 9.3)) / 4.1).clamp(
+      0.0,
+      1000.0,
+    );
+
+    goalProtein = protein;
+    goalFat = fat;
+    goalCarbs = carbs;
+  }
+
+  // Berechnet Ziel-Makros im Advanced-Modus anhand des Presets:
+  // 0.0 = maximal gesunder Aggressiv-Cut, 0.5 = Maintenance,
+  // 1.0 = maximal gesunder Dirty Bulk. Protein/Fett bleiben muskelschützend
+  // fix, Carbs variieren. kcal ergeben sich aus den Makros (nicht andersrum).
+  void _applyAdvancedPreset() {
+    final fatMassKg = currentWeightKg * (bodyFatPercent / 100.0);
+    final leanMassKg = (currentWeightKg - fatMassKg).clamp(1.0, 500.0);
+    final maintenanceKcal = _maintenanceKcalFromBody();
+
+    double maxDeficitPerKgFat = 90;
+    if (ageYears >= 45) maxDeficitPerKgFat = 75;
+    if (ageYears >= 60) maxDeficitPerKgFat = 55;
+
+    final dir = (advancedPreset - 0.5) * 2.0; // -1..+1
+    double targetKcal = maintenanceKcal;
+    if (dir < 0) {
+      final deficit = (-dir) * fatMassKg * maxDeficitPerKgFat;
+      targetKcal = (maintenanceKcal - deficit).clamp(1200.0, 10000.0);
+    } else if (dir > 0) {
+      final maxSurplus = (leanMassKg * 8.0).clamp(200.0, 600.0);
+      final surplus = dir * maxSurplus;
+      targetKcal = (maintenanceKcal + surplus).clamp(1200.0, 10000.0);
+    }
+
+    final protein = 2.5 * currentWeightKg;
+    final fat = 0.75 * currentWeightKg;
+    final carbs = ((targetKcal - (protein * 4.1) - (fat * 9.3)) / 4.1)
+        .clamp(0.0, 1000.0);
+
+    goalProtein = protein;
+    goalFat = fat;
+    goalCarbs = carbs;
+  }
+
+  // Verteilt die Meal-Makros im Alltag-Modus zwischen Performance-Baseline
+  // (0.0) und gleichmäßiger Verteilung (1.0). kcal und Ziel-Makros bleiben
+  // unberührt.
+  void _applyAlltagMealDistribution() {
+    final n = meals.length;
+    final even = 100.0 / n;
+    final newMacros = <String, Map<String, double>>{};
+    for (final meal in meals) {
+      final perf = _performanceMealMacros[meal] ??
+          const {"protein": 0.0, "carbs": 0.0, "fat": 0.0};
+      newMacros[meal] = {
+        "protein":
+            (perf["protein"]! * (1 - alltagBalance)) + (even * alltagBalance),
+        "carbs":
+            (perf["carbs"]! * (1 - alltagBalance)) + (even * alltagBalance),
+        "fat": (perf["fat"]! * (1 - alltagBalance)) + (even * alltagBalance),
+      };
+    }
+    mealMacros = newMacros;
+  }
+
+  String? _inferredCarbKind(Food f) {
+    if (f.category != "Carbs") return null;
+    if (f.carbKind != null) return f.carbKind;
+    if (f.carbs <= 0) return "komplex";
+    final r = f.sugar / f.carbs;
+    return r > 0.45 ? "einfach" : "komplex";
+  }
+
+  bool _recipeMatchesFlavorFilter(Food food, String filter) {
+    if (filter == "all") return true;
+    if (food.recipeFlavor == null) return false;
+    if (filter == "sweet") return food.recipeFlavor == "sweet";
+    if (filter == "salty") return food.recipeFlavor == "salty";
+    return true;
+  }
+
+  String _foodFlavorListSuffix(Food f) {
+    if (f.recipeFlavor == "sweet") return " · ${t("recipe_flavor_sweet")}";
+    if (f.recipeFlavor == "salty") return " · ${t("recipe_flavor_salty")}";
+    return "";
+  }
+
+  String _carbKindListSuffix(Food f) {
+    if (f.category != "Carbs") return "";
+    final k = _inferredCarbKind(f);
+    if (k == "komplex") return " · ${t("carb_tag_complex")}";
+    if (k == "einfach") return " · ${t("carb_tag_simple")}";
+    return "";
+  }
+
+  Map<String, int> _loadPersonalRatingMap(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final out = <String, int>{};
+      for (final e in m.entries) {
+        if (e.value is num) {
+          out[e.key.toString()] = (e.value as num).toInt().clamp(1, 3);
+        }
+      }
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  int? _foodPerformanceRating(Food food) =>
+      userFoodPerformanceByName[food.name];
+
+  int? _foodToleranceRating(Food food) => userFoodToleranceByName[food.name];
+
+  String _personalRatingLevelHint(String kind, int level) {
+    if (kind == "performance") {
+      if (level == 1) return t("db_personal_rating_perf_1");
+      if (level == 2) return t("db_personal_rating_perf_2");
+      return t("db_personal_rating_perf_3");
+    }
+    if (level == 1) return t("db_personal_rating_tol_1");
+    if (level == 2) return t("db_personal_rating_tol_2");
+    return t("db_personal_rating_tol_3");
+  }
+
+  String _personalRatingListSuffix(Food food) {
+    final p = _foodPerformanceRating(food);
+    final v = _foodToleranceRating(food);
+    if (p == null && v == null) return "";
+    final parts = <String>[];
+    if (p != null) {
+      parts.add("${t("db_personal_rating_performance_short")}$p");
+    }
+    if (v != null) {
+      parts.add("${t("db_personal_rating_tolerance_short")}$v");
+    }
+    return " · ${parts.join(" · ")}";
+  }
+
+  bool _matchesPersonalRatingAxisFilter(int? rating, String filter) {
+    switch (filter) {
+      case "3":
+        return rating == 3;
+      case "2plus":
+        return rating != null && rating >= 2;
+      case "rated":
+        return rating != null;
+      case "none":
+        return rating == null;
+      case "all":
+      default:
+        return true;
+    }
+  }
+
+  bool _foodMatchesPersonalRatingFilters(Food food) {
+    return _matchesPersonalRatingAxisFilter(
+          _foodPerformanceRating(food),
+          databasePerformanceFilter,
+        ) &&
+        _matchesPersonalRatingAxisFilter(
+          _foodToleranceRating(food),
+          databaseToleranceFilter,
+        );
+  }
+
+  bool _personalRatingFiltersActive() {
+    return databasePerformanceFilter != "all" ||
+        databaseToleranceFilter != "all";
+  }
+
+  String _personalRatingFilterOptionLabel(String filter) {
+    switch (filter) {
+      case "3":
+        return t("db_personal_filter_only3");
+      case "2plus":
+        return t("db_personal_filter_min2");
+      case "rated":
+        return t("db_personal_filter_rated");
+      case "none":
+        return t("db_personal_filter_none");
+      default:
+        return t("db_personal_filter_all");
+    }
+  }
+
+  String _personalRatingFilterSummary() {
+    final parts = <String>[];
+    if (databasePerformanceFilter != "all") {
+      parts.add(
+        "${t("db_personal_rating_performance_short")} ${_personalRatingFilterOptionLabel(databasePerformanceFilter)}",
+      );
+    }
+    if (databaseToleranceFilter != "all") {
+      parts.add(
+        "${t("db_personal_rating_tolerance_short")} ${_personalRatingFilterOptionLabel(databaseToleranceFilter)}",
+      );
+    }
+    return parts.join(" · ");
+  }
+
+  Future<void> _openPersonalRatingFilterSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: context.sol.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: StatefulBuilder(
+            builder: (ctx, setS) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      t("db_personal_filter_sheet_title"),
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      t("db_personal_filter_sheet_hint"),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: context.sol.muted,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _personalRatingFilterChipRow(
+                      label: t("db_personal_filter_performance"),
+                      selected: databasePerformanceFilter,
+                      onSelected: (v) {
+                        setState(() => databasePerformanceFilter = v);
+                        setS(() {});
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _personalRatingFilterChipRow(
+                      label: t("db_personal_filter_tolerance"),
+                      selected: databaseToleranceFilter,
+                      onSelected: (v) {
+                        setState(() => databaseToleranceFilter = v);
+                        setS(() {});
+                      },
+                    ),
+                    if (_personalRatingFiltersActive()) ...[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () {
+                            setState(() {
+                              databasePerformanceFilter = "all";
+                              databaseToleranceFilter = "all";
+                            });
+                            setS(() {});
+                          },
+                          child: Text(t("db_personal_filter_reset")),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _personalRatingFilterChipRow({
+    required String label,
+    required String selected,
+    required ValueChanged<String> onSelected,
+  }) {
+    final opts = <({String k, String lab})>[
+      (k: "all", lab: t("db_personal_filter_all")),
+      (k: "3", lab: t("db_personal_filter_only3")),
+      (k: "2plus", lab: t("db_personal_filter_min2")),
+      (k: "rated", lab: t("db_personal_filter_rated")),
+      (k: "none", lab: t("db_personal_filter_none")),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.white60),
+        ),
+        const SizedBox(height: 4),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: opts
+                .map(
+                  (o) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(o.lab),
+                      selected: selected == o.k,
+                      onSelected: (_) => onSelected(o.k),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _personalRatingPickerRow({
+    required String title,
+    required String kind,
+    required int? value,
+    required ValueChanged<int?> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFFAAAAAA),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final opt in <int?>[null, 1, 2, 3])
+              FilterChip(
+                label: Text(
+                  opt == null ? t("db_personal_rating_off") : "$opt",
+                  style: const TextStyle(fontSize: 12),
+                ),
+                selected: value == opt,
+                onSelected: (_) => onChanged(opt),
+              ),
+          ],
+        ),
+        if (value != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              _personalRatingLevelHint(kind, value),
+              style: const TextStyle(fontSize: 11, color: Colors.white38),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _foodCardPersonalRatingSection(Food food) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          t("db_personal_rating_section"),
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFFAAAAAA),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          t("db_personal_rating_hint"),
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: Colors.white38,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _personalRatingPickerRow(
+          title: t("db_personal_rating_performance"),
+          kind: "performance",
+          value: _foodPerformanceRating(food),
+          onChanged: (v) {
+            setState(() {
+              if (v == null) {
+                userFoodPerformanceByName.remove(food.name);
+              } else {
+                userFoodPerformanceByName[food.name] = v;
+              }
+            });
+            _saveAppState();
+          },
+        ),
+        const SizedBox(height: 10),
+        _personalRatingPickerRow(
+          title: t("db_personal_rating_tolerance"),
+          kind: "tolerance",
+          value: _foodToleranceRating(food),
+          onChanged: (v) {
+            setState(() {
+              if (v == null) {
+                userFoodToleranceByName.remove(food.name);
+              } else {
+                userFoodToleranceByName[food.name] = v;
+              }
+            });
+            _saveAppState();
+          },
+        ),
+      ],
+    );
+  }
+
+  void _replaceUserFoodInAppState(String oldName, Food replacement) {
+    setState(() {
+      for (var i = 0; i < foodDatabase.length; i++) {
+        if (foodDatabase[i].name == oldName) {
+          foodDatabase[i] = replacement;
+          break;
+        }
+      }
+      for (final t in trackedFoods) {
+        if (t.food.name == oldName) {
+          t.food = replacement;
+        }
+      }
+      if (oldName != replacement.name) {
+        final st = userDbStarByName.remove(oldName);
+        if (st != null) userDbStarByName[replacement.name] = st;
+        final perf = userFoodPerformanceByName.remove(oldName);
+        if (perf != null) userFoodPerformanceByName[replacement.name] = perf;
+        final tol = userFoodToleranceByName.remove(oldName);
+        if (tol != null) userFoodToleranceByName[replacement.name] = tol;
+      }
+    });
+    _saveAppState();
+  }
+
+  /// Bottom sheet: komplexe vs. einfache Kohlenhydrat-Quelle.
+  Future<String?> _showCarbSourceBottomSheet({required String current}) {
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("db_carb_source_sheet_title"),
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    t("db_carb_source_intro"),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white60,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _carbSourceSheetTile(
+                    ctx,
+                    "komplex",
+                    t("carb_tag_complex"),
+                    t("db_carb_source_complex_blurb"),
+                    Icons.grain,
+                    current == "komplex",
+                  ),
+                  const SizedBox(height: 8),
+                  _carbSourceSheetTile(
+                    ctx,
+                    "einfach",
+                    t("carb_tag_simple"),
+                    t("db_carb_source_simple_blurb"),
+                    Icons.bolt_outlined,
+                    current == "einfach",
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _carbSourceSheetTile(
+    BuildContext sheetCtx,
+    String value,
+    String title,
+    String blurb,
+    IconData icon,
+    bool selected,
+  ) {
+    return Material(
+      color: const Color(0xFF232323),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => Navigator.pop(sheetCtx, value),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 28,
+                color: selected
+                    ? const Color(0xFFD4AF37)
+                    : Colors.white38,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      blurb,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white60,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(Icons.check_circle, color: Color(0xFFD4AF37), size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openEditUserFoodDialog(Food food) {
+    if (food.isDefault) return;
+    final oldName = food.name;
+    final name = TextEditingController(text: food.name);
+    final protein = TextEditingController(
+        text: food.protein.toStringAsFixed(1));
+    final carbs = TextEditingController(text: food.carbs.toStringAsFixed(1));
+    final sugar = TextEditingController(text: food.sugar.toStringAsFixed(1));
+    final fiber = TextEditingController(text: food.fiber.toStringAsFixed(1));
+    final fat = TextEditingController(text: food.fat.toStringAsFixed(1));
+    var category = food.category;
+    var type = food.type;
+    var alsoFruit = food.extraCategories.contains("Obst");
+    var alsoVeg = food.extraCategories.contains("Gemüse");
+    var carbK = _inferredCarbKind(food) ?? "komplex";
+    String? flavor = food.recipeFlavor;
+    String? editImagePath = food.imagePath;
+    String? stagedPickPath;
+
+    Future<void> applySave(BuildContext dCtx) async {
+      final p = _safeDouble(protein.text);
+      final c = _safeDouble(carbs.text);
+      final s = _safeDouble(sugar.text);
+      final fi = _safeDouble(fiber.text);
+      final f0 = _safeDouble(fat.text);
+      if (name.text.isEmpty || p == null || c == null || s == null || fi == null || f0 == null) {
+        return;
+      }
+      final ex = <String>[];
+      if (category != "Obst" && alsoFruit) ex.add("Obst");
+      if (category != "Gemüse" && alsoVeg) ex.add("Gemüse");
+      final img = await _resolveUserFoodImagePath(
+        foodName: name.text.trim(),
+        savedImagePath: editImagePath,
+        stagedPickPath: stagedPickPath,
+      );
+      _replaceUserFoodInAppState(
+        oldName,
+        Food(
+          name: name.text.trim(),
+          protein: p,
+          carbs: c,
+          sugar: s,
+          fiber: fi,
+          fat: f0,
+          category: category,
+          type: type,
+          isDefault: false,
+          extraCategories: ex,
+          imagePath: img,
+          carbKind: category == "Carbs" ? carbK : null,
+          ingredients: food.ingredients,
+          instructions: food.instructions,
+          portionHint: food.portionHint,
+          basePortionGrams: food.basePortionGrams,
+          recipeFlavor: flavor,
+        ),
+      );
+      if (dCtx.mounted) Navigator.pop(dCtx);
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (context, setD) {
+          return AlertDialog(
+            title: Text(t("db_edit_food")),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: name,
+                    decoration: _touchInputDecoration(t("name")),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: protein,
+                    decoration: _touchInputDecoration(t("protein")),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: carbs,
+                    decoration: _touchInputDecoration(t("carbs_total")),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: sugar,
+                    decoration: _touchInputDecoration(t("of_which_sugar")),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: fiber,
+                    decoration: _touchInputDecoration(t("of_which_fiber")),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: fat,
+                    decoration: _touchInputDecoration(t("fat")),
+                  ),
+                  const SizedBox(height: 10),
+                  _userFoodImagePickerSection(
+                    savedImagePath: editImagePath,
+                    stagedPickPath: stagedPickPath,
+                    onSavedImagePathChanged: (v) => setD(() => editImagePath = v),
+                    onStagedPickPathChanged: (v) => setD(() => stagedPickPath = v),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    t("db_off_category"),
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.white60),
+                  ),
+                  const SizedBox(height: 4),
+                  DropdownButton<String>(
+                    isExpanded: true,
+                    value: category,
+                    items: [
+                      "Carbs",
+                      "Protein",
+                      "Fett",
+                      "Ballaststoffe",
+                      "Obst",
+                      "Gemüse",
+                      "Rezepte",
+                    ]
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e,
+                            child: Text(_tCat(e)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      if (val == null) return;
+                      setD(() {
+                        category = val;
+                        if (val == "Obst") alsoFruit = false;
+                        if (val == "Gemüse") alsoVeg = false;
+                      });
+                    },
+                  ),
+                  if (category == "Carbs")
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(t("db_carb_source_tile"),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        "${carbK == "komplex" ? t("carb_tag_complex") : t("carb_tag_simple")} · ${t("db_carb_source_tile_sub")}",
+                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                      ),
+                      trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+                      onTap: () async {
+                        final p = await _showCarbSourceBottomSheet(current: carbK);
+                        if (p != null) setD(() => carbK = p);
+                      },
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    t("db_also_in"),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white60,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      if (category != "Obst")
+                        FilterChip(
+                          label: Text(_tCat("Obst")),
+                          selected: alsoFruit,
+                          onSelected: (v) => setD(() => alsoFruit = v),
+                        ),
+                      if (category != "Gemüse")
+                        FilterChip(
+                          label: Text(_tCat("Gemüse")),
+                          selected: alsoVeg,
+                          onSelected: (v) => setD(() => alsoVeg = v),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    t("recipe_flavor_filter_label"),
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.white60),
+                  ),
+                  const SizedBox(height: 4),
+                  DropdownButton<String?>(
+                    isExpanded: true,
+                    value: flavor,
+                    items: <DropdownMenuItem<String?>>[
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(t("food_flavor_none")),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: "sweet",
+                        child: Text(t("recipe_flavor_sweet")),
+                      ),
+                      DropdownMenuItem<String?>(
+                        value: "salty",
+                        child: Text(t("recipe_flavor_salty")),
+                      ),
+                    ],
+                    onChanged: (v) => setD(() => flavor = v),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    t("type"),
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.white60),
+                  ),
+                  const SizedBox(height: 4),
+                  DropdownButton<String>(
+                    isExpanded: true,
+                    value: type,
+                    items: [
+                      "Diät (Viel Volumen)",
+                      "Aufbau (Wenig Volumen)",
+                    ]
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e,
+                            child: Text(_tFullType(e)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      if (val == null) return;
+                      setD(() => type = val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: () => applySave(dCtx),
+                child: Text(t("save")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Median der kcal/100g — für die „neutrale“ Hervorhebung.
+  double _medianKcalOfFoods(List<Food> foods) {
+    if (foods.isEmpty) return 0;
+    final c = foods.map((e) => e.calories).toList()..sort();
+    final m = c.length ~/ 2;
+    if (c.length.isOdd) return c[m];
+    return (c[m - 1] + c[m]) / 2.0;
+  }
+
+  /// SOL-Datenbank-Hervorhebungen: 2× Diät, 2× Aufbau, 1× „neutral“
+  /// (kcal am nächsten am Median der Kandidaten, bei Gleichstand höherer Score).
+  /// Fehlen Typen, wird mit bestem verfügbaren Score aufgefüllt (max. 5).
+  List<Food> _picks2Diat2Aufbau1Neutral(
+    List<Food> pool,
+    int Function(Food) score,
+  ) {
+    if (pool.isEmpty) return [];
+    if (pool.length == 1) return [pool.first];
+
+    int cmp(Food a, Food b) => score(b).compareTo(score(a));
+    bool isDiet(Food f) => f.type.startsWith("Diät");
+    bool isBulk(Food f) => f.type.startsWith("Aufbau");
+
+    final diat = pool.where(isDiet).toList()..sort(cmp);
+    final aufb = pool.where(isBulk).toList()..sort(cmp);
+    final med = _medianKcalOfFoods(pool);
+
+    final out = <Food>[];
+    bool isUsed(Food f) => out.contains(f);
+
+    void addFirstN(List<Food> src, int n) {
+      for (final f in src) {
+        if (n <= 0) return;
+        if (isUsed(f)) continue;
+        out.add(f);
+        n--;
+      }
+    }
+
+    // Ziel: 2 Diät + 2 Aufbau
+    addFirstN(diat, 2);
+    addFirstN(aufb, 2);
+
+    void backfillToFour() {
+      while (out.length < 4) {
+        final needD = 2 - out.where(isDiet).length;
+        if (needD > 0) {
+          final nxt = diat.where((f) => !isUsed(f)).toList()..sort(cmp);
+          if (nxt.isNotEmpty) {
+            out.add(nxt.first);
+            continue;
+          }
+        }
+        final needA = 2 - out.where(isBulk).length;
+        if (needA > 0) {
+          final nxt = aufb.where((f) => !isUsed(f)).toList()..sort(cmp);
+          if (nxt.isNotEmpty) {
+            out.add(nxt.first);
+            continue;
+          }
+        }
+        final nxt = pool.where((f) => !isUsed(f)).toList()..sort(cmp);
+        if (nxt.isNotEmpty) {
+          out.add(nxt.first);
+        } else {
+          break;
+        }
+      }
+    }
+
+    backfillToFour();
+
+    if (out.length < 4) {
+      for (final f in (pool.toList()..sort(cmp))) {
+        if (!isUsed(f)) out.add(f);
+      }
+      return out;
+    }
+
+    // 5. Platz: am nächsten an Median-kcal, dann besserer Score
+    final rest = pool.where((f) => !isUsed(f)).toList();
+    if (rest.isNotEmpty) {
+      rest.sort((a, b) {
+        final da = (a.calories - med).abs();
+        final db = (b.calories - med).abs();
+        final c = da.compareTo(db);
+        if (c != 0) return c;
+        return score(b).compareTo(score(a));
+      });
+      out.add(rest.first);
+    }
+
+    if (out.length < 5) {
+      for (final f in (pool.toList()..sort(cmp))) {
+        if (out.length >= 5) break;
+        if (!isUsed(f)) out.add(f);
+      }
+    }
+
+    return out;
+  }
+
+  /// Standard aus [_picks2Diat2Aufbau1Neutral]: [D1, D2, B1, B2, N].
+  /// **Diät** / **Alle**: [D1, D2, N, B1, B2] — Plätze 1–2 Diät, 3 neutral, 4–5 Aufbau.
+  /// **Aufbau**: [B1, B2, N, D1, D2] — 1–2 Aufbau, 3 neutral, 4–5 Diät.
+  /// [typeFilter]: z. B. fürs Tracking-Add-Dialog; sonst [databaseTypeFilter].
+  List<Food> _reorderDatabaseHighlights(
+    List<Food> picks, {
+    String? typeFilter,
+  }) {
+    final tf = typeFilter ?? databaseTypeFilter;
+    if (picks.length < 4) return picks;
+    if (picks.length >= 5) {
+      final d1 = picks[0];
+      final d2 = picks[1];
+      final b1 = picks[2];
+      final b2 = picks[3];
+      final n = picks[4];
+      if (tf == "Aufbau") {
+        return [b1, b2, n, d1, d2];
+      }
+      return [d1, d2, n, b1, b2];
+    }
+    final d1 = picks[0];
+    final d2 = picks[1];
+    final b1 = picks[2];
+    final b2 = picks[3];
+    if (tf == "Aufbau") {
+      return [b1, b2, d1, d2];
+    }
+    return [d1, d2, b1, b2];
+  }
+
+  int _scoreCarbsKomplex(Food f) =>
+      (f.complexCarbs * 2.0 + f.fiber * 3.0).round();
+
+  /// [Magerquark] + [Protein Shake] fest in den Protein-Vorschlägen (max. 5).
+  List<Food> _ensureFavoriteProteinsInTopPicks(
+    List<Food> picks,
+    List<Food> pool,
+  ) {
+    final out = <Food>[];
+    for (final name in _kFavoriteProteinNames) {
+      if (out.length >= 5) break;
+      for (final f in pool) {
+        if (f.name == name) {
+          if (!out.contains(f)) out.add(f);
+          break;
+        }
+      }
+    }
+    for (final p in picks) {
+      if (out.length >= 5) break;
+      if (!out.contains(p)) out.add(p);
+    }
+    return out;
+  }
+
+  /// SOL-Vorschläge: je Gruppe 2+2+1; Rezepte gleiches Schema (max. 5).
+  /// [solReorderFilter] / [recipeFlavorFilter] v. a. fürs Tracking-Add (Modus/Filter).
+  List<Food> _topPicksProtein({String? solReorderFilter}) {
+    final list = foodDatabase
+        .where((f) => f.isDefault && f.category == "Protein")
+        .toList();
+    final picks = _picks2Diat2Aufbau1Neutral(
+      list,
+      (f) => (f.protein * 1000).round(),
+    );
+    return _ensureFavoriteProteinsInTopPicks(
+      _reorderDatabaseHighlights(picks, typeFilter: solReorderFilter),
+      list,
+    );
+  }
+
+  List<Food> _topPicksFett({String? solReorderFilter}) {
+    final list = foodDatabase
+        .where((f) => f.isDefault && f.category == "Fett")
+        .toList();
+    return _reorderDatabaseHighlights(
+      _picks2Diat2Aufbau1Neutral(
+        list,
+        (f) => (f.fat * 1000).round(),
+      ),
+      typeFilter: solReorderFilter,
+    );
+  }
+
+  List<Food> _topPicksBallaststoffe({String? solReorderFilter}) {
+    final list = foodDatabase
+        .where((f) => f.isDefault && f.category == "Ballaststoffe")
+        .toList();
+    return _reorderDatabaseHighlights(
+      _picks2Diat2Aufbau1Neutral(
+        list,
+        (f) => (f.fiber * 1000).round(),
+      ),
+      typeFilter: solReorderFilter,
+    );
+  }
+
+  List<Food> _topPicksCarbsKomplex({String? solReorderFilter}) {
+    final list = foodDatabase
+        .where(
+          (f) =>
+              f.isDefault &&
+              f.category == "Carbs" &&
+              _inferredCarbKind(f) == "komplex",
+        )
+        .toList();
+    return _reorderDatabaseHighlights(
+      _picks2Diat2Aufbau1Neutral(list, _scoreCarbsKomplex),
+      typeFilter: solReorderFilter,
+    );
+  }
+
+  List<Food> _topPicksCarbsEinfach({String? solReorderFilter}) {
+    final list = foodDatabase
+        .where(
+          (f) =>
+              f.isDefault &&
+              f.category == "Carbs" &&
+              _inferredCarbKind(f) == "einfach",
+        )
+        .toList();
+    return _reorderDatabaseHighlights(
+      _picks2Diat2Aufbau1Neutral(
+        list,
+        (f) => (f.sugar * 1000).round(),
+      ),
+      typeFilter: solReorderFilter,
+    );
+  }
+
+  List<Food> _topPicksRezepte({
+    String? solReorderFilter,
+    String? recipeFlavorFilter,
+  }) {
+    final rflav = recipeFlavorFilter ?? databaseRecipeFlavorFilter;
+    final list = foodDatabase
+        .where(
+          (f) =>
+              f.isDefault &&
+              f.category == "Rezepte" &&
+              _recipeMatchesFlavorFilter(f, rflav),
+        )
+        .toList();
+    return _reorderDatabaseHighlights(
+      _picks2Diat2Aufbau1Neutral(
+        list,
+        (f) => (f.protein * 10.0 + f.calories / 10.0).round(),
+      ),
+      typeFilter: solReorderFilter,
+    );
+  }
+
+  Widget databaseScreen() {
+    const categoryOrder = [
+      "Carbs",
+      "Protein",
+      "Fett",
+      "Ballaststoffe",
+      "Obst",
+      "Gemüse",
+      "Rezepte",
+    ];
+    final filteredFoods = foodDatabase.where((food) {
+      final matchesSearch =
+          food.name.toLowerCase().contains(searchQuery.toLowerCase());
+      final matchesCategory = databaseCategoryFilter == "Alle" ||
+          food.isInCategory(databaseCategoryFilter);
+      final matchesType = databaseTypeFilter == "Alle" ||
+          (databaseTypeFilter == "Diät" && food.type.startsWith("Diät")) ||
+          (databaseTypeFilter == "Aufbau" && food.type.startsWith("Aufbau"));
+      final matchesSource = databaseSourceFilter == "all" ||
+          (databaseSourceFilter == "mine" && !food.isDefault) ||
+          (databaseSourceFilter == "sol" && food.isDefault);
+      final matchesRecipeFlavor =
+          _recipeMatchesFlavorFilter(food, databaseRecipeFlavorFilter);
+      final matchesPersonalRating = _foodMatchesPersonalRatingFilters(food);
+      return matchesSearch &&
+          matchesCategory &&
+          matchesType &&
+          matchesSource &&
+          matchesRecipeFlavor &&
+          matchesPersonalRating;
+    }).toList();
+    filteredFoods.sort((a, b) {
+      final calCompare = a.calories.compareTo(b.calories);
+      if (databaseTypeFilter == "Diät" && calCompare != 0) {
+        // Diät: mehr Volumen oben = weniger kcal pro 100g zuerst.
+        return calCompare;
+      }
+      if (databaseTypeFilter == "Aufbau" && calCompare != 0) {
+        // Aufbau: energiedichter oben = mehr kcal pro 100g zuerst.
+        return -calCompare;
+      }
+
+      int typeRank(Food food) {
+        if (food.type.startsWith("Diät")) return 0;
+        if (food.type.startsWith("Aufbau")) return 1;
+        return 2;
+      }
+
+      final rankCompare = typeRank(a).compareTo(typeRank(b));
+      if (rankCompare != 0) return rankCompare;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    final visibleCategories = databaseCategoryFilter == "Alle"
+        ? categoryOrder
+        : [databaseCategoryFilter];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t("food_database")),
+        actions: [
+          IconButton(
+            tooltip: t("db_barcode_add"),
+            onPressed: _openBarcodeAddFlow,
+            icon: const Icon(Icons.qr_code_scanner),
+          ),
+          IconButton(
+            tooltip: t("db_quick_name_add"),
+            onPressed: _openQuickNameFoodDialog,
+            icon: const Icon(Icons.camera_alt_outlined),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: addFoodDialog,
+        child: const Icon(Icons.add),
+      ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: _sectionCard(
+              title: t("filter"),
+              child: Column(
+                children: [
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: t("search_food"),
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onChanged: (value) => setState(() => searchQuery = value),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    t("db_source_filter_label"),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFFD4AF37),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6.0),
+                          child: ChoiceChip(
+                            label: Text(t("db_source_all")),
+                            selected: databaseSourceFilter == "all",
+                            onSelected: (_) => setState(
+                              () => databaseSourceFilter = "all",
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6.0),
+                          child: ChoiceChip(
+                            label: Text(t("db_source_mine")),
+                            selected: databaseSourceFilter == "mine",
+                            onSelected: (_) => setState(
+                              () => databaseSourceFilter = "mine",
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6.0),
+                          child: ChoiceChip(
+                            label: Text(t("db_source_sol")),
+                            selected: databaseSourceFilter == "sol",
+                            onSelected: (_) => setState(
+                              () => databaseSourceFilter = "sol",
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: databaseTypeFilter,
+                    decoration: InputDecoration(
+                      labelText: t("mode"),
+                      border: const OutlineInputBorder(),
+                    ),
+                    items: ["Alle", "Diät", "Aufbau"]
+                        .map((type) => DropdownMenuItem(
+                            value: type, child: Text(_tTypeFilter(type))))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => databaseTypeFilter = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        "Alle",
+                        "Carbs",
+                        "Protein",
+                        "Fett",
+                        "Ballaststoffe",
+                        "Obst",
+                        "Gemüse",
+                        "Rezepte",
+                      ]
+                          .map(
+                            (category) => Padding(
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: ChoiceChip(
+                                label: Text(_tCat(category)),
+                                selected: databaseCategoryFilter == category,
+                                onSelected: (_) => setState(
+                                  () => databaseCategoryFilter = category,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      t("recipe_flavor_filter_label"),
+                      style: const TextStyle(
+                          fontSize: 12, color: Colors.white60),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ["all", "sweet", "salty"]
+                          .map(
+                            (fl) => Padding(
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: ChoiceChip(
+                                label: Text(
+                                  fl == "all"
+                                      ? t("recipe_flavor_all")
+                                      : (fl == "sweet"
+                                          ? t("recipe_flavor_sweet")
+                                          : t("recipe_flavor_salty")),
+                                ),
+                                selected: databaseRecipeFlavorFilter == fl,
+                                onSelected: (_) => setState(
+                                  () => databaseRecipeFlavorFilter = fl,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _openPersonalRatingFilterSheet,
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        foregroundColor: _personalRatingFiltersActive()
+                            ? const Color(0xFFD4AF37)
+                            : context.sol.muted,
+                      ),
+                      icon: Icon(
+                        _personalRatingFiltersActive()
+                            ? Icons.star
+                            : Icons.star_outline,
+                        size: 18,
+                      ),
+                      label: Text(
+                        _personalRatingFiltersActive()
+                            ? tFmt("db_personal_filter_active", {
+                                "s": _personalRatingFilterSummary(),
+                              })
+                            : t("db_personal_filter_button"),
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _databaseHighlightsCollapsible(),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.only(
+              bottom: 80 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final category = visibleCategories[index];
+                  final foodsInCategory = filteredFoods
+                      .where((f) => f.isInCategory(category))
+                      .toList()
+                    ..sort((a, b) {
+                      final calCompare = a.calories.compareTo(b.calories);
+                      if (databaseTypeFilter == "Diät" && calCompare != 0) {
+                        return calCompare;
+                      }
+                      if (databaseTypeFilter == "Aufbau" && calCompare != 0) {
+                        return -calCompare;
+                      }
+                      return a.name
+                          .toLowerCase()
+                          .compareTo(b.name.toLowerCase());
+                    });
+                  if (foodsInCategory.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8.0, vertical: 4.0),
+                    child: ExpansionTile(
+                      title: Text(
+                          "${_tCat(category)} (${foodsInCategory.length})"),
+                      initiallyExpanded: databaseCategoryFilter != "Alle",
+                      children: foodsInCategory.map(_buildFoodCard).toList(),
+                    ),
+                  );
+                },
+                childCount: visibleCategories.length,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _databaseHighlightsCollapsible() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () => setState(() => dbHighlightsExpanded = !dbHighlightsExpanded),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t("db_highlights_title"),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      dbHighlightsExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      color: Colors.white60,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (dbHighlightsExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: _buildDatabaseHighlights(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Wie Tracking-Add: Diät/Aufbau aus DB-Filter oder App-Modus.
+  String _solHighlightsTypeFilter() {
+    if (databaseTypeFilter == "Diät") return "Diät";
+    if (databaseTypeFilter == "Aufbau") return "Aufbau";
+    if (nutritionMode == "Diät") return "Diät";
+    if (nutritionMode == "Aufbau") return "Aufbau";
+    return "Diät";
+  }
+
+  Widget _buildDatabaseHighlights() {
+    final tf = _solHighlightsTypeFilter();
+    final rflav = databaseRecipeFlavorFilter;
+    final catF = databaseCategoryFilter;
+
+    Widget row(String sub, List<Food> items) {
+      if (items.isEmpty) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 2),
+          Text(
+            sub,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFFAAAAAA),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: items
+                .asMap()
+                .entries
+                .map((e) => _databaseHighlightTile(e.value, slot: e.key + 1))
+                .toList(),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t("db_highlights_sub"),
+          style: const TextStyle(fontSize: 11.5, color: Colors.white60, height: 1.3),
+        ),
+        if (catF == "Alle" || catF == "Protein")
+          row(t("db_hl_protein"), _topPicksProtein(solReorderFilter: tf)),
+        if (catF == "Alle" || catF == "Fett")
+          row(t("db_hl_fat"), _topPicksFett(solReorderFilter: tf)),
+        if (catF == "Alle" || catF == "Ballaststoffe")
+          row(t("db_hl_fiber"), _topPicksBallaststoffe(solReorderFilter: tf)),
+        if (catF == "Alle" || catF == "Carbs") ...[
+          row(t("db_hl_carbs_c"), _topPicksCarbsKomplex(solReorderFilter: tf)),
+          row(t("db_hl_carbs_s"), _topPicksCarbsEinfach(solReorderFilter: tf)),
+        ],
+        if (catF == "Alle" || catF == "Rezepte")
+          row(
+            t("db_hl_recipes"),
+            _topPicksRezepte(
+              solReorderFilter: tf,
+              recipeFlavorFilter: rflav,
+            ),
+          ),
+        const SizedBox(height: 4),
+        Text(
+          t("db_highlights_foot"),
+          style: const TextStyle(fontSize: 10.5, color: Colors.white38),
+        ),
+      ],
+    );
+  }
+
+  /// Kamera-Scan + Open-Food-Facts-API. Kein Vorschau-Dialog.
+  Future<_OffFetchResult?> _barcodeOpenFoodLookup() async {
+    if (!mounted) return null;
+    final code = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _BarcodeScanDialog(
+        t: t,
+      ),
+    );
+    if (code == null || !mounted) return null;
+    final cleaned = code.replaceAll(RegExp(r'[^\d]'), '');
+    if (cleaned.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("db_barcode_short"))),
+      );
+      return null;
+    }
+    try {
+      final uri = Uri.parse(
+        "https://world.openfoodfacts.org/api/v2/product/$cleaned.json?fields=product_name,nutriments",
+      );
+      final res = await http.get(uri);
+      if (res.statusCode != 200) throw Exception("HTTP");
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data["status"] != 1) {
+        if (!mounted) return null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t("db_off_not_found"))),
+        );
+        return null;
+      }
+      final p = data["product"] as Map<String, dynamic>?;
+      if (p == null) return null;
+      final n = p["nutriments"] as Map<String, dynamic>? ?? {};
+      final name = (p["product_name"] as String?)?.trim() ?? "Food $cleaned";
+      double g(String k) {
+        final v = n[k];
+        if (v is num) return v.toDouble();
+        return 0.0;
+      }
+      if (!mounted) return null;
+      final protein = g("proteins_100g");
+      final fat = g("fat_100g");
+      var carbs = g("carbohydrates_100g");
+      final su = g("sugars_100g");
+      final fi = g("fiber_100g");
+      if (carbs <= 0 && (protein + fat) > 0) {
+        carbs = 0.1;
+      }
+      return _OffFetchResult(
+        barcode: cleaned,
+        name: name,
+        protein: protein,
+        carbs: carbs,
+        sugar: su,
+        fiber: fi,
+        fat: fat,
+      );
+    } catch (_) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("db_off_error"))),
+      );
+      return null;
+    }
+  }
+
+  /// Open Food Facts → ggf. vorhandenes Lebensmittel → sonst Vorschau → DB.
+  Future<void> _openBarcodeAddFlow() async {
+    final fetch = await _barcodeOpenFoodLookup();
+    if (fetch == null) return;
+    final code = fetch.barcode;
+    Food? hit;
+    for (final f in foodDatabase) {
+      if (f.offBarcode == code) {
+        hit = f;
+        break;
+      }
+    }
+    if (hit != null && mounted) {
+      final foundFood = hit;
+      final a = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: Text(t("barcode_food_in_db_title")),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("barcode_food_in_db_body"),
+                  style: const TextStyle(height: 1.35),
+                ),
+                const SizedBox(height: 12),
+                _foodCompareCard(foundFood),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, "cancel"),
+              child: Text(t("cancel"), style: const TextStyle(color: Colors.white60)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, "new"),
+              child: Text(t("barcode_new_copy"), style: const TextStyle(color: Colors.white70)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, "track"),
+              child: Text(t("barcode_add_to_track")),
+            ),
+          ],
+        ),
+      );
+      if (a == "track") {
+        await _quickAddScannedFoodToTracking(foundFood);
+        return;
+      }
+      if (a != "new") return;
+    }
+    await _showOffPreviewFromOff(fetch);
+  }
+
+  /// Nach Barcode-Scan: Mahlzeit wählen (oder [fixedMeal]), Menge, sofort im Tracking.
+  /// [popSecondContext]: z. B. „Food hinzufügen“-Dialog — nach dem Hinzufügen schließen.
+  Future<void> _quickAddScannedFoodToTracking(
+    Food food, {
+    String? fixedMeal,
+    BuildContext? popSecondContext,
+  }) async {
+    if (meals.isEmpty) return;
+    var meal = fixedMeal != null && meals.contains(fixedMeal)
+        ? fixedMeal
+        : (meals.contains("Snacks") ? "Snacks" : meals.first);
+    final g = TextEditingController(text: "100");
+    if (!mounted) return;
+    final useMealPicker = fixedMeal == null || !meals.contains(fixedMeal);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: Text(t("barcode_add_to_track")),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                food.name,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
+              if (useMealPicker) ...[
+                DropdownButtonFormField<String>(
+                  value: meal,
+                  isExpanded: true,
+                  decoration: _touchInputDecoration(t("meal")),
+                  items: meals
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(_displayMealName(m)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setL(() => meal = v);
+                  },
+                ),
+                const SizedBox(height: 10),
+              ] else ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "${t("meal")}: ${_displayMealName(meal)}",
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              TextField(
+                controller: g,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: _touchInputDecoration("${t("grams")} (g)"),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+            FilledButton(
+              onPressed: () {
+                final gv = _tryParseUserNumber(g.text);
+                if (gv == null || gv <= 0) return;
+                setState(() {
+                  trackedFoods.add(
+                    TrackedFood(
+                      food: food,
+                      grams: gv,
+                      meal: meal,
+                      dayKey: selectedDayKey,
+                    ),
+                  );
+                });
+                _updateMealTotals();
+                _saveAppState();
+                Navigator.pop(ctx);
+                if (popSecondContext != null && popSecondContext.mounted) {
+                  Navigator.pop(popSecondContext);
+                }
+                _showBlessing();
+                _applyDailyKcalOverSchedule();
+              },
+              child: Text(t("add")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Nährwerte prüfen, in [foodDatabase] speichern; Rückgabe des neuen [Food] für z. B. Tracking.
+  Future<Food?> _showOffPreviewFromOff(_OffFetchResult r) async {
+    final p = TextEditingController(text: r.protein.toStringAsFixed(1));
+    final c = TextEditingController(text: r.carbs.toStringAsFixed(1));
+    final s = TextEditingController(text: r.sugar.toStringAsFixed(1));
+    final fi = TextEditingController(text: r.fiber.toStringAsFixed(1));
+    final f = TextEditingController(text: r.fat.toStringAsFixed(1));
+    final nCtrl = TextEditingController(text: r.name);
+    if (!mounted) return null;
+    String saveCat = "Carbs";
+    String saveCK = "komplex";
+    String saveType = "Diät (Viel Volumen)";
+    String? saveFlavor;
+    String? savedImagePath;
+    String? stagedPickPath;
+    return showDialog<Food?>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setL) => AlertDialog(
+          title: Text(t("db_off_preview_title")),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  r.barcode,
+                  style: const TextStyle(fontSize: 11, color: Colors.white38),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: nCtrl,
+                  decoration: _touchInputDecoration(t("name")),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: saveCat,
+                  decoration: _touchInputDecoration(t("db_off_category")),
+                  items: [
+                    "Carbs",
+                    "Protein",
+                    "Fett",
+                    "Ballaststoffe",
+                  ]
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(_tCat(e)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setL(() {
+                      saveCat = v;
+                    });
+                  },
+                ),
+                if (saveCat == "Carbs")
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      t("db_carb_source_tile"),
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      "${saveCK == "komplex" ? t("carb_tag_complex") : t("carb_tag_simple")} · ${t("db_carb_source_tile_sub")}",
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white54),
+                    ),
+                    trailing:
+                        const Icon(Icons.chevron_right, color: Colors.white38),
+                    onTap: () async {
+                      final p =
+                          await _showCarbSourceBottomSheet(current: saveCK);
+                      if (p != null) setL(() => saveCK = p);
+                    },
+                  ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: saveType,
+                  decoration: _touchInputDecoration(t("type")),
+                  items: [
+                    "Diät (Viel Volumen)",
+                    "Aufbau (Wenig Volumen)",
+                  ]
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(_tFullType(e)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setL(() => saveType = v);
+                  },
+                ),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String?>(
+                  value: saveFlavor,
+                  decoration: _touchInputDecoration(
+                      t("recipe_flavor_filter_label")),
+                  items: <DropdownMenuItem<String?>>[
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(t("food_flavor_none")),
+                    ),
+                    DropdownMenuItem<String?>(
+                      value: "sweet",
+                      child: Text(t("recipe_flavor_sweet")),
+                    ),
+                    DropdownMenuItem<String?>(
+                      value: "salty",
+                      child: Text(t("recipe_flavor_salty")),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    setL(() => saveFlavor = v);
+                  },
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  t("values_per_100g"),
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                    controller: p,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _touchInputDecoration(t("protein"))),
+                const SizedBox(height: 4),
+                TextField(
+                    controller: c,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _touchInputDecoration(t("carbs_total"))),
+                const SizedBox(height: 4),
+                TextField(
+                    controller: s,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _touchInputDecoration(t("of_which_sugar"))),
+                const SizedBox(height: 4),
+                TextField(
+                    controller: fi,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _touchInputDecoration(t("of_which_fiber"))),
+                const SizedBox(height: 4),
+                TextField(
+                    controller: f,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _touchInputDecoration(t("fat"))),
+                const SizedBox(height: 10),
+                _userFoodImagePickerSection(
+                  savedImagePath: savedImagePath,
+                  stagedPickPath: stagedPickPath,
+                  onSavedImagePathChanged: (v) => setL(() => savedImagePath = v),
+                  onStagedPickPathChanged: (v) => setL(() => stagedPickPath = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+            TextButton(
+              onPressed: () async {
+                final pV = _tryParseUserNumber(p.text);
+                final cV = _tryParseUserNumber(c.text);
+                final sV = _tryParseUserNumber(s.text);
+                final fiV = _tryParseUserNumber(fi.text);
+                final fV = _tryParseUserNumber(f.text);
+                if (nCtrl.text.trim().isEmpty ||
+                    pV == null ||
+                    cV == null ||
+                    sV == null ||
+                    fiV == null ||
+                    fV == null) {
+                  return;
+                }
+                final byBar = _findAnyFoodByBarcodeInDatabase(r.barcode);
+                if (byBar != null) {
+                  await _showBarcodeAlreadyInDatabase(byBar);
+                  return;
+                }
+                final byName = _findUserFoodByNormalizedName(nCtrl.text.trim());
+                if (byName != null) {
+                  if (!await _confirmDuplicateUserFoodName(byName)) {
+                    return;
+                  }
+                  if (!mounted) return;
+                }
+                final img = await _resolveUserFoodImagePath(
+                  foodName: nCtrl.text.trim(),
+                  savedImagePath: savedImagePath,
+                  stagedPickPath: stagedPickPath,
+                );
+                final newFood = Food(
+                  name: nCtrl.text.trim(),
+                  protein: pV,
+                  carbs: cV,
+                  sugar: sV,
+                  fiber: fiV,
+                  fat: fV,
+                  category: saveCat,
+                  type: saveType,
+                  isDefault: false,
+                  carbKind: saveCat == "Carbs" ? saveCK : null,
+                  recipeFlavor: saveFlavor,
+                  offBarcode: r.barcode,
+                  imagePath: img,
+                );
+                setState(() {
+                  foodDatabase.add(newFood);
+                });
+                _saveAppState();
+                if (ctx.mounted) Navigator.pop(ctx, newFood);
+              },
+              child: Text(t("save")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openQuickNameFoodDialog() async {
+    final name = TextEditingController();
+    String? stagedPickPath;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text(t("db_quick_title")),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                t("db_quick_body"),
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: name,
+                autofocus: true,
+                decoration: _touchInputDecoration(t("name")),
+              ),
+              const SizedBox(height: 10),
+              _userFoodImagePickerSection(
+                savedImagePath: null,
+                stagedPickPath: stagedPickPath,
+                onSavedImagePathChanged: (_) {},
+                onStagedPickPathChanged: (v) => setL(() => stagedPickPath = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+            TextButton(
+              onPressed: () {
+                if (name.text.trim().isEmpty) return;
+                Navigator.pop(ctx, name.text.trim());
+              },
+              child: Text(t("save")),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null || result.isEmpty) return;
+    if (!mounted) return;
+    final dup = _findUserFoodByNormalizedName(result);
+    if (dup != null) {
+      if (!await _confirmDuplicateUserFoodName(dup)) {
+        return;
+      }
+      if (!mounted) return;
+    }
+    final img = await _resolveUserFoodImagePath(
+      foodName: result,
+      savedImagePath: null,
+      stagedPickPath: stagedPickPath,
+    );
+    setState(() {
+      foodDatabase.add(Food(
+        name: result,
+        protein: 0,
+        carbs: 0,
+        sugar: 0,
+        fiber: 0,
+        fat: 0,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: false,
+        imagePath: img,
+      ));
+    });
+    _saveAppState();
+  }
+
+  String _foodImageFileSlug(String name) {
+    final s = name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    if (s.isNotEmpty) return s;
+    return 'food_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  bool _foodImagePathIsAsset(String path) => path.startsWith('assets/');
+
+  bool _foodImagePathExists(String? path) {
+    if (path == null || path.isEmpty) return false;
+    if (_foodImagePathIsAsset(path)) return true;
+    return File(path).existsSync();
+  }
+
+  Future<String?> _persistUserFoodImageFromPath(
+    String sourcePath,
+    String foodName,
+  ) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final sub = p.join(dir.path, 'user_foods');
+      await Directory(sub).create(recursive: true);
+      final dest = p.join(sub, '${_foodImageFileSlug(foodName)}.jpg');
+      await File(sourcePath).copy(dest);
+      return dest;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _foodImageWidget(
+    String path, {
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.cover,
+    Widget? error,
+  }) {
+    final err = error ??
+        SizedBox(
+          width: width,
+          height: height,
+          child: const Icon(Icons.broken_image, color: Colors.white38),
+        );
+    if (_foodImagePathIsAsset(path)) {
+      return Image.asset(
+        path,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, __, ___) => err,
+      );
+    }
+    final f = File(path);
+    if (f.existsSync()) {
+      return Image.file(
+        f,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, __, ___) => err,
+      );
+    }
+    return err;
+  }
+
+  Widget _userFoodImagePickerSection({
+    required String? savedImagePath,
+    required String? stagedPickPath,
+    required ValueChanged<String?> onSavedImagePathChanged,
+    required ValueChanged<String?> onStagedPickPathChanged,
+  }) {
+    Future<void> pick(ImageSource source) async {
+      final x = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (x == null) return;
+      onSavedImagePathChanged(null);
+      onStagedPickPathChanged(x.path);
+    }
+
+    final previewPath = stagedPickPath ?? savedImagePath;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          t("db_food_photo_label"),
+          style: const TextStyle(fontSize: 12, color: Colors.white60),
+        ),
+        const SizedBox(height: 6),
+        if (previewPath != null && _foodImagePathExists(previewPath))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: stagedPickPath != null
+                  ? Image.file(
+                      File(stagedPickPath),
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    )
+                  : _foodImageWidget(
+                      savedImagePath!,
+                      height: 120,
+                      width: double.infinity,
+                    ),
+            ),
+          ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => pick(ImageSource.gallery),
+              icon: const Icon(Icons.photo_outlined, size: 18),
+              label: Text(t("db_food_photo_pick_gallery")),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => pick(ImageSource.camera),
+              icon: const Icon(Icons.camera_alt_outlined, size: 18),
+              label: Text(t("db_food_photo_pick_camera")),
+            ),
+            if (previewPath != null)
+              TextButton(
+                onPressed: () {
+                  onStagedPickPathChanged(null);
+                  onSavedImagePathChanged(null);
+                },
+                child: Text(t("db_food_photo_remove")),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<String?> _resolveUserFoodImagePath({
+    required String foodName,
+    String? savedImagePath,
+    String? stagedPickPath,
+  }) async {
+    if (stagedPickPath != null) {
+      return _persistUserFoodImageFromPath(stagedPickPath, foodName);
+    }
+    return savedImagePath;
+  }
+
+  Widget _foodThumbnail(Food food, {double size = 40}) {
+    final path = food.imagePath;
+    if (path == null || path.isEmpty || !_foodImagePathExists(path)) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Icon(
+          food.category == "Rezepte"
+              ? Icons.restaurant_menu
+              : (food.isInCategory("Obst")
+                  ? Icons.apple_outlined
+                  : (food.isInCategory("Gemüse")
+                      ? Icons.spa_outlined
+                      : Icons.eco_outlined)),
+          color: Colors.white38,
+          size: size * 0.6,
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: _foodImageWidget(
+        path,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        error: SizedBox(
+          width: size,
+          height: size,
+          child: const Icon(Icons.broken_image, color: Colors.white38),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFoodCard(Food food) {
+    if (food.isRecipe) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        child: Card(
+          color: const Color(0xFF181818),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: Color(0xFF2C2A26), width: 1),
+          ),
+          child: InkWell(
+            onTap: () => _showRecipeInfoDialog(food),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _foodThumbnail(food, size: 48),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          food.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15.5,
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        _dbcListPcfFrame(food, compact: true),
+                        const SizedBox(height: 4),
+                        Text(
+                          "${_foodCategoryLabelsLine(food)} · ${_tFullType(food.type)}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            color: Colors.white38,
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.picture_in_picture_alt_outlined,
+                      size: 22,
+                      color: _dbPcfFrameKindForListCard(food) ==
+                              _DbPcfFrameKind.solGold
+                          ? const Color(0xFFD4AF37).withValues(alpha: 0.9)
+                          : Colors.white24,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: ExpansionTile(
+        leading: _foodThumbnail(food, size: 40),
+        title: Text(
+          food.name,
+          style: TextStyle(
+            fontWeight:
+                !food.isDefault ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _dbcListPcfFrame(food, compact: true),
+            const SizedBox(height: 4),
+            Text(
+              "${_foodCategoryLabelsLine(food)} · ${_tFullType(food.type)}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: Colors.white38,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
+        children: [
+          if (!food.isDefault)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.edit_outlined, color: Color(0xFFD4AF37)),
+              title: Text(t("db_edit_food")),
+              onTap: () => _openEditUserFoodDialog(food),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _foodCardDetailContent(
+              food,
+              showUserDelete: !food.isDefault,
+              useDatabasePcfStyling: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Zucker / Ballast / komplexe Carbs: gleiche Infos, aber dezent unter P/C/F.
+  Widget _buildMacroSubRow(
+      String label, double value, String unit, Color hintColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Text(
+            "${value.toStringAsFixed(1)} $unit",
+            style: TextStyle(
+              color: hintColor.withValues(alpha: 0.65),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _goldMacroFrame({required Widget child, EdgeInsetsGeometry? padding}) {
+    return Container(
+      width: double.infinity,
+      padding: padding ??
+          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _kMacroGoldFrame, width: 1.15),
+        color: const Color(0x12D4AF37),
+      ),
+      child: child,
+    );
+  }
+
+  /// SOL-Zeile: Gold nur 1–3 (Top2+neutral) — außer Alltag/Advanced + Typ „Alle“ → alle 5.
+  /// [typeFilter] z. B. [databaseTypeFilter] oder Track-Add-Modus-Filter.
+  bool _solHighlightSlotUsesFullGoldWithFilter(int slot1Based, String typeFilter) {
+    if (slot1Based < 1 || slot1Based > 5) return false;
+    if ((nutritionMode == "Alltag" || nutritionMode == "Advanced") &&
+        typeFilter == "Alle") {
+      return true;
+    }
+    return slot1Based <= 3;
+  }
+
+  bool _solHighlightSlotUsesFullGold(int slot1Based) {
+    return _solHighlightSlotUsesFullGoldWithFilter(
+        slot1Based, databaseTypeFilter);
+  }
+
+  /// Entspricht dem Datenbank-Typ-Filter, abgeleitet aus dem Ernährungsmodus (für SOL im Track-Add).
+  String get _trackAddSolTypeFilter {
+    if (nutritionMode == "Diät") return "Diät";
+    if (nutritionMode == "Aufbau") return "Aufbau";
+    return "Alle";
+  }
+
+  /// Ob [f] in den SOL-Top-Picks inkl. Gold-Markierung liegt (gleiche Logik wie Datenbank, modus-basiert).
+  bool _trackAddFoodIsSolGoldPick(
+    Food f, {
+    required String typeFilter,
+    required List<Food> solProtein,
+    required List<Food> solFett,
+    required List<Food> solBallast,
+    required List<Food> solCarbsK,
+    required List<Food> solCarbsE,
+    required List<Food> solRezepte,
+  }) {
+    if (!f.isDefault) return false;
+    final List<Food> picks;
+    if (f.category == "Rezepte" || f.isRecipe) {
+      picks = solRezepte;
+    } else if (f.category == "Protein") {
+      picks = solProtein;
+    } else if (f.category == "Fett") {
+      picks = solFett;
+    } else if (f.category == "Ballaststoffe") {
+      picks = solBallast;
+    } else if (f.category == "Carbs") {
+      if (_inferredCarbKind(f) == "komplex") {
+        picks = solCarbsK;
+      } else if (_inferredCarbKind(f) == "einfach") {
+        picks = solCarbsE;
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+    final i = picks.indexWhere((p) => p.name == f.name);
+    if (i < 0) return false;
+    return _solHighlightSlotUsesFullGoldWithFilter(i + 1, typeFilter);
+  }
+
+  List<Food>? _solPicksListForFood(Food food) {
+    if (food.category == "Rezepte" || food.isRecipe) {
+      return _topPicksRezepte();
+    }
+    switch (food.category) {
+      case "Protein":
+        return _topPicksProtein();
+      case "Fett":
+        return _topPicksFett();
+      case "Ballaststoffe":
+        return _topPicksBallaststoffe();
+      case "Carbs":
+        if (_inferredCarbKind(food) == "komplex") {
+          return _topPicksCarbsKomplex();
+        }
+        if (_inferredCarbKind(food) == "einfach") {
+          return _topPicksCarbsEinfach();
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  bool _isFoodInSolTopGoldPicks(Food food) {
+    final picks = _solPicksListForFood(food);
+    if (picks == null || picks.isEmpty) return false;
+    final i = picks.indexWhere((f) => f.name == food.name);
+    if (i < 0) return false;
+    return _solHighlightSlotUsesFullGold(i + 1);
+  }
+
+  bool _userDbStarTagVisibleForFilter(String tag) {
+    if (databaseTypeFilter == "Alle") return true;
+    if (databaseTypeFilter == "Diät") return tag == "diat" || tag == "all";
+    if (databaseTypeFilter == "Aufbau") return tag == "aufbau" || tag == "all";
+    return false;
+  }
+
+  _DbPcfFrameKind _dbPcfFrameKindForListCard(Food food) {
+    if (_isFoodInSolTopGoldPicks(food)) return _DbPcfFrameKind.solGold;
+    if (!food.isDefault) {
+      final tag = userDbStarByName[food.name];
+      if (tag != null && _userDbStarTagVisibleForFilter(tag)) {
+        return _DbPcfFrameKind.userSoft;
+      }
+    }
+    return _DbPcfFrameKind.gray;
+  }
+
+  Widget _dbPcfFrameForKind(
+    _DbPcfFrameKind kind, {
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+  }) {
+    final pad = padding ?? const EdgeInsets.symmetric(horizontal: 7, vertical: 5);
+    switch (kind) {
+      case _DbPcfFrameKind.solGold:
+        return _goldMacroFrame(padding: pad, child: child);
+      case _DbPcfFrameKind.userSoft:
+        return Container(
+          width: double.infinity,
+          padding: pad,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF5C4F32), width: 1.0),
+            color: const Color(0x08D4AF37),
+          ),
+          child: child,
+        );
+      case _DbPcfFrameKind.gray:
+        return Container(
+          width: double.infinity,
+          padding: pad,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFF3A3A3A), width: 1),
+            color: const Color(0x0CFFFFFF),
+          ),
+          child: child,
+        );
+    }
+  }
+
+  Widget _dbcListPcfFrame(Food food, {required bool compact}) {
+    return _dbPcfFrameForKind(
+      _dbPcfFrameKindForListCard(food),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      child: _foodPcfRow(food, compact: compact),
+    );
+  }
+
+  /// P, C, F gleichwertig (drei Spalten; Buchstabe + g — Tooltips mit vollem Namen).
+  Widget _foodPcfRow(Food food, {required bool compact}) {
+    final labFS = compact ? 10.5 : 12.0;
+    final valFS = compact ? 12.5 : 16.0;
+
+    Widget col(
+      String letter,
+      double val,
+      Color c, {
+      required String tooltip,
+    }) {
+      return Expanded(
+        child: Tooltip(
+          message: tooltip,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                letter,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: c.withValues(alpha: 0.95),
+                  fontSize: labFS,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              SizedBox(height: compact ? 1 : 3),
+              Text(
+                "${val.toStringAsFixed(1)} g",
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: c,
+                  fontSize: valFS,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        col(t("abbr_protein"), food.protein, _proteinColor,
+            tooltip: t("protein")),
+        col(t("abbr_carbs"), food.carbs, _carbColor, tooltip: t("carbs_total")),
+        col(t("abbr_fat"), food.fat, _fatColor, tooltip: t("fat")),
+      ],
+    );
+  }
+
+  /// Meal-Generator: Nährwerte / 100 g — [forCategory] bestimmt, welches Makro zuerst steht.
+  String _foodGenMacroLineForPicker(Food f, {required String forCategory}) {
+    final p = f.protein;
+    final k = f.carbs;
+    final fa = f.fat;
+    final kc = f.calories;
+    final ap = t("abbr_protein");
+    final ak = t("abbr_carbs");
+    final af = t("abbr_fat");
+    final per = t("gen_food_per_100_short");
+    if (forCategory == "Protein" || forCategory == "Rezepte") {
+      return "$per · $ap: ${p.toStringAsFixed(1)}  $ak: ${k.toStringAsFixed(1)}  $af: ${fa.toStringAsFixed(1)}  |  ${kc.toStringAsFixed(0)} kcal";
+    }
+    if (forCategory == "Carbs") {
+      return "$per · $ak: ${k.toStringAsFixed(1)}  $ap: ${p.toStringAsFixed(1)}  $af: ${fa.toStringAsFixed(1)}  |  ${kc.toStringAsFixed(0)} kcal";
+    }
+    return "$per · $af: ${fa.toStringAsFixed(1)}  $ap: ${p.toStringAsFixed(1)}  $ak: ${k.toStringAsFixed(1)}  |  ${kc.toStringAsFixed(0)} kcal";
+  }
+
+  Widget _mealGenRecipeDropdownItem(Food f) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          f.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 14),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _foodGenMacroLineForPicker(f, forCategory: "Rezepte"),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 10.5,
+            color: Colors.white60,
+            height: 1.2,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static const double _mealGenFoodListRadius = 10.0;
+  static const double _mealGenWizardGroupRadius = 12.0;
+
+  /// Lebensmittel-Liste: Rahmen, leicht abgesetzter Hintergrund, Scroll-Track/Thumb sichtbar.
+  /// [ClipRRect] + Schatten außerhalb: unten dieselben Rundungen wie oben (Scrollbar-Track
+  /// liegt innerhalb des Clips, wirkt optisch mit dem Block zusammenhängend).
+  /// [inWizardGroup]: steht in der gemeinsamen Wizard-Karte — ohne zweiten Gold-Rahmen.
+  Widget _mealGenScrollableFoodList({
+    required BuildContext listContext,
+    required ScrollController controller,
+    required List<Widget> children,
+    bool inWizardGroup = false,
+  }) {
+    final r = BorderRadius.circular(_mealGenFoodListRadius);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: inWizardGroup
+              ? null
+              : BoxDecoration(
+                  borderRadius: r,
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+          child: ClipRRect(
+            borderRadius: r,
+            child: Container(
+              height: 200,
+              decoration: BoxDecoration(
+                color: inWizardGroup
+                    ? const Color(0xFF0A0806)
+                    : const Color(0xFF0D0C0A),
+                border: inWizardGroup
+                    ? null
+                    : Border.all(
+                        color: const Color(0x8AD4AF37),
+                        width: 0.8,
+                      ),
+              ),
+              child: Theme(
+                data: Theme.of(listContext).copyWith(
+                  scrollbarTheme: ScrollbarThemeData(
+                    thickness: WidgetStateProperty.all(6),
+                    radius: const Radius.circular(3),
+                    thumbColor: WidgetStateProperty.all(
+                      const Color(0xCCD4AF37).withValues(alpha: 0.75),
+                    ),
+                    trackColor: WidgetStateProperty.all(
+                      const Color(0xFF1E1C19),
+                    ),
+                    trackBorderColor: WidgetStateProperty.all(
+                      const Color(0xFF4A3F2A),
+                    ),
+                  ),
+                ),
+                child: Scrollbar(
+                  controller: controller,
+                  trackVisibility: true,
+                  thickness: 6,
+                  child: ListView(
+                    controller: controller,
+                    padding: const EdgeInsets.fromLTRB(0, 0, 2, 6),
+                    children: children,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _databaseHighlightTile(Food f, {int? slot}) {
+    final isSolTop = slot != null && _solHighlightSlotUsesFullGold(slot);
+    final frameKind =
+        isSolTop ? _DbPcfFrameKind.solGold : _DbPcfFrameKind.gray;
+    return SizedBox(
+      width: 178,
+      child: _dbPcfFrameForKind(
+        frameKind,
+        padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (slot != null) ...[
+                  Container(
+                    width: 20,
+                    height: 20,
+                    alignment: Alignment.center,
+                    margin: const EdgeInsets.only(right: 6, top: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF242424),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isSolTop
+                            ? const Color(0xFF5C4A2E)
+                            : const Color(0xFF4A4A4A),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Text(
+                      "$slot",
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: isSolTop
+                            ? const Color(0xFFD4AF37)
+                            : Colors.white38,
+                      ),
+                    ),
+                  ),
+                ],
+                Expanded(
+                  child: Text(
+                    f.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            _foodPcfRow(f, compact: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Lange Dialoge: abgerundete Ecken (Theme) + Obergrenze, damit nicht “endlos” hoch.
+  Widget _solDialogConstrainedBody(BuildContext context, Widget child) {
+    return _solConstrainedDialogScrollBody(context, child);
+  }
+
+  String _normalizeFoodNameKey(String s) => s.trim().toLowerCase();
+
+  /// Nur eigene DB-Einträge (![Food.isDefault]).
+  Food? _findUserFoodByNormalizedName(String name) {
+    final k = _normalizeFoodNameKey(name);
+    if (k.isEmpty) return null;
+    for (final f in foodDatabase) {
+      if (!f.isDefault && _normalizeFoodNameKey(f.name) == k) {
+        return f;
+      }
+    }
+    return null;
+  }
+
+  Food? _findUserFoodByBarcode(String code) {
+    if (code.isEmpty) return null;
+    for (final f in foodDatabase) {
+      if (!f.isDefault && f.offBarcode == code) {
+        return f;
+      }
+    }
+    return null;
+  }
+
+  /// Beliebiger DB-Treffer mit diesem Barcode (inkl. Standardliste) — fürs Speichern, kein zweiter Eintrag.
+  Food? _findAnyFoodByBarcodeInDatabase(String code) {
+    if (code.isEmpty) return null;
+    for (final f in foodDatabase) {
+      if (f.offBarcode == code) {
+        return f;
+      }
+    }
+    return null;
+  }
+
+  Widget _foodCompareCard(Food f) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF555555)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            f.name,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          _foodPcfRow(f, compact: true),
+          const SizedBox(height: 6),
+          Text(
+            "${_foodCategoryLabelsLine(f)} · ${_tFullType(f.type)}"
+            "${f.calories > 0 ? " · ${f.calories.toStringAsFixed(0)} kcal/100g" : ""}",
+            style: const TextStyle(fontSize: 11, color: Colors.white54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Rückgabe [true] = trotzdem anlegen. [false] = abbrechen.
+  Future<bool> _confirmDuplicateUserFoodName(Food existing) async {
+    final r = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: Text(t("db_duplicate_name_title")),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                t("db_duplicate_name_body"),
+                style: const TextStyle(height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                t("db_duplicate_existing_label"),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              _foodCompareCard(existing),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t("cancel")),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t("db_duplicate_add_anyway")),
+          ),
+        ],
+      ),
+    );
+    return r == true;
+  }
+
+  /// Barcode ist bereits vergeben — kein zweiter DB-Eintrag.
+  Future<void> _showBarcodeAlreadyInDatabase(Food existing) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: Text(t("db_duplicate_barcode_title")),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                t("db_duplicate_barcode_body"),
+                style: const TextStyle(height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              _foodCompareCard(existing),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t("dialog_got_it")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void addFoodDialog() {
+    final name = TextEditingController();
+    final protein = TextEditingController();
+    final carbs = TextEditingController();
+    final sugar = TextEditingController();
+    final fiber = TextEditingController();
+    final fat = TextEditingController();
+
+    String category = "Carbs";
+    String type = "Diät (Viel Volumen)";
+    var alsoFruit = false;
+    var alsoVeg = false;
+    var carbK = "komplex";
+    String? flavor;
+    String? savedImagePath;
+    String? stagedPickPath;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(t("values_per_100g")),
+          content: _solDialogConstrainedBody(
+            context,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: name,
+                    decoration: _touchInputDecoration(t("name"))),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: protein,
+                    decoration: _touchInputDecoration(t("protein"))),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: carbs,
+                    decoration: _touchInputDecoration(t("carbs_total"))),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: sugar,
+                    decoration: _touchInputDecoration(t("of_which_sugar"))),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: fiber,
+                    decoration: _touchInputDecoration(t("of_which_fiber"))),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: fat,
+                    decoration: _touchInputDecoration(t("fat"))),
+                const SizedBox(height: 10),
+                _userFoodImagePickerSection(
+                  savedImagePath: savedImagePath,
+                  stagedPickPath: stagedPickPath,
+                  onSavedImagePathChanged: (v) =>
+                      setDialogState(() => savedImagePath = v),
+                  onStagedPickPathChanged: (v) =>
+                      setDialogState(() => stagedPickPath = v),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  t("db_off_category"),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white60),
+                ),
+                const SizedBox(height: 4),
+                DropdownButton<String>(
+                  isExpanded: true,
+                  value: category,
+                  items: [
+                    "Carbs",
+                    "Protein",
+                    "Fett",
+                    "Ballaststoffe",
+                    "Obst",
+                    "Gemüse",
+                    "Rezepte",
+                  ]
+                      .map((e) => DropdownMenuItem(value: e, child: Text(_tCat(e))))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val == null) return;
+                    setDialogState(() {
+                      category = val;
+                      if (val == "Obst") alsoFruit = false;
+                      if (val == "Gemüse") alsoVeg = false;
+                    });
+                  },
+                ),
+                if (category == "Carbs")
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      t("db_carb_source_tile"),
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      "${carbK == "komplex" ? t("carb_tag_complex") : t("carb_tag_simple")} · ${t("db_carb_source_tile_sub")}",
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white54),
+                    ),
+                    trailing:
+                        const Icon(Icons.chevron_right, color: Colors.white38),
+                    onTap: () async {
+                      final p =
+                          await _showCarbSourceBottomSheet(current: carbK);
+                      if (p != null) {
+                        setDialogState(() => carbK = p);
+                      }
+                    },
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  t("db_also_in"),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white60,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (category != "Obst")
+                      FilterChip(
+                        label: Text(_tCat("Obst")),
+                        selected: alsoFruit,
+                        onSelected: (v) => setDialogState(() => alsoFruit = v),
+                      ),
+                    if (category != "Gemüse")
+                      FilterChip(
+                        label: Text(_tCat("Gemüse")),
+                        selected: alsoVeg,
+                        onSelected: (v) => setDialogState(() => alsoVeg = v),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  t("recipe_flavor_filter_label"),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white60),
+                ),
+                const SizedBox(height: 4),
+                DropdownButton<String?>(
+                  isExpanded: true,
+                  value: flavor,
+                  items: <DropdownMenuItem<String?>>[
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(t("food_flavor_none")),
+                    ),
+                    DropdownMenuItem<String?>(
+                      value: "sweet",
+                      child: Text(t("recipe_flavor_sweet")),
+                    ),
+                    DropdownMenuItem<String?>(
+                      value: "salty",
+                      child: Text(t("recipe_flavor_salty")),
+                    ),
+                  ],
+                  onChanged: (v) => setDialogState(() => flavor = v),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  t("type"),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white60),
+                ),
+                const SizedBox(height: 4),
+                DropdownButton<String>(
+                  isExpanded: true,
+                  value: type,
+                  items: [
+                    "Diät (Viel Volumen)",
+                    "Aufbau (Wenig Volumen)",
+                  ]
+                      .map((e) => DropdownMenuItem(value: e, child: Text(_tFullType(e))))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val == null) return;
+                    setDialogState(() => type = val);
+                  },
+                )
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                final p = _safeDouble(protein.text);
+                final c = _safeDouble(carbs.text);
+                final s = _safeDouble(sugar.text);
+                final fi = _safeDouble(fiber.text);
+                final f = _safeDouble(fat.text);
+
+                if (name.text.isEmpty ||
+                    p == null ||
+                    c == null ||
+                    s == null ||
+                    fi == null ||
+                    f == null) {
+                  return;
+                }
+                final dup = _findUserFoodByNormalizedName(name.text.trim());
+                if (dup != null) {
+                  if (!await _confirmDuplicateUserFoodName(dup)) {
+                    return;
+                  }
+                  if (!context.mounted) return;
+                }
+
+                final ex = <String>[];
+                if (category != "Obst" && alsoFruit) ex.add("Obst");
+                if (category != "Gemüse" && alsoVeg) ex.add("Gemüse");
+
+                final img = await _resolveUserFoodImagePath(
+                  foodName: name.text.trim(),
+                  savedImagePath: savedImagePath,
+                  stagedPickPath: stagedPickPath,
+                );
+
+                setState(() {
+                  foodDatabase.add(Food(
+                    name: name.text,
+                    protein: p,
+                    carbs: c,
+                    sugar: s,
+                    fiber: fi,
+                    fat: f,
+                    category: category,
+                    type: type,
+                    isDefault: false,
+                    extraCategories: ex,
+                    carbKind: category == "Carbs" ? carbK : null,
+                    recipeFlavor: flavor,
+                    imagePath: img,
+                  ));
+                });
+                _saveAppState();
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: Text(t("save")),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------- TRACKING ----------------
+
+  /// Pro Tag: Extra-Schritte anpassen (Aggressiv Cut) — überschreibt die
+  /// Baseline aus den Einstellungen nur für diesen Tag.
+  Widget _cutDayStepsCard() {
+    final dayKey = selectedDayKey;
+    final baseSteps = _effectiveCutExtraSteps(dayKey);
+    final additionalSteps = _effectiveCutExtraStepsAdditional(dayKey);
+    final steps = baseSteps + additionalSteps;
+    final synced = stepSyncEnabled ? syncedStepsForSelectedDay : 0;
+    final shownSyncedForBar = synced.clamp(0, steps);
+    final shownSyncedLabel = synced >= steps ? "$steps+" : synced.toString();
+    final syncedRightLabel = synced >= steps ? synced.toString() : steps.toString();
+    final stepRatio =
+        steps > 0 ? (shownSyncedForBar / steps).clamp(0.0, 1.0) : 0.0;
+    final isFemale = genderCode == "female";
+
+    return _sectionCard(
+      title: t("cut_day_card_title"),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: isFemale ? const Color(0xFF4A2246) : const Color(0xFF1E2A33),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isFemale ? const Color(0xFFE38ACF) : const Color(0xFF355064),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      t("cut_steps_short"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: "Info",
+                      onPressed: _showStepsInfoDialog,
+                      icon: const Icon(Icons.info_outline, color: Colors.white70),
+                    ),
+                    IconButton(
+                      tooltip: "Schritte-Einstellungen",
+                      onPressed: () => _openStepsSettingsDialog(dayKey),
+                      icon: const Icon(Icons.settings, color: Colors.white70),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (isFemale)
+                      const _FemaleStepsRunIcon()
+                    else
+                      const _MaleStepsRunIcon(),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "$shownSyncedLabel / $syncedRightLabel",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: isFemale
+                              ? const Color(0xFFFFC0E6)
+                              : Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    minHeight: 10,
+                    value: stepRatio,
+                    backgroundColor: Colors.white12,
+                    color: isFemale
+                        ? const Color(0xFFE38ACF)
+                        : const Color(0xFF66BB6A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 2),
+        ],
+      ),
+    );
+  }
+
+  Widget trackingScreen() {
+    _updateMealTotals();
+    _maybeScheduleStepSyncRefresh();
+    final totalCalories =
+        _mealTotals.values.fold(0.0, (s, m) => s + m['calories']!);
+    final totalGrams =
+        _mealTotals.values.fold(0.0, (s, m) => s + m['grams']!);
+    final totalProtein = _mealTotals.values.fold(0.0, (s, m) => s + m['protein']!);
+    final totalCarbs = _mealTotals.values.fold(0.0, (s, m) => s + m['carbs']!);
+    final totalFat = _mealTotals.values.fold(0.0, (s, m) => s + m['fat']!);
+    final recK = _recommendKcalForBalanceDisplay(selectedDayKey);
+    final trackStreak = _trackingDayStreak();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_trackingAppBarDateTitle()),
+        actions: [
+          IconButton(
+            onPressed: _pickDay,
+            icon: const Icon(Icons.calendar_month),
+          ),
+          IconButton(
+            onPressed: _openWeightDialog,
+            icon: const Icon(Icons.monitor_weight),
+          ),
+          IconButton(
+            onPressed: _openDayNoteDialog,
+            icon: const Icon(Icons.edit_note),
+          ),
+          IconButton(
+            tooltip: t("cheatday_open"),
+            onPressed: () => _openCheatDayManager(selectedDayKey),
+            icon: Icon(
+              isCheatDay(selectedDayKey)
+                  ? Icons.local_fire_department
+                  : Icons.local_fire_department_outlined,
+              color: isCheatDay(selectedDayKey)
+                  ? const Color(0xFFE53935)
+                  : null,
+            ),
+          ),
+          IconButton(
+            onPressed: () => openMealGenerator(),
+            icon: const Icon(Icons.auto_fix_high),
+          ),
+        ],
+      ),
+      body: CustomScrollView(
+        slivers: [
+          if (isCheatDay(selectedDayKey))
+            SliverToBoxAdapter(child: _cheatDayBanner(selectedDayKey)),
+          if (_isAggressiveMode)
+            SliverToBoxAdapter(child: _aggressiveModeStrip()),
+          if (nutritionMode == "Diät")
+            SliverToBoxAdapter(child: _cutDayStepsCard()),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
+              child: _sectionCard(
+            title: t("daily_overview"),
+            titleTrailing: OutlinedButton.icon(
+              onPressed: _showKcalMergeOverviewDialog,
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              ),
+              icon: const Icon(Icons.layers_outlined, size: 16),
+              label: Text(
+                t("kcal_merge_button"),
+                style: const TextStyle(fontSize: 11.5),
+              ),
+            ),
+            color: _dailyOverviewCardColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(
+                color: _dailyOverviewCardBorder,
+                width: 1.2,
+              ),
+            ),
+            onTitleTap: () {
+              setState(
+                () => _dailyOverviewMealsListExpanded =
+                    !_dailyOverviewMealsListExpanded,
+              );
+            },
+            titleSectionExpanded: _dailyOverviewMealsListExpanded,
+            belowTitle: _dailyOverviewMealsListExpanded
+                ? _buildDailyOverviewMealFoodExpansions()
+                : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _showDayContextSheet(
+                      context,
+                      dayKey: selectedDayKey,
+                      trackStreak: trackStreak,
+                      totalGrams: totalGrams,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 8, horizontal: 4),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.analytics_outlined,
+                            size: 24,
+                            color: Color(0xFFD4AF37),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _dayLabelForKey(selectedDayKey),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14.5,
+                                    color: context.sol.onCard,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right,
+                            color: context.sol.muted,
+                            size: 28,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Divider(
+                    height: 1,
+                    color: context.sol.soft.withValues(alpha: 0.35),
+                  ),
+                ),
+                _buildKcalHeader(
+                  current: totalCalories,
+                  goal: () {
+                    if (!isCheatDay(selectedDayKey)) return goalCalories;
+                    if (isSelectedDayCrashout) return goalCalories;
+                    final eff = effectiveGoalKcalForDay(selectedDayKey);
+                    return eff > 0 ? eff : goalCalories;
+                  }(),
+                  recommendKcal: recK,
+                ),
+                AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 220),
+                  sizeCurve: Curves.easeOutCubic,
+                  crossFadeState: _macroDetailsExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  firstChild: const SizedBox(
+                      width: double.infinity, height: 0),
+                  secondChild: Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Builder(builder: (_) {
+                      final pR = dailyMacroRange("protein");
+                      final cR = dailyMacroRange("carbs");
+                      final fR = dailyMacroRange("fat");
+                      final bGoal = _dayBaseGoalKcalForDisplay(selectedDayKey);
+                      final mGoals = effectiveMacroGoalsForDay(selectedDayKey);
+                      final ratio =
+                          bGoal > 0 ? (recK / bGoal).clamp(0.5, 1.5) : 1.0;
+                      final recP = mGoals.protein * ratio;
+                      final recC = mGoals.carbs * ratio;
+                      final recF = mGoals.fat * ratio;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _macroTargetKpiLine(
+                            toggleKey: "day|protein",
+                            label: t("protein"),
+                            current: totalProtein,
+                            minG: pR.minG,
+                            maxG: pR.maxG,
+                            centerG: mGoals.protein,
+                          ),
+                          _buildRangeProgressBar(
+                            label: t("protein"),
+                            current: totalProtein,
+                            minVal: pR.minG,
+                            maxVal: pR.maxG,
+                            baseColor: _proteinColor,
+                            dayTotalGoalG: mGoals.protein,
+                            recommendVal: recP,
+                          ),
+                          _macroTargetKpiLine(
+                            toggleKey: "day|carbs",
+                            label: t("carbs"),
+                            current: totalCarbs,
+                            minG: cR.minG,
+                            maxG: cR.maxG,
+                            centerG: mGoals.carbs,
+                          ),
+                          _buildRangeProgressBar(
+                            label: t("carbs"),
+                            current: totalCarbs,
+                            minVal: cR.minG,
+                            maxVal: cR.maxG,
+                            baseColor: _carbColor,
+                            dayTotalGoalG: mGoals.carbs,
+                            recommendVal: recC,
+                          ),
+                          _macroTargetKpiLine(
+                            toggleKey: "day|fat",
+                            label: t("fat"),
+                            current: totalFat,
+                            minG: fR.minG,
+                            maxG: fR.maxG,
+                            centerG: mGoals.fat,
+                          ),
+                          _buildRangeProgressBar(
+                            label: t("fat"),
+                            current: totalFat,
+                            minVal: fR.minG,
+                            maxVal: fR.maxG,
+                            baseColor: _fatColor,
+                            dayTotalGoalG: mGoals.fat,
+                            recommendVal: recF,
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                ),
+              ],
+            ),
+          ),
+            ),
+          ),
+          if (meals.contains("Snacks") &&
+              !_isMealMergedLocked("Snacks"))
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
+                child: _buildMealSectionCard(
+                  "Snacks",
+                  sectionCardMargin: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              0,
+              0,
+              0,
+              20 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: _buildTrackingMealsLayout(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Nach Tagesübersicht: ggf. **Snacks**, dann **Mahlzeiten**-Block mit
+  /// Workout (Pre+Post) und Main/Evening in Einstellungs-Reihenfolge.
+  Widget _buildTrackingMealsLayout() {
+    final hasPre = meals.contains("Pre-Workout");
+    final hasPost = meals.contains("Post-Workout");
+    final core = _trackingMainEveningInOrder();
+    final mergedMeals = _activeMergedMealsForDay();
+    const nest = EdgeInsets.symmetric(vertical: 8, horizontal: 2);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          clipBehavior: Clip.antiAlias,
+          color: context.sol.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: context.sol.soft.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.restaurant_menu,
+                        size: 20,
+                        color: Color(0xFFD4AF37),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        t("tracking_meals_block_title"),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: context.sol.onCard,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (mergedMeals != null)
+                  _buildMergedMealSectionCard(mergedMeals),
+                if (hasPre && hasPost && !_workoutBlockHiddenByMerge()) ...[
+                  _buildWorkoutSectionCard(
+                    sectionCardMargin: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+                  ),
+                ] else ...[
+                  if (hasPre && !_isMealMergedLocked("Pre-Workout"))
+                    _buildMealSectionCard("Pre-Workout", sectionCardMargin: nest),
+                  if (hasPost && !_isMealMergedLocked("Post-Workout"))
+                    _buildMealSectionCard("Post-Workout", sectionCardMargin: nest),
+                ],
+                for (final m in core)
+                  if (!_isMealMergedLocked(m))
+                    _buildMealSectionCard(m, sectionCardMargin: nest),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Pro Mahlzeit: Akzent-Rand (gleiche Tönung in Hell/Dunkel) + kartenfläche.
+  /// Hell: dezent getönte helle Fläche; Dunkel: wie bisher satte Wände. Rand etwas
+  /// kräftiger als der Fill, Vorbild: Dark-Mode-Farbe der jeweiligen Mahlzeit.
+  ({Color border, Color surface}) _mealCardColors(String mealId) {
+    final light = Theme.of(context).brightness == Brightness.light;
+    if (light) {
+      switch (mealId) {
+        case "Snacks":
+          return (
+            border: const Color(0xFFC49552),
+            surface: const Color(0xFFF4EBD6),
+          );
+        case "Workout":
+        case "Pre-Workout":
+        case "Post-Workout":
+          return (
+            border: const Color(0xFF3D5F6E),
+            surface: const Color(0xFFE5EEF1),
+          );
+        case "Main Meal":
+          return (
+            border: const Color(0xFF9A5848),
+            surface: const Color(0xFFF0E2DD),
+          );
+        case "Evening Meal":
+          return (
+            border: const Color(0xFF6B5288),
+            surface: const Color(0xFFEDE4F0),
+          );
+        case _kMergedMealCardId:
+          return (
+            border: const Color(0xFFB8962E),
+            surface: const Color(0xFFF5EDD8),
+          );
+        default:
+          return (
+            border: const Color(0xFF4A4640),
+            surface: const Color(0xFFF0EEE8),
+          );
+      }
+    }
+    switch (mealId) {
+      case "Snacks":
+        return (
+          border: const Color(0xFFB8874D),
+          surface: const Color(0xFF232016),
+        );
+      case "Workout":
+      case "Pre-Workout":
+      case "Post-Workout":
+        return (
+          border: const Color(0xFF4A6572),
+          surface: const Color(0xFF161C1E),
+        );
+      case "Main Meal":
+        return (
+          border: const Color(0xFF8D4E3E),
+          surface: const Color(0xFF1E1512),
+        );
+        case "Evening Meal":
+          return (
+            border: const Color(0xFF5E4B7A),
+            surface: const Color(0xFF1A1720),
+          );
+        case _kMergedMealCardId:
+          return (
+            border: const Color(0xFFD4AF37),
+            surface: const Color(0xFF252018),
+          );
+        default:
+        return (
+          border: const Color(0xFF3A3830),
+          surface: const Color(0xFF1C1C1C),
+        );
+    }
+  }
+
+  /// Kcal-Balken: helle Karten = dunkle Spur/Striche; dunkle Karten = wie bisher.
+  (Color track, Color tickMin, Color tickMax) _kcalBarChromeForSurface(
+    Color surface,
+  ) {
+    if (surface.computeLuminance() < 0.42) {
+      return (
+        Colors.white12,
+        Colors.white.withValues(alpha: 0.88),
+        Colors.white.withValues(alpha: 0.72),
+      );
+    }
+    return (
+      Colors.black.withValues(alpha: 0.10),
+      Colors.black.withValues(alpha: 0.42),
+      Colors.black.withValues(alpha: 0.30),
+    );
+  }
+
+  (Color track, Color tick, Color recTick) _kcalBarChromeDailyOverview() {
+    if (Theme.of(context).brightness == Brightness.dark) {
+      return (
+        Colors.white12,
+        Colors.white.withValues(alpha: 0.85),
+        const Color(0xFFFFB74D).withValues(alpha: 0.9),
+      );
+    }
+    return (
+      Colors.black.withValues(alpha: 0.10),
+      Colors.black.withValues(alpha: 0.4),
+      const Color(0xFFE65100).withValues(alpha: 0.9),
+    );
+  }
+
+  /// Schrift auf Mahlzeitenkacheln: hell auf dunkler Fläche, dunkle Töne [SolUi] auf heller.
+  ({Color title, Color subtitle, Color kcal, Color kcalShorthand, Color ziel, Color range, Color expandIcon, Color noteOff})
+      _mealSlotTextForSurface(Color surface) {
+    final dark = surface.computeLuminance() < 0.42;
+    if (dark) {
+      return (
+        title: const Color(0xFFE7D9C3),
+        subtitle: Colors.white54,
+        kcal: Colors.white,
+        kcalShorthand: Colors.white60,
+        ziel: const Color(0xFFD4AF37),
+        range: Colors.white54,
+        expandIcon: Colors.white60,
+        noteOff: Colors.white54,
+      );
+    }
+    final s = context.sol;
+    return (
+      title: s.onCard,
+      subtitle: s.muted,
+      kcal: s.onCard,
+      kcalShorthand: s.soft,
+      ziel: const Color(0xFF6B4E0A),
+      range: s.soft,
+      expandIcon: s.muted,
+      noteOff: s.muted,
+    );
+  }
+
+  /// Mahlzeiten-Leading: einheitliches Gold-Icon (kein farbiges Emoji).
+  Widget _mealSlotLeading(String mealId) {
+    return Icon(
+      _mealSlotIcon(mealId),
+      size: 22,
+      color: const Color(0xFFD4AF37),
+    );
+  }
+
+  /// Fallback, wenn kein Emoji (z. B. nur Icon nötig).
+  IconData _mealSlotIcon(String mealId) {
+    switch (mealId) {
+      case "Snacks":
+        return Icons.cookie_outlined;
+      case "Workout":
+      case "Pre-Workout":
+      case "Post-Workout":
+        return Icons.fitness_center;
+      case "Main Meal":
+        return Icons.outdoor_grill;
+      case "Evening Meal":
+        return Icons.dinner_dining;
+      default:
+        return Icons.restaurant_menu;
+    }
+  }
+
+  /// KH in g (komplex / einfach) pro Mahlzeit — [Food.carbKind] bzw. Heuristik.
+  ({double komplex, double einfach}) _mealCarbKindSplitG(String meal) {
+    var k = 0.0;
+    var e = 0.0;
+    for (final f in trackedFoods) {
+      if (f.meal != meal || f.dayKey != selectedDayKey) continue;
+      if (_inferredCarbKind(f.food) == "einfach") {
+        e += f.carbs;
+      } else {
+        k += f.carbs;
+      }
+    }
+    return (komplex: k, einfach: e);
+  }
+
+  Widget _preWorkoutCarbTimingTipBanner() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.schedule,
+            size: 15,
+            color: Color(0xFFFFB74D),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              t("pre_workout_carb_tip"),
+              style: const TextStyle(
+                fontSize: 11.5,
+                height: 1.35,
+                color: Color(0xB3FFFFFF),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Nach Pfeil: nur **Makro-Tabelle** (Balken P/C/F), ohne Food-Buttons/Listen.
+  Widget _mealMacroTableBlock(String meal) {
+    final totals = _mealTotals[meal]!;
+    final pR = dynamicMealMacroRangeG(meal, "protein");
+    final cR = dynamicMealMacroRangeG(meal, "carbs");
+    final fR = dynamicMealMacroRangeG(meal, "fat");
+    final mSurf = _mealCardColors(meal).surface;
+
+    final gDayM = effectiveMacroGoalsForDay(selectedDayKey);
+    final recG = _balanceRecommendMacroGForMeal(meal);
+    final mm = mealMacros[meal]!;
+    final slotP = gDayM.protein * (mm['protein']! / 100.0);
+    final slotC = gDayM.carbs * (mm['carbs']! / 100.0);
+    final slotF = gDayM.fat * (mm['fat']! / 100.0);
+    // Pre-Workout komplex/einfach: Bänder = Anteil am **Tages-KH-Ziel** (15–20 % bzw. 10–15 %), nicht am Mahlzeiten-Slot.
+    final dayCarbG = gDayM.carbs;
+    final showPreCarbSplit = meal == "Pre-Workout" && dayCarbG > 0.01;
+    final preCarbSplit = showPreCarbSplit ? _mealCarbKindSplitG("Pre-Workout") : null;
+    final cCxMin = dayCarbG * 0.15;
+    final cCxMax = dayCarbG * 0.20;
+    final cSiMin = dayCarbG * 0.10;
+    final cSiMax = dayCarbG * 0.15;
+    final totalPAll = _mealTotals.values.fold(0.0, (s, m) => s + m['protein']!);
+    final showProteinNudge = meal == _lastNonSnackMealId &&
+        (gDayM.protein - totalPAll) >= 20.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showProteinNudge) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2A1A0A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE65100)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.priority_high,
+                  color: Color(0xFFFFA726),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    t("protein_last_meal_nudge"),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 2),
+        Text(
+          t("details"),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFD4AF37),
+          ),
+        ),
+        const SizedBox(height: 4),
+        _macroDetailGroupFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _macroTargetKpiLine(
+                toggleKey: "$meal|protein",
+                label: t("protein"),
+                current: totals['protein']!,
+                minG: pR.minG,
+                maxG: pR.maxG,
+                centerG: slotP,
+              ),
+              _buildRangeProgressBar(
+                label: t("protein"),
+                current: totals['protein']!,
+                minVal: pR.minG,
+                maxVal: pR.maxG,
+                baseColor: _proteinColor,
+                dayTotalGoalG: gDayM.protein,
+                mealCenterGoalG: slotP,
+                recommendVal: recG.p,
+                rangeBarSurface: mSurf,
+              ),
+            ],
+          ),
+        ),
+        _macroDetailGroupFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (showPreCarbSplit && preCarbSplit != null) ...[
+                _preWorkoutCarbTimingTipBanner(),
+                _macroTargetKpiLine(
+                  toggleKey: "$meal|carbs|komplex",
+                  label: t("pre_workout_carb_bar_complex"),
+                  current: preCarbSplit.komplex,
+                  minG: cCxMin,
+                  maxG: cCxMax,
+                ),
+                _buildRangeProgressBar(
+                  label: t("pre_workout_carb_bar_complex"),
+                  current: preCarbSplit.komplex,
+                  minVal: cCxMin,
+                  maxVal: cCxMax,
+                  baseColor: _carbColor,
+                  dayTotalGoalG: gDayM.carbs,
+                  mealCenterGoalG: null,
+                  recommendVal: null,
+                  rangeBarSurface: mSurf,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, right: 2, bottom: 2),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      t("pre_workout_carb_hint_complex_timing"),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF9E9E9E),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ),
+                _macroTargetKpiLine(
+                  toggleKey: "$meal|carbs|einfach",
+                  label: t("pre_workout_carb_bar_simple"),
+                  current: preCarbSplit.einfach,
+                  minG: cSiMin,
+                  maxG: cSiMax,
+                ),
+                _buildRangeProgressBar(
+                  label: t("pre_workout_carb_bar_simple"),
+                  current: preCarbSplit.einfach,
+                  minVal: cSiMin,
+                  maxVal: cSiMax,
+                  baseColor: const Color(0xFFFFB74D),
+                  dayTotalGoalG: gDayM.carbs,
+                  mealCenterGoalG: null,
+                  recommendVal: null,
+                  rangeBarSurface: mSurf,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, right: 2, bottom: 2),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      t("pre_workout_carb_hint_simple_timing"),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF9E9E9E),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                if (meal == "Pre-Workout") _preWorkoutCarbTimingTipBanner(),
+                _macroTargetKpiLine(
+                  toggleKey: "$meal|carbs",
+                  label: t("carbs"),
+                  current: totals['carbs']!,
+                  minG: cR.minG,
+                  maxG: cR.maxG,
+                  centerG: slotC,
+                ),
+                _buildRangeProgressBar(
+                  label: t("carbs"),
+                  current: totals['carbs']!,
+                  minVal: cR.minG,
+                  maxVal: cR.maxG,
+                  baseColor: _carbColor,
+                  dayTotalGoalG: gDayM.carbs,
+                  mealCenterGoalG: slotC,
+                  recommendVal: recG.c,
+                  rangeBarSurface: mSurf,
+                ),
+              ],
+              _kpiLine(
+                t("of_which_sugar"),
+                "${totals['sugar']!.toStringAsFixed(1)} g",
+              ),
+            ],
+          ),
+        ),
+        _macroDetailGroupFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _macroTargetKpiLine(
+                toggleKey: "$meal|fat",
+                label: t("fat"),
+                current: totals['fat']!,
+                minG: fR.minG,
+                maxG: fR.maxG,
+                centerG: slotF,
+              ),
+              _buildRangeProgressBar(
+                label: t("fat"),
+                current: totals['fat']!,
+                minVal: fR.minG,
+                maxVal: fR.maxG,
+                baseColor: _fatColor,
+                dayTotalGoalG: gDayM.fat,
+                mealCenterGoalG: slotF,
+                recommendVal: recG.f,
+                rangeBarSurface: mSurf,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  static const String _kWorkoutBlockMealId = "Workout";
+
+  ({double minKcal, double maxKcal}) _workoutBlockKcalRange() {
+    final a = dynamicMealKcalRange("Pre-Workout");
+    final b = dynamicMealKcalRange("Post-Workout");
+    return (
+      minKcal: a.minKcal + b.minKcal,
+      maxKcal: a.maxKcal + b.maxKcal,
+    );
+  }
+
+  Map<String, double> _workoutBlockAggregatedTotals() {
+    final p = _mealTotals["Pre-Workout"]!;
+    final o = _mealTotals["Post-Workout"]!;
+    return {
+      "protein": p["protein"]! + o["protein"]!,
+      "carbs": p["carbs"]! + o["carbs"]!,
+      "sugar": p["sugar"]! + o["sugar"]!,
+      "fiber": p["fiber"]! + o["fiber"]!,
+      "fat": p["fat"]! + o["fat"]!,
+      "calories": p["calories"]! + o["calories"]!,
+      "grams": p["grams"]! + o["grams"]!,
+    };
+  }
+
+  /// Summe der Min/Max g-Ziele von Pre+Post (ein Makro-Key).
+  ({double minG, double maxG}) _workoutBlockMacroGRange(String macro) {
+    final a = dynamicMealMacroRangeG("Pre-Workout", macro);
+    final b = dynamicMealMacroRangeG("Post-Workout", macro);
+    return (minG: a.minG + b.minG, maxG: a.maxG + b.maxG);
+  }
+
+  /// Wie [_mealMacroTableBlock], aber für kumuliertes Pre+Post (kein % bearbeiten).
+  Widget _workoutBlockMacroTableBlock() {
+    final totals = _workoutBlockAggregatedTotals();
+    final pR = _workoutBlockMacroGRange("protein");
+    final cR = _workoutBlockMacroGRange("carbs");
+    final fR = _workoutBlockMacroGRange("fat");
+    final wSurf = _mealCardColors("Pre-Workout").surface;
+    final gDayM = effectiveMacroGoalsForDay(selectedDayKey);
+    final recG = _balanceRecommendMacroGForWorkoutBlock();
+    final pre = mealMacros['Pre-Workout']!;
+    final post = mealMacros['Post-Workout']!;
+    final slotP =
+        gDayM.protein * ((pre['protein']! + post['protein']!) / 100.0);
+    final slotC =
+        gDayM.carbs * ((pre['carbs']! + post['carbs']!) / 100.0);
+    final slotF = gDayM.fat * ((pre['fat']! + post['fat']!) / 100.0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 2),
+        Text(
+          t("details"),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFD4AF37),
+          ),
+        ),
+        const SizedBox(height: 4),
+        _macroDetailGroupFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _macroTargetKpiLine(
+                toggleKey: "Workout|protein",
+                label: t("protein"),
+                current: totals['protein']!,
+                minG: pR.minG,
+                maxG: pR.maxG,
+                centerG: slotP,
+              ),
+              _buildRangeProgressBar(
+                label: t("protein"),
+                current: totals['protein']!,
+                minVal: pR.minG,
+                maxVal: pR.maxG,
+                baseColor: _proteinColor,
+                dayTotalGoalG: gDayM.protein,
+                mealCenterGoalG: slotP,
+                recommendVal: recG.p,
+                rangeBarSurface: wSurf,
+              ),
+            ],
+          ),
+        ),
+        _macroDetailGroupFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _macroTargetKpiLine(
+                toggleKey: "Workout|carbs",
+                label: t("carbs"),
+                current: totals['carbs']!,
+                minG: cR.minG,
+                maxG: cR.maxG,
+                centerG: slotC,
+              ),
+              _buildRangeProgressBar(
+                label: t("carbs"),
+                current: totals['carbs']!,
+                minVal: cR.minG,
+                maxVal: cR.maxG,
+                baseColor: _carbColor,
+                dayTotalGoalG: gDayM.carbs,
+                mealCenterGoalG: slotC,
+                recommendVal: recG.c,
+                rangeBarSurface: wSurf,
+              ),
+              _kpiLine(
+                t("of_which_sugar"),
+                "${totals['sugar']!.toStringAsFixed(1)} g",
+              ),
+            ],
+          ),
+        ),
+        _macroDetailGroupFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _macroTargetKpiLine(
+                toggleKey: "Workout|fat",
+                label: t("fat"),
+                current: totals['fat']!,
+                minG: fR.minG,
+                maxG: fR.maxG,
+                centerG: slotF,
+              ),
+              _buildRangeProgressBar(
+                label: t("fat"),
+                current: totals['fat']!,
+                minVal: fR.minG,
+                maxVal: fR.maxG,
+                baseColor: _fatColor,
+                dayTotalGoalG: gDayM.fat,
+                mealCenterGoalG: slotF,
+                recommendVal: recG.f,
+                rangeBarSurface: wSurf,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  /// Gleiches Layout wie [_buildMealSectionCard], aber ohne +-Menü; Titel → Pre/Post-Sheet.
+  Widget _buildWorkoutSectionCard({EdgeInsetsGeometry? sectionCardMargin}) {
+    final totals = _workoutBlockAggregatedTotals();
+    final kR = _workoutBlockKcalRange();
+    final mealNoteContent =
+        _mealNoteHasVisibleLines(selectedDayKey, _kWorkoutBlockMealId);
+    final mealNoteOpen =
+        _mealNoteHasOpenTodos(selectedDayKey, _kWorkoutBlockMealId);
+    final sectionOpen = _mealKcalBarExpanded[_kWorkoutBlockMealId] ?? false;
+    final mc = _mealCardColors("Pre-Workout");
+    final wtx = _mealSlotTextForSurface(mc.surface);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
+    return Card(
+      margin: sectionCardMargin ??
+          const EdgeInsets.symmetric(horizontal: 6.0, vertical: 8.0),
+      color: mc.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: mc.border,
+          width: isLight ? 1.4 : 1.25,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Tooltip(
+                      message: t("workout_block_title_tooltip"),
+                      child: InkWell(
+                        onTap: () {
+                          if (!mounted) return;
+                          _openWorkoutBlockBottomSheet();
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 2,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.fitness_center,
+                                size: 22,
+                                color: Color(0xFFD4AF37),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  t("tracking_workout_block_title"),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: wtx.title,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 32,
+                  ),
+                  icon: Icon(
+                    mealNoteContent
+                        ? (mealNoteOpen
+                            ? Icons.note_alt
+                            : Icons.task_alt)
+                        : Icons.note_alt_outlined,
+                    size: 22,
+                    color: mealNoteContent
+                        ? (mealNoteOpen
+                            ? const Color(0xFFD4AF37)
+                            : const Color(0xFF81C784))
+                        : wtx.noteOff,
+                  ),
+                  tooltip: t("meal_note"),
+                  onPressed: () =>
+                      unawaited(_openMealNoteDialog(_kWorkoutBlockMealId)),
+                ),
+                // Gleicher visueller Abstand wie bei Karten mit +-Menü, aber ohne +.
+                const SizedBox(width: 32),
+                IconButton(
+                  padding: const EdgeInsets.only(top: 2),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 32,
+                  ),
+                  tooltip: t("meal_expand_inline"),
+                  onPressed: () => setState(() {
+                    _mealKcalBarExpanded[_kWorkoutBlockMealId] = !sectionOpen;
+                  }),
+                  icon: AnimatedRotation(
+                    turns: sectionOpen ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.expand_more,
+                      size: 24,
+                      color: wtx.expandIcon,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: sectionOpen ? 8 : 4),
+            _buildMealKcalRowCompact(
+              _kWorkoutBlockMealId,
+              current: totals['calories']!,
+              minKcal: kR.minKcal,
+              maxKcal: kR.maxKcal,
+              simple: mealKcalDisplayMode == "simple",
+              showInlineAdd: false,
+            ),
+            if (sectionOpen) ...[
+              _categoryExpandDivider(),
+              _workoutBlockMacroTableBlock(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Kompakte Makro-Kachel für getrackte Portionen (ausgeschriebene Namen).
+  Widget _trackedMacroPill({
+    required String label,
+    required double grams,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color.withValues(alpha: 0.9),
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              "${grams.toStringAsFixed(1)} g",
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _trackedFoodPcfRow({
+    required double protein,
+    required double carbs,
+    required double fat,
+  }) {
+    return Row(
+      children: [
+        _trackedMacroPill(
+          label: t("protein"),
+          grams: protein,
+          color: _proteinColor,
+        ),
+        const SizedBox(width: 4),
+        _trackedMacroPill(
+          label: t("carbs"),
+          grams: carbs,
+          color: _carbColor,
+        ),
+        const SizedBox(width: 4),
+        _trackedMacroPill(
+          label: t("fat"),
+          grams: fat,
+          color: _fatColor,
+        ),
+      ],
+    );
+  }
+
+  /// Eine Portion: g/kcal + P/k/F + Zucker/Ballaststoffe (Popup-Liste).
+  Widget _mealTrackedListItemSubtitle(TrackedFood f) {
+    final muted = context.sol.muted;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text.rich(
+          TextSpan(
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.2,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+            children: [
+              TextSpan(
+                text: "${f.grams.toStringAsFixed(1)} g",
+                style: TextStyle(
+                  color: context.sol.onCard,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              TextSpan(text: " · ", style: TextStyle(color: muted)),
+              TextSpan(
+                text: "${f.calories.toStringAsFixed(0)} kcal",
+                style: const TextStyle(
+                  color: Color(0xFFD4AF37),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 5),
+        _trackedFoodPcfRow(
+          protein: f.protein,
+          carbs: f.carbs,
+          fat: f.fat,
+        ),
+        if (f.sugar > 0.05 || f.fiber > 0.05) ...[
+          const SizedBox(height: 4),
+          Text(
+            "${t("of_which_sugar")} ${f.sugar.toStringAsFixed(1)} · ${t("of_which_fiber")} ${f.fiber.toStringAsFixed(1)} g",
+            style: TextStyle(
+              color: muted.withValues(alpha: 0.85),
+              fontSize: 10,
+              height: 1.2,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Summe der Mahlzeit im Tracking-Popup (unter dem Titel).
+  Widget _mealTrackedPopupMealTotals(String mealId) {
+    final m = _mealTotals[mealId]!;
+    final on = context.sol.onCard;
+    final muted = context.sol.muted;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: const Color(0xFFD4AF37).withValues(alpha: 0.28),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text.rich(
+              TextSpan(
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+                children: [
+                  TextSpan(
+                    text: "∑ ${m['grams']!.toStringAsFixed(0)} g",
+                    style: TextStyle(
+                      color: on,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  TextSpan(text: " · ", style: TextStyle(color: muted)),
+                  TextSpan(
+                    text: "${m['calories']!.toStringAsFixed(0)} kcal",
+                    style: const TextStyle(
+                      color: Color(0xFFD4AF37),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 5),
+            _trackedFoodPcfRow(
+              protein: m['protein']!,
+              carbs: m['carbs']!,
+              fat: m['fat']!,
+            ),
+            if (m['sugar']! > 0.05 || m['fiber']! > 0.05) ...[
+              const SizedBox(height: 4),
+              Text(
+                "${t("of_which_sugar")} ${m['sugar']!.toStringAsFixed(1)} · ${t("of_which_fiber")} ${m['fiber']!.toStringAsFixed(1)} g",
+                style: TextStyle(
+                  color: muted.withValues(alpha: 0.85),
+                  fontSize: 10,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openWorkoutBlockBottomSheet() {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final bottomPad = MediaQuery.viewPaddingOf(ctx).bottom;
+            // Extra unten: Safe-Home-Indicator + sichtbarer Abstand, nicht anliegend
+            final h = MediaQuery.sizeOf(ctx).height;
+            const workoutSheetBottomGutter = 48.0;
+            final workoutSheetViewportGap = h * 0.10;
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.78,
+              minChildSize: 0.38,
+              maxChildSize: 0.94,
+              builder: (ctx, scrollController) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(top: 8, bottom: 4),
+                        decoration: BoxDecoration(
+                          color: context.sol.soft.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.fitness_center,
+                            color: Color(0xFFD4AF37),
+                            size: 24,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              t("tracking_workout_popup_title"),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                color: context.sol.onCard,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: t("cancel"),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            icon: Icon(Icons.close, color: context.sol.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        padding: EdgeInsets.fromLTRB(
+                          8,
+                          12,
+                          8,
+                          36 +
+                              bottomPad +
+                              workoutSheetBottomGutter +
+                              workoutSheetViewportGap,
+                        ),
+                        children: [
+                          _buildMealSectionCard(
+                            "Pre-Workout",
+                            sectionCardMargin: const EdgeInsets.fromLTRB(
+                              0,
+                              0,
+                              0,
+                              8,
+                            ),
+                            onAfterExpandToggle: () => setModalState(() {}),
+                          ),
+                          _buildMealSectionCard(
+                            "Post-Workout",
+                            sectionCardMargin: EdgeInsets.zero,
+                            onAfterExpandToggle: () => setModalState(() {}),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openMealTrackedListPopup(String meal) {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final bottomPad = MediaQuery.viewPaddingOf(ctx).bottom;
+        // Unten extra Luft (Home-Indicator, nicht anliegend).
+        const mealTrackedSheetBottomGutter = 48.0;
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          minChildSize: 0.32,
+          maxChildSize: 0.88,
+          builder: (ctx, scrollController) {
+            final items = trackedFoods
+                .where((f) => f.meal == meal && f.dayKey == selectedDayKey)
+                .toList();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(top: 8, bottom: 4),
+                    decoration: BoxDecoration(
+                      color: context.sol.soft.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
+                  child: Row(
+                    children: [
+                      _mealSlotLeading(meal),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          tFmt("meal_tracked_popup_title", {
+                            "m": _displayMealName(meal),
+                          }),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                            color: context.sol.onCard,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: t("cancel"),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: Icon(Icons.close, color: context.sol.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                if (items.isNotEmpty) _mealTrackedPopupMealTotals(meal),
+                if (items.isEmpty)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      20,
+                      20,
+                      32 + bottomPad + mealTrackedSheetBottomGutter,
+                    ),
+                    child: Center(
+                      child: Text(
+                        t("meal_tracked_empty"),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: context.sol.muted,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: ListView.separated(
+                      controller: scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        0,
+                        12,
+                        32 + bottomPad + mealTrackedSheetBottomGutter,
+                      ),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (c, i) {
+                        final f = items[i];
+                        return Container(
+                          padding: const EdgeInsets.fromLTRB(8, 6, 2, 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: context.sol.soft.withValues(alpha: 0.22),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      f.food.name,
+                                      style: TextStyle(
+                                        color: context.sol.onCard,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        height: 1.15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _mealTrackedListItemSubtitle(f),
+                                  ],
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 36,
+                                      minHeight: 36,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      color: Color(0xFFD4AF37),
+                                      size: 20,
+                                    ),
+                                    tooltip: t("track_edit_grams"),
+                                    onPressed: () {
+                                      unawaited(_editTrackedFoodPortion(
+                                        f,
+                                        meal: meal,
+                                      ));
+                                    },
+                                  ),
+                                  PopupMenuButton<String>(
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 36,
+                                      minHeight: 36,
+                                    ),
+                                    iconSize: 20,
+                                    child: Icon(
+                                      Icons.more_vert,
+                                      color: context.sol.muted,
+                                      size: 20,
+                                    ),
+                                    onSelected: (v) {
+                                      if (v == "move") {
+                                        unawaited(
+                                            _openMoveTrackedFoodDialog(f, meal));
+                                      } else if (v == "delete") {
+                                        setState(() {
+                                          trackedFoods.remove(f);
+                                        });
+                                        _updateMealTotals();
+                                        _saveAppState();
+                                        _applyDailyKcalOverSchedule();
+                                        Navigator.of(ctx).pop();
+                                      }
+                                    },
+                                    itemBuilder: (menuCtx) => [
+                                      PopupMenuItem(
+                                        value: "move",
+                                        child: Text(t("track_move_menu")),
+                                      ),
+                                      PopupMenuItem(
+                                        value: "delete",
+                                        child: Text(t("delete")),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMealSectionCard(
+    String meal, {
+    EdgeInsetsGeometry? sectionCardMargin,
+    /// Im Modal-Bottom-Sheet: nach [setState] aufrufen, damit Pfeil/Klappe neu gezeichnet werden.
+    VoidCallback? onAfterExpandToggle,
+  }) {
+    final totals = _mealTotals[meal]!;
+    final kR = displayMealKcalRangeForUi(meal);
+
+    final mealNoteContent =
+        _mealNoteHasVisibleLines(selectedDayKey, meal);
+    final mealNoteOpen =
+        _mealNoteHasOpenTodos(selectedDayKey, meal);
+    final sectionOpen = _mealKcalBarExpanded[meal] ?? false;
+
+    final mc = _mealCardColors(meal);
+    final mtx = _mealSlotTextForSurface(mc.surface);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    return Card(
+      margin: sectionCardMargin ??
+          const EdgeInsets.symmetric(horizontal: 6.0, vertical: 8.0),
+      color: mc.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: mc.border,
+          width: isLight ? 1.4 : 1.25,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Tooltip(
+                      message: t("meal_open_tracked"),
+                      child: InkWell(
+                        onTap: () => _openMealTrackedListPopup(meal),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 2, vertical: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _mealSlotLeading(meal),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _displayMealName(meal),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: mtx.title,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                      minWidth: 36, minHeight: 32),
+                  icon: Icon(
+                    mealNoteContent
+                        ? (mealNoteOpen
+                            ? Icons.note_alt
+                            : Icons.task_alt)
+                        : Icons.note_alt_outlined,
+                    size: 22,
+                    color: mealNoteContent
+                        ? (mealNoteOpen
+                            ? const Color(0xFFD4AF37)
+                            : const Color(0xFF81C784))
+                        : mtx.noteOff,
+                  ),
+                  tooltip: t("meal_note"),
+                  onPressed: () => _openMealNoteDialog(meal),
+                ),
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  tooltip: t("meal_add_menu"),
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    size: 26,
+                    color: Color(0xFFD4AF37),
+                  ),
+                  onSelected: (v) {
+                    if (v == "food") {
+                      addTrackedFood(meal);
+                    } else if (v == "gen") {
+                      openMealGenerator(meal: meal);
+                    } else if (v == "ai_photo") {
+                      unawaited(_openAiPhotoTrackFlow(meal));
+                    }
+                  },
+                  itemBuilder: (c) => [
+                    PopupMenuItem(
+                      value: "food",
+                      child: Text(t("add_food")),
+                    ),
+                    PopupMenuItem(
+                      value: "gen",
+                      child: Text(t("generator")),
+                    ),
+                    PopupMenuItem(
+                      value: "ai_photo",
+                      child: Text(t("track_add_ai_photo")),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  padding: const EdgeInsets.only(top: 2),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                      minWidth: 36, minHeight: 32),
+                  tooltip: t("meal_expand_inline"),
+                  onPressed: () {
+                    setState(() {
+                      _mealKcalBarExpanded[meal] = !sectionOpen;
+                    });
+                    onAfterExpandToggle?.call();
+                  },
+                  icon: AnimatedRotation(
+                    turns: sectionOpen ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.expand_more,
+                      size: 24,
+                      color: mtx.expandIcon,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: sectionOpen ? 8 : 4),
+            _buildMealKcalRowCompact(
+              meal,
+              current: totals['calories']!,
+              minKcal: kR.minKcal,
+              maxKcal: kR.maxKcal,
+              simple: mealKcalDisplayMode == "simple",
+              showInlineAdd: false,
+            ),
+            if (sectionOpen) ...[
+              _categoryExpandDivider(),
+              _mealMacroTableBlock(meal),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Tracked-Portion: g / kcal / P / KH / F — Umrechnung wie beim Hinzufügen.
+  Future<void> _editTrackedFoodPortion(
+    TrackedFood tracked, {
+    required String meal,
+  }) async {
+    final food = tracked.food;
+    final modes = _foodTrackModesFor(food);
+    var editGrams = tracked.grams;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E1E1E),
+            title: Text(
+              tracked.food.name,
+              style: const TextStyle(fontSize: 18),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    modes.length > 1
+                        ? t("track_edit_portion_hint")
+                        : t("track_edit_grams_only"),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white60,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _TrackPortionScrollPanel(
+                    key: ValueKey('edit_${food.name}'),
+                    modes: modes,
+                    initialMode: modes.first,
+                    initialGrams: tracked.grams,
+                    modeShortLabel: _trackModeShortLabel,
+                    displayValueForGrams: (m, g) =>
+                        _trackDisplayValueForGrams(food, m, g),
+                    gramsFromDisplay: (m, d) =>
+                        _gramsFromTrackInputDisplay(food, m, d),
+                    onChanged: (m, d, g) {
+                      setL(() => editGrams = g);
+                    },
+                    t: t,
+                  ),
+                  _trackPortionMacroPreview(food, editGrams),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (editGrams <= 0) return;
+                  setState(() {
+                    tracked.grams = editGrams;
+                  });
+                  _updateMealTotals();
+                  _saveAppState();
+                  _applyDailyKcalOverSchedule();
+                  Navigator.pop(ctx);
+                },
+                child: Text(t("save")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<bool?> _showCommitmentDialog({required bool isCut}) {
+    bool check = false;
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1210),
+          shape: RoundedRectangleBorder(
+            side: BorderSide(
+                color: isCut
+                    ? const Color(0xFFBF360C)
+                    : const Color(0xFF6A1B9A),
+                width: 1.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                isCut ? Icons.local_fire_department : Icons.bolt,
+                color: isCut
+                    ? const Color(0xFFFF6E40)
+                    : const Color(0xFFCE93D8),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  t("commitment_title"),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  t("commitment_body"),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    height: 1.45,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFD4AF37).withValues(alpha: 0.45)),
+                  ),
+                  child: Text(
+                    t("commitment_quote"),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFE8D4A8),
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w500,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                InkWell(
+                  onTap: () => setL(() => check = !check),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Checkbox(
+                        value: check,
+                        activeColor: const Color(0xFFD4AF37),
+                        onChanged: (v) => setL(() => check = v ?? false),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Text(
+                            t("commitment_checkbox"),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13, height: 1.3),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(
+                t("commitment_decline"),
+                style: const TextStyle(color: Colors.white54),
+              ),
+            ),
+            TextButton(
+              onPressed: check
+                  ? () => Navigator.of(ctx).pop(true)
+                  : null,
+              child: Text(
+                t("commitment_confirm"),
+                style: const TextStyle(
+                    color: Color(0xFFD4AF37), fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openMealRenameDialog(String mealId) {
+    final ctrl = TextEditingController(
+      text: mealCustomNames[mealId] ?? _tMeal(mealId),
+    );
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title: Text(t("meal_rename_title")),
+        content: TextField(
+          controller: ctrl,
+          decoration: _touchInputDecoration(t("meal_rename_label")),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(t("cancel"), style: const TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              final s = ctrl.text.trim();
+              setState(() {
+                if (s.isEmpty) {
+                  mealCustomNames.remove(mealId);
+                } else {
+                  mealCustomNames[mealId] = s;
+                }
+              });
+              _saveAppState();
+              Navigator.of(ctx).pop();
+            },
+            child: Text(t("save"),
+                style: const TextStyle(
+                    color: Color(0xFFD4AF37), fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMealOrderEditor() {
+    final free = _usesFreeMealLayout;
+    String groupLabel(String groupId) {
+      if (groupId == "prepost") {
+        return "${_tMeal("Pre-Workout")} (${t("meal_pre_paren")}) + ${_tMeal("Post-Workout")} (${t("meal_post_paren")})";
+      }
+      if (groupId == "Pre-Workout") {
+        return "${_displayMealName(groupId)} (${t("meal_pre_paren")})";
+      }
+      if (groupId == "Post-Workout") {
+        return "${_displayMealName(groupId)} (${t("meal_post_paren")})";
+      }
+      return _displayMealName(groupId);
+    }
+
+    IconData groupIcon(String groupId) {
+      switch (groupId) {
+        case "prepost":
+        case "Pre-Workout":
+        case "Post-Workout":
+          return Icons.fitness_center;
+        case "Main Meal":
+          return Icons.restaurant;
+        case "Evening Meal":
+          return Icons.nightlight_round;
+        case "Snacks":
+          return Icons.cookie;
+        default:
+          return Icons.restaurant_menu;
+      }
+    }
+
+    final hasSnacks = mealGroupOrder.contains("Snacks");
+    final reorderIds =
+        mealGroupOrder.where((g) => g != "Snacks").toList();
+
+    Widget mealOrderTile(
+      String groupId, {
+      required bool showDrag,
+      int? dragIndex,
+      required Key rowKey,
+    }) {
+      return Container(
+        key: rowKey,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: ListTile(
+          dense: true,
+          leading: Icon(
+            groupIcon(groupId),
+            color: const Color(0xFFD4AF37),
+            size: 22,
+          ),
+          title: Text(
+            groupLabel(groupId),
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: groupId == "Snacks"
+              ? null
+              : (free
+                  ? Text(
+                      t("meal_order_free_sub"),
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white54),
+                    )
+                  : (groupId == "prepost"
+                      ? Text(
+                          t("meal_order_block_hint"),
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white54),
+                        )
+                      : null)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (free)
+                IconButton(
+                  tooltip: t("meal_order_rename"),
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  color: Colors.white54,
+                  onPressed: () => _openMealRenameDialog(groupId),
+                ),
+              if (showDrag && dragIndex != null)
+                ReorderableDragStartListener(
+                  index: dragIndex,
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: (_) {
+                      HapticFeedback.selectionClick();
+                    },
+                    child: const Icon(Icons.drag_handle, color: Colors.white54),
+                  ),
+                )
+              else
+                Tooltip(
+                  message: t("meal_order_snacks_locked"),
+                  child: const Icon(
+                    Icons.lock_outlined,
+                    size: 20,
+                    color: Colors.white24,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Theme(
+      data: Theme.of(context).copyWith(canvasColor: Colors.transparent),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasSnacks) ...[
+            mealOrderTile(
+              "Snacks",
+              showDrag: false,
+              rowKey: const ValueKey("meal_order_snacks_fixed"),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 6),
+              child: Divider(
+                height: 1,
+                thickness: 1,
+                color: Colors.white.withValues(alpha: 0.20),
+                indent: 4,
+                endIndent: 4,
+              ),
+            ),
+          ],
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            proxyDecorator: (child, index, animation) {
+              return AnimatedBuilder(
+                animation: animation,
+                builder: (context, c) {
+                  final anim = Curves.easeOutCubic.transform(animation.value);
+                  final scale = 1.0 + 0.07 * anim;
+                  return Material(
+                    color: const Color(0xFF2F2A22),
+                    elevation: 8 * anim,
+                    shadowColor: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(10),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFFD4AF37).withValues(
+                            alpha: 0.35 + 0.4 * anim,
+                          ),
+                        ),
+                      ),
+                      child: Transform.scale(
+                        scale: scale,
+                        child: c,
+                      ),
+                    ),
+                  );
+                },
+                child: child,
+              );
+            },
+            itemCount: reorderIds.length,
+            onReorder: (oldIdx, newIdx) {
+              setState(() {
+                if (newIdx > oldIdx) newIdx -= 1;
+                final o = List<String>.from(reorderIds);
+                o.removeWhere((e) => e == "Snacks");
+                final item = o.removeAt(oldIdx);
+                o.insert(newIdx, item);
+                mealGroupOrder = hasSnacks ? <String>["Snacks", ...o] : o;
+                _pinSnacksFirstInMealGroupOrder();
+              });
+              HapticFeedback.mediumImpact();
+              _saveAppState();
+            },
+            itemBuilder: (context, index) {
+              final groupId = reorderIds[index];
+              return mealOrderTile(
+                groupId,
+                showDrag: true,
+                dragIndex: index,
+                rowKey: ValueKey(groupId),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------- EDIT GOALS ----------------
+
+  Widget settingsScreen() {
+    final fatMassKg = currentWeightKg * (bodyFatPercent / 100.0);
+    final leanMassKg = (currentWeightKg - fatMassKg).clamp(1.0, 500.0);
+    final maintenanceKcal = _maintenanceKcalFromBody();
+    double ageAdjustedDeficitPerKgFat = 70;
+    if (ageYears >= 45) ageAdjustedDeficitPerKgFat = 60;
+    if (ageYears >= 60) ageAdjustedDeficitPerKgFat = 45;
+    final cutDeficit = fatMassKg * ageAdjustedDeficitPerKgFat;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(t("settings"))),
+      body: ListView(
+        children: [
+          _sectionCard(
+            title: t("settings_appearance"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_appearance_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ValueListenableBuilder<bool>(
+                  valueListenable: appUseLightTheme,
+                  builder: (context, isLight, _) {
+                    return SegmentedButton<bool>(
+                      segments: [
+                        ButtonSegment(
+                          value: false,
+                          label: Text(t("settings_theme_dark")),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text(t("settings_theme_light")),
+                        ),
+                      ],
+                      selected: {isLight},
+                      onSelectionChanged: (s) {
+                        appUseLightTheme.value = s.first;
+                        unawaited(() async {
+                          final p = await SharedPreferences.getInstance();
+                          await p.setString(
+                            _kAppThemePresetKey,
+                            s.first ? "light" : "dark",
+                          );
+                        }());
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("language"),
+            child: DropdownButtonFormField<String>(
+              initialValue: languageCode,
+              decoration: _touchInputDecoration(t("language")),
+              style: TextStyle(color: context.sol.onCard, fontSize: 16),
+              iconEnabledColor: context.sol.muted,
+              dropdownColor: context.sol.card,
+              items: [
+                DropdownMenuItem(
+                    value: "de",
+                    child: Text(t("language_name_de"),
+                        style: TextStyle(color: context.sol.onCard))),
+                DropdownMenuItem(
+                    value: "en",
+                    child: Text(t("language_name_en"),
+                        style: TextStyle(color: context.sol.onCard))),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => languageCode = value);
+                _saveAppState();
+              },
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_ui_hints_title"),
+            child: Text(
+              t("settings_ui_hints_body"),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: context.sol.soft,
+                height: 1.4,
+              ),
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_reset_day_tile"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_reset_day_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    unawaited(_resetSelectedDayTracking());
+                  },
+                  icon: const Icon(Icons.restart_alt, size: 20),
+                  label: Text(t("reset_day_title")),
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("meal_kcal_mode_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("meal_kcal_mode_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                      value: "simple",
+                      label: Text(t("meal_kcal_mode_simple")),
+                    ),
+                    ButtonSegment(
+                      value: "advanced",
+                      label: Text(t("meal_kcal_mode_advanced")),
+                    ),
+                  ],
+                  selected: {mealKcalDisplayMode},
+                  onSelectionChanged: (s) {
+                    final v = s.first;
+                    setState(() => mealKcalDisplayMode = v);
+                    _saveAppState();
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_last_meal_kcal_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_last_meal_kcal_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: lastMealTrackPromptEnabled,
+                  onChanged: (v) {
+                    setState(() => lastMealTrackPromptEnabled = v);
+                    _saveAppState();
+                  },
+                  title: Text(t("settings_last_meal_track_prompt")),
+                  subtitle: Text(
+                    t("settings_last_meal_track_prompt_sub"),
+                    style: const TextStyle(
+                        fontSize: 11.5, color: Colors.white54, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (nutritionMode == "Advanced")
+            _sectionCard(
+              title: t("settings_meal_macro_section_title"),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("settings_meal_macro_section_sub"),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.sol.soft,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_col_protein")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: () => _openSettingsMacroColumnEditor("protein"),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_col_carbs")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: () => _openSettingsMacroColumnEditor("carbs"),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_col_fat")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: () => _openSettingsMacroColumnEditor("fat"),
+                  ),
+                  const Divider(height: 20, color: Color(0x22FFFFFF)),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_bands_list")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: _openSettingsMealPickerForEditMealPercent,
+                  ),
+                ],
+              ),
+            ),
+          _sectionCard(
+            title: t("ai_settings_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("ai_settings_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _geminiKeyCtrl ??= TextEditingController(
+                    text: geminiApiKey,
+                  ),
+                  obscureText: true,
+                  autocorrect: false,
+                  onChanged: (v) {
+                    setState(() => geminiApiKey = v);
+                    _saveAppState();
+                  },
+                  decoration: _touchInputDecoration(t("ai_settings_key_label")),
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("week_start_settings"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("week_start_hint"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  value: weekStartWeekday,
+                  decoration: _touchInputDecoration(t("week_start_settings")),
+                  style: TextStyle(color: context.sol.onCard, fontSize: 16),
+                  iconEnabledColor: context.sol.muted,
+                  dropdownColor: context.sol.card,
+                  items: List.generate(7, (i) {
+                    final d = i + 1;
+                    return DropdownMenuItem(
+                      value: d,
+                      child: Text(
+                        _tWeekdayShort(d),
+                        style: TextStyle(color: context.sol.onCard),
+                      ),
+                    );
+                  }),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() {
+                      weekStartWeekday = v;
+                      weekStartIntroDone = true;
+                    });
+                    _saveAppState();
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_weight_block_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_auto_weight_morning_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    t("settings_auto_weight_morning"),
+                    style: TextStyle(
+                        color: context.sol.onCard, fontSize: 15),
+                  ),
+                  value: autoOpenWeightMorning,
+                  onChanged: (v) {
+                    setState(() => autoOpenWeightMorning = v);
+                    _saveAppState();
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("week_balances_title"),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _openWeeklyBalancesArchive,
+                borderRadius: BorderRadius.circular(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      t("week_balances_sub"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.white60,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      t("week_chart_kcal_caption"),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFD4AF37),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 96,
+                      child: _weekBalanceKcalBarChart(
+                        _weekRowsChronoForChart(
+                          _weeklyBalanceRows(maxWeeks: 8),
+                          take: 8,
+                        ),
+                        compact: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          t("week_balance_open"),
+                          style: const TextStyle(
+                            color: Color(0xFFD4AF37),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.open_in_new,
+                          size: 18,
+                          color: Color(0xFFD4AF37),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          _sectionCard(
+            title: t("mode"),
+            child: Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  key: ValueKey("mode_drop_${nutritionMode}_$_modeDropdownRevision"),
+                  initialValue: nutritionMode,
+                  decoration: _touchInputDecoration(t("mode")),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 16),
+                  iconEnabledColor: Colors.white70,
+                  dropdownColor: const Color(0xFF1F1F1F),
+                  items: ["Alltag", "Diät", "Aufbau", "Advanced"]
+                      .map((m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(
+                              _tModeName(m),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (value) async {
+                    if (value == null || value == nutritionMode) return;
+                    final calcOk =
+                        await _openAutoCalculatorDialog(forModeChange: true);
+                    if (!mounted) return;
+                    if (!calcOk) {
+                      _bumpModeDropdownKey();
+                      return;
+                    }
+                    final blockKey = _ageBlockReasonForMode(value);
+                    if (blockKey != null) {
+                      _showModeAgeBlockedDialog(blockKey);
+                      _bumpModeDropdownKey();
+                      return;
+                    }
+                    if (value == "Diät" && !commitmentAcceptedCut) {
+                      final ok = await _showCommitmentDialog(isCut: true);
+                      if (!mounted) return;
+                      if (ok != true) {
+                        _bumpModeDropdownKey();
+                        return;
+                      }
+                      setState(() => commitmentAcceptedCut = true);
+                      await _saveAppState();
+                    } else if (value == "Aufbau" && !commitmentAcceptedBulk) {
+                      final ok = await _showCommitmentDialog(isCut: false);
+                      if (!mounted) return;
+                      if (ok != true) {
+                        _bumpModeDropdownKey();
+                        return;
+                      }
+                      setState(() => commitmentAcceptedBulk = true);
+                      await _saveAppState();
+                    }
+                    if (!mounted) return;
+                    setState(() {
+                      nutritionMode = value;
+                      _normalizeMealGroupOrderForMode();
+                      if (nutritionMode != "Advanced") {
+                        _applyAutoNutritionTargets();
+                      }
+                      if (nutritionMode == "Alltag") {
+                        _applyAlltagMealDistribution();
+                        _alltagBalanceDraft = alltagBalance;
+                      }
+                    });
+                    _saveAppState();
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Text(
+                  t("activity_level_title"),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  t("activity_level_hint"),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white60,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    emptySelectionAllowed: false,
+                    segments: [
+                      ButtonSegment(
+                        value: "very_active",
+                        label: Text(t("activity_level_very_active")),
+                      ),
+                      ButtonSegment(
+                        value: "normal",
+                        label: Text(t("activity_level_normal")),
+                      ),
+                      ButtonSegment(
+                        value: "low_everyday",
+                        label: Text(t("activity_level_low")),
+                      ),
+                    ],
+                    selected: {activityLevel},
+                    onSelectionChanged: (s) {
+                      if (s.isEmpty) return;
+                      setState(() {
+                        activityLevel = s.first;
+                        _recalculateNutritionTargets();
+                      });
+                      _saveAppState();
+                    },
+                  ),
+                ),
+                if (_isAggressiveMode) ...[
+                  const SizedBox(height: 10),
+                  _aggressiveModeStrip(compact: true),
+                ],
+                if (nutritionMode == "Diät") ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Text(
+                    t("cut_movement_block_title"),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    t("cut_movement_block_hint"),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white60,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    t("cut_want_label"),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFFD4AF37),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      emptySelectionAllowed: false,
+                      segments: [
+                        ButtonSegment(
+                          value: "more_cardio",
+                          label: Text(t("cut_style_more_cardio")),
+                        ),
+                        ButtonSegment(
+                          value: "standard",
+                          label: Text(t("cut_style_standard")),
+                        ),
+                        ButtonSegment(
+                          value: "less_move",
+                          label: Text(t("cut_style_less_move")),
+                        ),
+                      ],
+                      selected: {cutDeficitStyle},
+                      onSelectionChanged: (s) {
+                        if (s.isEmpty) return;
+                        setState(() {
+                          cutDeficitStyle = s.first;
+                          _applyAutoNutritionTargets();
+                        });
+                        _saveAppState();
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    t("cut_style_hint"),
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.white54, height: 1.3),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    t("cut_baseline_steps_title"),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: stepSyncEnabled,
+                          title: const Text(
+                            "Schritte automatisch synchronisieren",
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          subtitle: Text(
+                            stepSyncEnabled
+                                ? "Quelle: Health-App · erkannt: ${syncedStepsForSelectedDay > _effectiveCutExtraStepsTotal(selectedDayKey) ? "${_effectiveCutExtraStepsTotal(selectedDayKey)}+" : syncedStepsForSelectedDay}"
+                                : "Manuell per Regler",
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          onChanged: kIsWeb
+                              ? null
+                              : (v) {
+                                  setState(() {
+                                    stepSyncEnabled = v;
+                                    if (!v) syncedStepsForSelectedDay = 0;
+                                  });
+                                  _saveAppState();
+                                  if (v) {
+                                    unawaited(_refreshSyncedSteps(
+                                        requestPermissionsIfNeeded: true));
+                                  } else {
+                                    _stepGoalCelebratedByDay
+                                        .remove(selectedDayKey);
+                                  }
+                                },
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: "Schritte neu laden",
+                        onPressed: stepSyncEnabled && !_stepSyncBusy && !kIsWeb
+                            ? () => _refreshSyncedSteps(
+                                requestPermissionsIfNeeded: true)
+                            : null,
+                        icon: _stepSyncBusy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.sync),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    t("cut_baseline_steps_body"),
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.white54, height: 1.3),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        t("cut_steps_short"),
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
+                      ),
+                      Text(
+                        cutExtraStepsBaseline.toString(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFD4AF37),
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: cutExtraStepsBaseline.toDouble().clamp(3000, 10000),
+                    min: 3000,
+                    max: 10000,
+                    divisions: 70,
+                    onChanged: (v) {
+                      setState(() {
+                        cutExtraStepsBaseline =
+                            ((v / 100).round() * 100).clamp(3000, 10000);
+                        _applyAutoNutritionTargets();
+                      });
+                    },
+                    onChangeEnd: (_) => _saveAppState(),
+                  ),
+                  Builder(builder: (context) {
+                    final k = kcalFromExtraCutSteps(
+                        cutExtraStepsBaseline, currentWeightKg);
+                    final sexLabel = genderCode == "female"
+                        ? t("gender_female")
+                        : genderCode == "male"
+                            ? t("gender_male")
+                            : t("gender_label");
+                    return Text(
+                      "${tFmt("cut_baseline_kcal_foot", {
+                        "k": k.toStringAsFixed(0),
+                        "steps": cutExtraStepsBaseline,
+                      })}\nDistanz ($sexLabel): ${_fmtStepsKmRange(cutExtraStepsBaseline)}",
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white60,
+                        height: 1.35,
+                      ),
+                    );
+                  }),
+                ],
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline,
+                        size: 14, color: Colors.white54),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        t("mode_age_hint"),
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _openAutoCalculatorDialog,
+                    icon: const Icon(Icons.calculate),
+                    label: Text(t("open_calculator")),
+                  ),
+                ),
+                if (nutritionMode == "Advanced") ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Text(
+                    t("advanced_preset"),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t("advanced_preset_cut"),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
+                        ),
+                      ),
+                      Text(
+                        advancedPreset == 0.5
+                            ? t("advanced_preset_maintain")
+                            : advancedPreset < 0.5
+                                ? "-${((0.5 - advancedPreset) * 200).round()}%"
+                                : "+${((advancedPreset - 0.5) * 200).round()}%",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white70,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          t("advanced_preset_bulk"),
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: advancedPreset,
+                    onChanged: (v) {
+                      setState(() {
+                        advancedPreset = v;
+                        _applyAdvancedPreset();
+                      });
+                    },
+                    onChangeEnd: (_) => _saveAppState(),
+                  ),
+                  Text(
+                    t("advanced_preset_hint"),
+                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Text(
+                    t("cheatday_budget_title"),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    t("cheatday_budget_hint"),
+                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      t("cheatday_budget_use_sol"),
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 14),
+                    ),
+                    value: advancedCheatMonthlyMax == null,
+                    onChanged: (v) {
+                      setState(() {
+                        if (v) {
+                          advancedCheatMonthlyMax = null;
+                        } else {
+                          advancedCheatMonthlyMax = 4;
+                        }
+                      });
+                      _saveAppState();
+                    },
+                  ),
+                  if (advancedCheatMonthlyMax != null) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          t("cheatday_budget_max_slider"),
+                          style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
+                        ),
+                        Text(
+                          "$advancedCheatMonthlyMax",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFD4AF37),
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: advancedCheatMonthlyMax!.toDouble().clamp(1, 16),
+                      min: 1,
+                      max: 16,
+                      divisions: 15,
+                      label: "$advancedCheatMonthlyMax",
+                      onChanged: (v) {
+                        setState(
+                            () => advancedCheatMonthlyMax = v.round());
+                      },
+                      onChangeEnd: (_) => _saveAppState(),
+                    ),
+                  ],
+                  const SizedBox(height: 2),
+                  Builder(
+                    builder: (context) {
+                      final u = _creditsUsedThisMonth();
+                      final m = _maxCreditsThisMonth();
+                      return Text(
+                        tFmt("cheatday_budget_foot", {
+                          "used": u,
+                          "max": m,
+                        }),
+                        style: const TextStyle(
+                          color: Color(0xFFAAAAAA),
+                          fontSize: 12,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+                if (nutritionMode == "Alltag") ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Text(
+                    t("alltag_distribution"),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          t("alltag_performance"),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
+                        ),
+                      ),
+                      Text(
+                        "${(_alltagBalanceDraft * 100).round()}%",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white70,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          t("alltag_relaxed"),
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: _alltagBalanceDraft,
+                    onChanged: (v) {
+                      setState(() {
+                        _alltagBalanceDraft = v;
+                      });
+                    },
+                  ),
+                  Text(
+                    t("alltag_distribution_hint"),
+                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  ),
+                  const SizedBox(height: 10),
+                  Builder(builder: (context) {
+                    final draftOffset =
+                        ((_alltagBalanceDraft - 0.5) * 200).round();
+                    final liveOffset = ((alltagBalance - 0.5) * 200).round();
+                    final hasChange = _alltagBalanceDraft != alltagBalance;
+                    String fmtOffset(int v) =>
+                        v == 0 ? "±0" : (v > 0 ? "+$v" : "$v");
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasChange
+                              ? "${t("alltag_kcal_change_label")}: ${fmtOffset(liveOffset)} kcal → ${fmtOffset(draftOffset)} kcal"
+                              : "${t("alltag_kcal_change_label")}: ${fmtOffset(liveOffset)} kcal",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFD4AF37),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.check),
+                            label: Text(t("alltag_apply")),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: hasChange
+                                  ? const Color(0xFFD4AF37)
+                                  : Colors.white12,
+                              foregroundColor: hasChange
+                                  ? Colors.black
+                                  : Colors.white38,
+                            ),
+                            onPressed: hasChange
+                                ? () {
+                                    setState(() {
+                                      alltagBalance = _alltagBalanceDraft;
+                                      _applyAlltagMealDistribution();
+                                      _applyAutoNutritionTargets();
+                                    });
+                                    _saveAppState();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(t("alltag_applied_msg")),
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                : null,
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("meal_order_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _usesFreeMealLayout
+                      ? t("meal_order_free_hint")
+                      : t("meal_order_hint"),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white70, height: 1.4),
+                ),
+                const SizedBox(height: 10),
+                _buildMealOrderEditor(),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("daily_goals"),
+            child: Column(
+              children: [
+                _kpiLine(
+                  t("goal_protein"),
+                  "${nutritionMode == "Advanced" ? _fmtAdv2(goalProtein) : goalProtein.toStringAsFixed(0)} g",
+                ),
+                _kpiLine(
+                  t("goal_carbs"),
+                  "${nutritionMode == "Advanced" ? _fmtAdv2(goalCarbs) : goalCarbs.toStringAsFixed(0)} g",
+                ),
+                _kpiLine(
+                  t("goal_fat"),
+                  "${nutritionMode == "Advanced" ? _fmtAdv2(goalFat) : goalFat.toStringAsFixed(0)} g",
+                ),
+                _kpiLine(
+                  t("goal_kcal_label"),
+                  nutritionMode == "Advanced"
+                      ? _fmtAdv2(goalCalories)
+                      : goalCalories.toStringAsFixed(0),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: nutritionMode == "Advanced" ? editGoals : null,
+                    icon: const Icon(Icons.edit),
+                    label: Text(
+                      nutritionMode == "Advanced"
+                          ? t("edit_goals_advanced")
+                          : t("goals_auto_note"),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("formula_info"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "${t("formula_current_masses")}: ${fatMassKg.toStringAsFixed(1)} kg / FFM ${leanMassKg.toStringAsFixed(1)} kg",
+                ),
+                Text("${t("formula_maintenance")}: ${maintenanceKcal.toStringAsFixed(0)} kcal"),
+                Text(
+                  tFmt("formula_activity_line", {
+                    "label": _tActivityLevelName(activityLevel),
+                    "factor": _activityFactor().toStringAsFixed(3),
+                  }),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  t("formula_macro_title"),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(t("formula_macro_protein")),
+                Text(t("formula_macro_fat")),
+                Text(t("formula_macro_carbs")),
+                const SizedBox(height: 8),
+                Text(
+                  t("formula_kcal_title"),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(t("formula_kcal_everyday")),
+                Text(
+                  "${t("formula_kcal_cut_prefix")}${ageAdjustedDeficitPerKgFat.toStringAsFixed(0)}${t("formula_kcal_cut_suffix")}",
+                ),
+                Text("  ${t("formula_kcal_cut_current")}${cutDeficit.toStringAsFixed(0)} kcal"),
+                Text(t("formula_kcal_bulk")),
+                const SizedBox(height: 8),
+                Text(
+                  t("formula_kcal_hint"),
+                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void editGoals() {
+    final p = TextEditingController(text: _fmtAdv2(goalProtein));
+    final c = TextEditingController(text: _fmtAdv2(goalCarbs));
+    final f = TextEditingController(text: _fmtAdv2(goalFat));
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(t("goals_dialog_title")),
+        content: _solDialogConstrainedBody(
+          dialogCtx,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: p,
+                  decoration: _touchInputDecoration(t("protein"))),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: c,
+                  decoration: _touchInputDecoration(t("carbs"))),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: f, decoration: _touchInputDecoration(t("fat"))),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              final pVal = _safeDouble(p.text);
+              final cVal = _safeDouble(c.text);
+              final fVal = _safeDouble(f.text);
+
+              if (pVal != null && cVal != null && fVal != null) {
+                setState(() {
+                  goalProtein = _round2(pVal);
+                  goalCarbs = _round2(cVal);
+                  goalFat = _round2(fVal);
+                });
+                _saveAppState();
+              }
+              Navigator.pop(context);
+            },
+            child: Text(t("save")),
+          )
+        ],
+      ),
+    );
+  }
+
+  // ---------------- EDIT MEAL ----------------
+
+  _MealMacroLineParse? _parseMealMacroLine(String raw, double dayGoalG) {
+    var s = raw.trim();
+    if (s.isEmpty) return null;
+    s = s.replaceAll("bis", "-").replaceAll("Bis", "-");
+    // g range: 10-20g, 10g–20, 10 g - 20 g
+    var re = RegExp(
+      r'^\s*(\d+\.?\d*)\s*g?\s*[-–—]\s*(\d+\.?\d*)\s*g?\s*$',
+      caseSensitive: false,
+    );
+    if (re.hasMatch(s)) {
+      if (dayGoalG < 0.1) return null;
+      final m = re.firstMatch(s)!;
+      var lo = (double.tryParse(m.group(1) ?? "") ?? 0) / dayGoalG * 100.0;
+      var hi = (double.tryParse(m.group(2) ?? "") ?? 0) / dayGoalG * 100.0;
+      if (lo > hi) {
+        final t = lo;
+        lo = hi;
+        hi = t;
+      }
+      lo = lo.clamp(0.0, 100.0);
+      hi = hi.clamp(0.0, 100.0);
+      return _MealMacroLineParse(
+        centerPct: (lo + hi) / 2.0,
+        minPct: lo,
+        maxPct: hi,
+      );
+    }
+    re = RegExp(r'^\s*(\d+\.?\d*)\s*g\s*$', caseSensitive: false);
+    if (re.hasMatch(s)) {
+      if (dayGoalG < 0.1) return null;
+      final m = re.firstMatch(s)!;
+      final g = double.tryParse(m.group(1) ?? "") ?? 0;
+      final p = (g / dayGoalG * 100.0).clamp(0.0, 100.0);
+      return _MealMacroLineParse(centerPct: p);
+    }
+    re = RegExp(
+      r'^\s*(\d+\.?\d*)\s*[-–—]\s*(\d+\.?\d*)\s*%\s*$',
+      caseSensitive: false,
+    );
+    if (re.hasMatch(s)) {
+      final m = re.firstMatch(s)!;
+      var lo = double.tryParse(m.group(1) ?? "") ?? 0;
+      var hi = double.tryParse(m.group(2) ?? "") ?? 0;
+      if (lo > hi) {
+        final t = lo;
+        lo = hi;
+        hi = t;
+      }
+      lo = lo.clamp(0.0, 100.0);
+      hi = hi.clamp(0.0, 100.0);
+      return _MealMacroLineParse(
+        centerPct: (lo + hi) / 2.0,
+        minPct: lo,
+        maxPct: hi,
+      );
+    }
+    re = RegExp(r'^\s*(\d+\.?\d*)\s*%\s*$', caseSensitive: false);
+    if (re.hasMatch(s)) {
+      final p =
+          (double.tryParse(re.firstMatch(s)!.group(1) ?? "") ?? 0).clamp(0.0, 100.0);
+      return _MealMacroLineParse(centerPct: p);
+    }
+    re = RegExp(r'^\s*(\d+\.?\d*)\s*$');
+    if (re.hasMatch(s)) {
+      final p =
+          (double.tryParse(re.firstMatch(s)!.group(1) ?? "") ?? 0).clamp(0.0, 100.0);
+      return _MealMacroLineParse(centerPct: p);
+    }
+    return null;
+  }
+
+  String _initMealMacroInputLine(
+    String meal,
+    String macro, {
+    required double gGoal,
+  }) {
+    final c = mealMacros[meal]![macro]!;
+    final cur = _mealDayMacroBandPct(meal, macro);
+    final def = _defaultBandListFor(meal, macro);
+    if ((cur.minPct - def[0]).abs() < 0.2 &&
+        (cur.maxPct - def[1]).abs() < 0.2) {
+      return _fmtAdv2(c);
+    }
+    if ((cur.maxPct - cur.minPct).abs() < 0.12) {
+      return _fmtAdv2(c);
+    }
+    return "${_fmtAdv2(cur.minPct)}–${_fmtAdv2(cur.maxPct)}";
+  }
+
+  void editMealPercent(String meal) {
+    _fillMissingMealDayMacroBandEntries();
+
+    final gE0 = effectiveMacroGoalsForDay(selectedDayKey);
+    final gP = gE0.protein;
+    final gC = gE0.carbs;
+    final gF = gE0.fat;
+
+    final p = TextEditingController(
+      text: _initMealMacroInputLine(meal, "protein", gGoal: gP),
+    );
+    final c = TextEditingController(
+      text: _initMealMacroInputLine(meal, "carbs", gGoal: gC),
+    );
+    final f = TextEditingController(
+      text: _initMealMacroInputLine(meal, "fat", gGoal: gF),
+    );
+
+    var localPpP = _advancedBandPpFor(meal, "protein");
+    var localPpC = _advancedBandPpFor(meal, "carbs");
+    var localPpF = _advancedBandPpFor(meal, "fat");
+
+    double sumOtherPercent(String macroKey) {
+      double sum = 0;
+      mealMacros.forEach((m, values) {
+        if (m != meal) {
+          sum += values[macroKey] ?? 0;
+        }
+      });
+      return sum;
+    }
+
+    double gramsFromPercent(double percent, String macroKey) {
+      if (macroKey == "protein") return gP * percent / 100.0;
+      if (macroKey == "carbs") return gC * percent / 100.0;
+      return gF * percent / 100.0;
+    }
+
+    double currentCenterForFree(
+        String macro, TextEditingController ctrl, double gg) {
+      final pa = _parseMealMacroLine(ctrl.text, gg);
+      if (pa != null) {
+        return pa.centerPct;
+      }
+      return mealMacros[meal]![macro]!;
+    }
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          const bandGramStyle = TextStyle(
+            fontSize: 12,
+            color: Color(0xFFB0B0A8),
+            fontWeight: FontWeight.w500,
+          );
+
+          String gramSubline(
+            TextEditingController ctrl,
+            String mk,
+            double gg, {
+            required double localPp,
+          }) {
+            final pa = _parseMealMacroLine(ctrl.text, gg);
+            if (pa == null) {
+              return "";
+            }
+            if (nutritionMode == "Advanced" && !pa.isRange) {
+              final c = pa.centerPct.clamp(0.0, 100.0);
+              final pp = localPp.clamp(0.5, 25.0);
+              final lo = (c - pp).clamp(0.0, 100.0);
+              final hi = (c + pp).clamp(0.0, 100.0);
+              final g1 = gramsFromPercent(lo, mk);
+              final g2 = gramsFromPercent(hi, mk);
+              return "≈ ${_fmtAdv2(g1)}–${_fmtAdv2(g2)} g (${t("meal_macro_grams_daily_share")})";
+            }
+            if (pa.isRange) {
+              final g1 = gramsFromPercent(pa.minPct!.clamp(0, 100), mk);
+              final g2 = gramsFromPercent(pa.maxPct!.clamp(0, 100), mk);
+              return "≈ ${_fmtAdv2(g1)}–${_fmtAdv2(g2)} g (${t("meal_macro_grams_daily_share")})";
+            }
+            return "≈ ${_fmtAdv2(gramsFromPercent(pa.centerPct.clamp(0, 200), mk))} g (${t("meal_macro_grams_daily_share")})";
+          }
+
+          Widget macroSliderFeedback(
+            TextEditingController ctrl,
+            double gg,
+            String mk,
+            double localPp,
+          ) {
+            if (nutritionMode != "Advanced") {
+              return const SizedBox.shrink();
+            }
+            final pa = _parseMealMacroLine(ctrl.text, gg);
+            if (pa == null) {
+              return const SizedBox.shrink();
+            }
+            if (pa.isRange) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 4),
+                child: Text(
+                  t("meal_macro_slider_no_buffer_for_explicit_range"),
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFF7A7A75),
+                    height: 1.2,
+                  ),
+                ),
+              );
+            }
+            final c = pa.centerPct.clamp(0.0, 100.0);
+            final pp = localPp.clamp(0.5, 25.0);
+            final lo = (c - pp).clamp(0.0, 100.0);
+            final hi = (c + pp).clamp(0.0, 100.0);
+            return Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 4),
+              child: Text(
+                tFmt("meal_macro_slider_band_live", {
+                  "lo": _fmtAdv2(lo),
+                  "hi": _fmtAdv2(hi),
+                  "g1": _fmtAdv2(gramsFromPercent(lo, mk)),
+                  "g2": _fmtAdv2(gramsFromPercent(hi, mk)),
+                }),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF9CCC9C),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            );
+          }
+
+          final pOther = sumOtherPercent("protein");
+          final cOther = sumOtherPercent("carbs");
+          final fOther = sumOtherPercent("fat");
+
+          final pFree = 100 - pOther;
+          final cFree = 100 - cOther;
+          final fFree = 100 - fOther;
+
+          final pCur = currentCenterForFree("protein", p, gP);
+          final cCur = currentCenterForFree("carbs", c, gC);
+          final fCur = currentCenterForFree("fat", f, gF);
+
+          final gsP = gramSubline(p, "protein", gP, localPp: localPpP);
+          final gsC = gramSubline(c, "carbs", gC, localPp: localPpC);
+          final gsF = gramSubline(f, "fat", gF, localPp: localPpF);
+
+          Widget freeText(String label, double freePct, String macro) {
+            final isOver = (macro == "protein" && pCur > pFree) ||
+                (macro == "carbs" && cCur > cFree) ||
+                (macro == "fat" && fCur > fFree);
+            return Text(
+              "$label ${t("free_suffix")}: ${_fmtAdv2(freePct.clamp(0, 200))}% (${_fmtAdv2(gramsFromPercent(freePct.clamp(0, 100), macro))} g)",
+              style: TextStyle(
+                color: isOver ? Colors.red : Colors.green,
+                fontWeight: FontWeight.w600,
+              ),
+            );
+          }
+
+          return AlertDialog(
+            title: Text(
+                "${_displayMealName(meal)} ${t("meal_macros_title_suffix")}"),
+            content: _solDialogConstrainedBody(
+              context,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t("meal_macro_day_share_hint"),
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFFC8C4BC), height: 1.3),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    t("meal_macro_combined_input_hint"),
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF9E9A90), height: 1.3),
+                  ),
+                  if (nutritionMode == "Advanced") ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      t("meal_macro_adv_buffer_title"),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      t("meal_macro_adv_buffer_body"),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF9E9A90),
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      t("meal_macro_adv_buffer_p"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFFC8C4BC),
+                      ),
+                    ),
+                    Slider(
+                      value: localPpP.clamp(0.5, 25.0),
+                      min: 0.5,
+                      max: 25.0,
+                      label: _fmtAdv2(localPpP.clamp(0.5, 25.0)),
+                      onChanged: (v) {
+                        setDialogState(() {
+                          localPpP = v;
+                        });
+                      },
+                    ),
+                    macroSliderFeedback(p, gP, "protein", localPpP),
+                    Text(
+                      t("meal_macro_adv_buffer_c"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFFC8C4BC),
+                      ),
+                    ),
+                    Slider(
+                      value: localPpC.clamp(0.5, 25.0),
+                      min: 0.5,
+                      max: 25.0,
+                      label: _fmtAdv2(localPpC.clamp(0.5, 25.0)),
+                      onChanged: (v) {
+                        setDialogState(() {
+                          localPpC = v;
+                        });
+                      },
+                    ),
+                    macroSliderFeedback(c, gC, "carbs", localPpC),
+                    Text(
+                      t("meal_macro_adv_buffer_f"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFFC8C4BC),
+                      ),
+                    ),
+                    Slider(
+                      value: localPpF.clamp(0.5, 25.0),
+                      min: 0.5,
+                      max: 25.0,
+                      label: _fmtAdv2(localPpF.clamp(0.5, 25.0)),
+                      onChanged: (v) {
+                        setDialogState(() {
+                          localPpF = v;
+                        });
+                      },
+                    ),
+                    macroSliderFeedback(f, gF, "fat", localPpF),
+                    Builder(
+                      builder: (ctx) {
+                        final pr0 = _parseMealMacroLine(p.text, gP);
+                        final cr0 = _parseMealMacroLine(c.text, gC);
+                        final fr0 = _parseMealMacroLine(f.text, gF);
+                        if (pr0 == null || cr0 == null || fr0 == null) {
+                          return const SizedBox.shrink();
+                        }
+                        final pVal0 = pr0.centerPct;
+                        final cVal0 = cr0.centerPct;
+                        final fVal0 = fr0.centerPct;
+                        final ppP0 = localPpP.clamp(0.5, 25.0);
+                        final ppC0 = localPpC.clamp(0.5, 25.0);
+                        final ppF0 = localPpF.clamp(0.5, 25.0);
+                        double pLo0, pHi0, cLo0, cHi0, fLo0, fHi0;
+                        if (pr0.isRange) {
+                          pLo0 = pr0.minPct!;
+                          pHi0 = pr0.maxPct!;
+                        } else {
+                          pLo0 = (pVal0 - ppP0).clamp(0.0, 100.0);
+                          pHi0 = (pVal0 + ppP0).clamp(0.0, 100.0);
+                        }
+                        if (cr0.isRange) {
+                          cLo0 = cr0.minPct!;
+                          cHi0 = cr0.maxPct!;
+                        } else {
+                          cLo0 = (cVal0 - ppC0).clamp(0.0, 100.0);
+                          cHi0 = (cVal0 + ppC0).clamp(0.0, 100.0);
+                        }
+                        if (fr0.isRange) {
+                          fLo0 = fr0.minPct!;
+                          fHi0 = fr0.maxPct!;
+                        } else {
+                          fLo0 = (fVal0 - ppF0).clamp(0.0, 100.0);
+                          fHi0 = (fVal0 + ppF0).clamp(0.0, 100.0);
+                        }
+                        if (pLo0 > pHi0 ||
+                            cLo0 > cHi0 ||
+                            fLo0 > fHi0) {
+                          return const SizedBox.shrink();
+                        }
+                        final kr0 = _kcalFromMacroPctBands(
+                          pLo: pLo0,
+                          pHi: pHi0,
+                          cLo: cLo0,
+                          cHi: cHi0,
+                          fLo: fLo0,
+                          fHi: fHi0,
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 2, bottom: 6),
+                          child: Text(
+                            tFmt("meal_macro_kcal_band_preview", {
+                              "lo": kr0.minKcal.toStringAsFixed(0),
+                              "hi": kr0.maxKcal.toStringAsFixed(0),
+                            }),
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Color(0xFFFFB74D),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  freeText(t("protein"), pFree, "protein"),
+                  TextField(
+                    controller: p,
+                    decoration: _touchInputDecoration(
+                        "${t("protein")} · ${t("meal_macro_combined_label_suffix")}"),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  if (gsP.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 8),
+                      child: Text(gsP, style: bandGramStyle),
+                    )
+                  else
+                    const SizedBox(height: 8),
+                  freeText(t("carbs"), cFree, "carbs"),
+                  TextField(
+                    controller: c,
+                    decoration: _touchInputDecoration(
+                        "${t("carbs")} · ${t("meal_macro_combined_label_suffix")}"),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  if (gsC.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 8),
+                      child: Text(gsC, style: bandGramStyle),
+                    )
+                  else
+                    const SizedBox(height: 8),
+                  freeText(t("fat"), fFree, "fat"),
+                  TextField(
+                    controller: f,
+                    decoration: _touchInputDecoration(
+                        "${t("fat")} · ${t("meal_macro_combined_label_suffix")}"),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  if (gsF.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 0),
+                      child: Text(gsF, style: bandGramStyle),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  final ppP = localPpP.clamp(0.5, 25.0);
+                  final ppC = localPpC.clamp(0.5, 25.0);
+                  final ppF = localPpF.clamp(0.5, 25.0);
+                  final pr = _parseMealMacroLine(p.text, gP);
+                  final cr = _parseMealMacroLine(c.text, gC);
+                  final fr = _parseMealMacroLine(f.text, gF);
+                  if (pr == null || cr == null || fr == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(t("meal_macro_parse_invalid")),
+                      ),
+                    );
+                    return;
+                  }
+
+                  final pVal = pr.centerPct;
+                  final cVal = cr.centerPct;
+                  final fVal = fr.centerPct;
+
+                  if (pVal > pFree || cVal > cFree || fVal > fFree) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(t("distribution_too_high")),
+                      ),
+                    );
+                    return;
+                  }
+
+                  bool bandOk(double lo, double hi) {
+                    if (lo < 0 || lo > 100 || hi < 0 || hi > 100) {
+                      return false;
+                    }
+                    return lo <= hi;
+                  }
+
+                  double pLo, pHi, cLo, cHi, fLo, fHi;
+                  if (pr.isRange) {
+                    pLo = pr.minPct!;
+                    pHi = pr.maxPct!;
+                  } else {
+                    pLo = (pVal - ppP).clamp(0.0, 100.0);
+                    pHi = (pVal + ppP).clamp(0.0, 100.0);
+                  }
+                  if (cr.isRange) {
+                    cLo = cr.minPct!;
+                    cHi = cr.maxPct!;
+                  } else {
+                    cLo = (cVal - ppC).clamp(0.0, 100.0);
+                    cHi = (cVal + ppC).clamp(0.0, 100.0);
+                  }
+                  if (fr.isRange) {
+                    fLo = fr.minPct!;
+                    fHi = fr.maxPct!;
+                  } else {
+                    fLo = (fVal - ppF).clamp(0.0, 100.0);
+                    fHi = (fVal + ppF).clamp(0.0, 100.0);
+                  }
+
+                  if (!bandOk(pLo, pHi) || !bandOk(cLo, cHi) || !bandOk(fLo, fHi)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(t("meal_macro_save_invalid_band")),
+                      ),
+                    );
+                    return;
+                  }
+
+                  pLo = _round2(pLo);
+                  pHi = _round2(pHi);
+                  cLo = _round2(cLo);
+                  cHi = _round2(cHi);
+                  fLo = _round2(fLo);
+                  fHi = _round2(fHi);
+
+                  setState(() {
+                    advancedMealMacroBandPp = _round2(
+                        ((ppP + ppC + ppF) / 3.0).clamp(0.5, 25.0));
+                    advancedMealMacroBandPpByMeal[meal] = {
+                      "protein": _round2(ppP),
+                      "carbs": _round2(ppC),
+                      "fat": _round2(ppF),
+                    };
+                    mealMacros[meal]!["protein"] = _round2(pVal);
+                    mealMacros[meal]!["carbs"] = _round2(cVal);
+                    mealMacros[meal]!["fat"] = _round2(fVal);
+                    mealDayMacroBands.putIfAbsent(meal, () => {});
+                    final row = mealDayMacroBands[meal]!;
+                    row["protein"] = [pLo, pHi];
+                    row["carbs"] = [cLo, cHi];
+                    row["fat"] = [fLo, fHi];
+                  });
+                  _saveAppState();
+                  Navigator.pop(context);
+                },
+                child: Text(t("save")),
+              )
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _openSettingsMealPickerForEditMealPercent() {
+    if (nutritionMode != "Advanced") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("meal_percent_locked_tooltip"))),
+      );
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: Text(t("settings_meal_macro_bands_list")),
+        content: _solDialogConstrainedBody(
+          dCtx,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final m in meals)
+                ListTile(
+                  title: Text(_displayMealName(m)),
+                  onTap: () {
+                    Navigator.pop(dCtx);
+                    editMealPercent(m);
+                  },
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx),
+            child: Text(t("cancel")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _mealShareSegmentColor(String mealId) {
+    switch (mealId) {
+      case "Snacks":
+        return const Color(0xFF8D6E63);
+      case "Pre-Workout":
+        return const Color(0xFFE65100);
+      case "Post-Workout":
+        return const Color(0xFFFF8F00);
+      case "Main Meal":
+        return const Color(0xFFD4AF37);
+      case "Evening Meal":
+        return const Color(0xFF7E57C2);
+      default:
+        return const Color(0xFFD4AF37);
+    }
+  }
+
+  Widget _mealShareDistributionBar(Map<String, double> pcts) {
+    final total = meals.fold(0.0, (s, m) => s + (pcts[m] ?? 0.0));
+    if (total <= 0) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Container(
+          height: 10,
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      );
+    }
+    final barTotal = total > 100.0 ? total : 100.0;
+    int flexFor(double pct) =>
+        (pct / barTotal * 10000).round().clamp(0, 10000);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(5),
+      child: SizedBox(
+        height: 10,
+        child: Row(
+          children: [
+            for (final m in meals)
+              if ((pcts[m] ?? 0) > 0)
+                Expanded(
+                  flex: flexFor(pcts[m]!),
+                  child: Container(color: _mealShareSegmentColor(m)),
+                ),
+            if (total < 100.0)
+              Expanded(
+                flex: flexFor(100.0 - total),
+                child: Container(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mealShareDistributionSummary({
+    required double totalPct,
+    required double goalG,
+    required bool isOkTotal,
+  }) {
+    final rem = 100.0 - totalPct;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isOkTotal
+              ? const Color(0xFF5A7D5A)
+              : const Color(0xFFC05050),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            tFmt("settings_meal_macro_sum_all", {"s": _fmtAdv2(totalPct)}),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFE7D9C3),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            isOkTotal
+                ? (rem.abs() > 0.01
+                    ? tFmt("settings_meal_macro_remainder_all", {
+                        "r": _fmtAdv2(rem.clamp(0.0, 200.0)),
+                        "g": _fmtAdv2(goalG * rem.clamp(0.0, 200.0) / 100.0),
+                      })
+                    : "≈ ${_fmtAdv2(goalG)} g ${t("macro_bar_footnote_of_day")}")
+                : tFmt("settings_meal_macro_excess_all", {
+                    "o": _fmtAdv2((totalPct - 100.0).clamp(0.0, 500.0)),
+                  }),
+            style: TextStyle(
+              fontSize: 12,
+              color: isOkTotal
+                  ? const Color(0xFF7CB47C)
+                  : const Color(0xFFFF8A80),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mealShareSliderRow({
+    required String mealId,
+    required double value,
+    required double maxPct,
+    required double goalG,
+    required ValueChanged<double> onChanged,
+  }) {
+    final divisions =
+        maxPct >= 1.0 ? (maxPct * 2).round().clamp(1, 200) : 1;
+    final grams = goalG * value / 100.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            _mealSlotIcon(mealId),
+            size: 20,
+            color: _mealShareSegmentColor(mealId).withValues(alpha: 0.85),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _displayMealName(mealId),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFE7D9C3),
+                    fontSize: 13,
+                  ),
+                ),
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    activeTrackColor: _mealShareSegmentColor(mealId),
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.12),
+                    thumbColor: const Color(0xFFE7D9C3),
+                  ),
+                  child: Slider(
+                    value: value.clamp(0.0, maxPct),
+                    min: 0,
+                    max: maxPct.clamp(0.0, 100.0),
+                    divisions: divisions,
+                    onChanged: maxPct <= 0 ? null : onChanged,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 64,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  "${_fmtAdv2(value)}%",
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFD4AF37),
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                Text(
+                  "${_fmtAdv2(grams)} g",
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF9E9D98),
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSettingsMacroColumnEditor(String macroKey) {
+    if (nutritionMode != "Advanced") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("meal_percent_locked_tooltip"))),
+      );
+      return;
+    }
+    _fillMissingMealDayMacroBandEntries();
+    final gE = effectiveMacroGoalsForDay(selectedDayKey);
+    final goalG = macroKey == "protein"
+        ? gE.protein
+        : (macroKey == "carbs" ? gE.carbs : gE.fat);
+
+    String colTitle() {
+      if (macroKey == "protein") return t("settings_meal_macro_col_protein");
+      if (macroKey == "carbs") return t("settings_meal_macro_col_carbs");
+      return t("settings_meal_macro_col_fat");
+    }
+
+    final pcts = <String, double>{};
+    for (final m in meals) {
+      pcts[m] = mealMacros[m]![macroKey]!;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (context, setSt) {
+          double sumOther(String mId) {
+            var s = 0.0;
+            for (final m in meals) {
+              if (m == mId) continue;
+              s += pcts[m] ?? 0.0;
+            }
+            return s;
+          }
+
+          double totalSumPct() =>
+              meals.fold(0.0, (s, m) => s + (pcts[m] ?? 0.0));
+
+          final totalAll = totalSumPct();
+          final isOkTotal = totalAll <= 100.0 + 1e-2;
+
+          return AlertDialog(
+            title: Text(colTitle()),
+            content: _solDialogConstrainedBody(
+              dCtx,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("settings_meal_macro_editor_hint"),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFC8C4BC),
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _mealShareDistributionBar(pcts),
+                  const SizedBox(height: 10),
+                  _mealShareDistributionSummary(
+                    totalPct: totalAll,
+                    goalG: goalG,
+                    isOkTotal: isOkTotal,
+                  ),
+                  const SizedBox(height: 8),
+                  for (final m in meals)
+                    _mealShareSliderRow(
+                      mealId: m,
+                      value: pcts[m] ?? 0.0,
+                      maxPct: (100.0 - sumOther(m)).clamp(0.0, 100.0),
+                      goalG: goalG,
+                      onChanged: (v) =>
+                          setSt(() => pcts[m] = _round2(v)),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dCtx),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: () {
+                  final vals = <String, double>{};
+                  for (final m in meals) {
+                    final v = pcts[m];
+                    if (v == null || v < 0 || v > 100) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(t("settings_input_invalid"))),
+                      );
+                      return;
+                    }
+                    vals[m] = _round2(v);
+                  }
+                  for (final m in meals) {
+                    final v = vals[m]!;
+                    final o = meals
+                        .where((j) => j != m)
+                        .fold(0.0, (s, j) => s + vals[j]!);
+                    if (v > 100.0 - o + 1e-6) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(t("distribution_too_high"))),
+                      );
+                      return;
+                    }
+                  }
+                  setState(() {
+                    for (final m in meals) {
+                      mealMacros[m]![macroKey] = vals[m]!;
+                    }
+                  });
+                  _saveAppState();
+                  Navigator.pop(dCtx);
+                },
+                child: Text(t("save")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildKcalHeader({
+    required double current,
+    required double goal,
+    double? recommendKcal,
+  }) {
+    final range = dailyKcalRange();
+    final cap = range.maxKcal > 0 ? range.maxKcal : 1.0;
+    final visualRatio = (current / cap).clamp(0.0, 1.0);
+    final minRatio = (range.minKcal / cap).clamp(0.0, 1.0);
+    final maxRatio = (range.maxKcal / cap).clamp(0.0, 1.0);
+    final hasBandKcal = (range.maxKcal - range.minKcal).abs() > 1e-2;
+    final centerKcalZiel = (range.minKcal + range.maxKcal) * 0.5;
+    final zielmitteRatio = cap > 1e-9
+        ? (centerKcalZiel / cap).clamp(0.0, 1.0)
+        : 0.0;
+    final showMaxKcalTick =
+        hasBandKcal && (maxRatio - minRatio).abs() > 1e-4;
+    final rK = recommendKcal;
+    final recRatio = rK != null ? (rK / cap).clamp(0.0, 1.0) : null;
+    final showRec = rK != null && (rK - range.minKcal).abs() > 5;
+    var showRecKcalLine = showRec && recRatio != null;
+    if (showRecKcalLine && hasBandKcal) {
+      if ((recRatio - zielmitteRatio).abs() <= 0.012) {
+        showRecKcalLine = false;
+      }
+    }
+    final kchrome = _kcalBarChromeDailyOverview();
+
+    Color statusColor;
+    if (current < range.minKcal) {
+      statusColor = const Color(0xFFD4AF37);
+    } else if (current <= range.maxKcal) {
+      statusColor = const Color(0xFF4CAF50);
+    } else {
+      statusColor = const Color(0xFFE53935);
+    }
+
+    final onCard = context.sol.onCard;
+    final muted = context.sol.muted;
+    final recText = Theme.of(context).brightness == Brightness.light
+        ? const Color(0xFFC66900)
+        : const Color(0xFFFFB74D);
+
+    return InkWell(
+      onTap: () => setState(
+          () => _macroDetailsExpanded = !_macroDetailsExpanded),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.local_fire_department,
+                    size: 20, color: Color(0xFFD4AF37)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    t("calories"),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: onCard,
+                    ),
+                  ),
+                ),
+                Text(
+                  "${current.toStringAsFixed(1)} / ${_fmtRangeKcal(range.minKcal, range.maxKcal)}",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: onCard,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  duration: const Duration(milliseconds: 220),
+                  turns: _macroDetailsExpanded ? 0.5 : 0,
+                  child: Icon(Icons.keyboard_arrow_down, color: muted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: visualRatio,
+                    color: statusColor,
+                    minHeight: 14,
+                    backgroundColor: kchrome.$1,
+                  ),
+                ),
+                Positioned.fill(
+                  child: LayoutBuilder(builder: (ctx, c) {
+                    final w = c.maxWidth;
+                    return Stack(
+                      children: [
+                        Positioned(
+                          left: (w * minRatio - 1)
+                              .clamp(0.0, w - 2)
+                              .toDouble(),
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 2,
+                            color: kchrome.$2,
+                          ),
+                        ),
+                        if (showMaxKcalTick)
+                          Positioned(
+                            left: (w * maxRatio - 1)
+                                .clamp(0.0, w - 2)
+                                .toDouble(),
+                            top: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 2,
+                              color: kchrome.$2,
+                            ),
+                          ),
+                        if (hasBandKcal)
+                          Positioned(
+                            left: (w * zielmitteRatio - 1.25)
+                                .clamp(0.0, w - 2.5)
+                                .toDouble(),
+                            top: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 2.5,
+                              color: const Color(0xFFD4AF37),
+                            ),
+                          ),
+                        if (showRecKcalLine)
+                          Positioned(
+                            left: (w * recRatio! - 0.75)
+                                .clamp(0.0, w - 1.5)
+                                .toDouble(),
+                            top: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 1.5,
+                              color: kchrome.$3,
+                            ),
+                          ),
+                      ],
+                    );
+                  }),
+                ),
+              ],
+            ),
+            if (recommendKcal != null) ...[
+              const SizedBox(height: 3),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  tFmt("display_rec_kcal", {
+                    "v": recommendKcal.toStringAsFixed(0),
+                  }),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: recText,
+                    fontStyle: FontStyle.italic,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                isSelectedDayCrashout
+                    ? "${t("cheatday_min_only")} · ${t("target_short")} ≥ ${goal.toStringAsFixed(1)}"
+                    : (cap > 0
+                        ? "${(current / cap * 100).toStringAsFixed(1)}% · ${t("target_short")} ${goal.toStringAsFixed(1)}"
+                        : ""),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: muted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Tagesähnlicher Kcal-Balken fürs Mahlzeit-Detail; [onToggle] null = rein informativ.
+
+  Set<String>? _activeMergedMealsForDay([String? dayKey]) {
+    final s = _mergedMealsByDay[dayKey ?? selectedDayKey];
+    if (s == null || s.isEmpty) return null;
+    return s;
+  }
+
+  bool _isMealMergedLocked(String meal, [String? dayKey]) {
+    final s = _activeMergedMealsForDay(dayKey);
+    return s != null && s.contains(meal);
+  }
+
+  bool _workoutBlockHiddenByMerge() {
+    final s = _activeMergedMealsForDay();
+    if (s == null) return false;
+    if (meals.contains("Pre-Workout") && s.contains("Pre-Workout")) {
+      return true;
+    }
+    if (meals.contains("Post-Workout") && s.contains("Post-Workout")) {
+      return true;
+    }
+    return false;
+  }
+
+  ({double targetMid, double eaten, double delta}) _mealKcalDelta(String meal) {
+    final r = displayMealKcalRangeForUi(meal);
+    final targetMid = (r.minKcal + r.maxKcal) / 2.0;
+    final eaten = _mealTotals[meal]?['calories'] ?? 0.0;
+    return (targetMid: targetMid, eaten: eaten, delta: eaten - targetMid);
+  }
+
+  ({double minKcal, double maxKcal}) _combinedMealKcalRange(
+      Iterable<String> mealsInScope) {
+    var minK = 0.0;
+    var maxK = 0.0;
+    for (final m in mealsInScope) {
+      final r = displayMealKcalRangeForUi(m);
+      minK += r.minKcal;
+      maxK += r.maxKcal;
+    }
+    return (minKcal: minK, maxKcal: maxK);
+  }
+
+  ({double targetMid, double eaten, double delta}) _combinedMealKcalFor(
+      Iterable<String> mealsInScope) {
+    var t = 0.0;
+    var e = 0.0;
+    for (final m in mealsInScope) {
+      final d = _mealKcalDelta(m);
+      t += d.targetMid;
+      e += d.eaten;
+    }
+    e += _mealTotals[_kMergedMealCardId]?['calories'] ?? 0.0;
+    return (targetMid: t, eaten: e, delta: e - t);
+  }
+
+  ({double minG, double maxG, double eatenG}) _combinedMealMacroFor(
+    Iterable<String> mealsInScope,
+    String macro,
+  ) {
+    var minG = 0.0;
+    var maxG = 0.0;
+    var eatenG = 0.0;
+    for (final m in mealsInScope) {
+      final r = dynamicMealMacroRangeG(m, macro);
+      minG += r.minG;
+      maxG += r.maxG;
+      eatenG += _mealTotals[m]?[macro] ?? 0.0;
+    }
+    eatenG += _mealTotals[_kMergedMealCardId]?[macro] ?? 0.0;
+    return (minG: minG, maxG: maxG, eatenG: eatenG);
+  }
+
+  void _collapseMergedMeals(Set<String> merged) {
+    for (final m in merged) {
+      _mealKcalBarExpanded[m] = false;
+    }
+    _mealKcalBarExpanded[_kWorkoutBlockMealId] = false;
+  }
+
+  Future<bool> _confirmPreMergeMixIfNeeded(
+    Set<String> candidate,
+    BuildContext dialogContext,
+  ) async {
+    final mixesPre = candidate.contains("Pre-Workout") &&
+        candidate.any((x) => x != "Pre-Workout" && x != "Post-Workout");
+    if (!mixesPre) return true;
+    final ok = await showDialog<bool>(
+      context: dialogContext,
+      builder: (wCtx) => AlertDialog(
+        title: Text(t("kcal_merge_pre_warn_title")),
+        content: Text(t("kcal_merge_pre_warn_body")),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(wCtx, false),
+            child: Text(t("cancel")),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(wCtx, true),
+            child: Text(t("continue_btn")),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Widget _mergedOpenProgressRow({
+    required String label,
+    required double eaten,
+    required double goalMid,
+    required Color baseColor,
+    int decimals = 1,
+  }) {
+    final open = math.max(0, goalMid - eaten);
+    final over = eaten > goalMid + 0.05;
+    final ratio =
+        goalMid > 0.01 ? (eaten / goalMid).clamp(0.0, 1.0) : 0.0;
+    final surface = _mealCardColors(_kMergedMealCardId).surface;
+    final barChrome = _kcalBarChromeForSurface(surface);
+    final tx = _mealSlotTextForSurface(surface);
+
+    Color fillColor;
+    if (over) {
+      fillColor = const Color(0xFFE53935);
+    } else if (ratio >= 0.98) {
+      fillColor = const Color(0xFF4CAF50);
+    } else {
+      fillColor = baseColor;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: tx.title,
+                  ),
+                ),
+              ),
+              Text(
+                tFmt("kcal_merge_open_short", {
+                  "v": open.toStringAsFixed(decimals),
+                }),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: tx.ziel,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 520),
+              curve: Curves.easeOutCubic,
+              tween: Tween<double>(begin: 0, end: ratio),
+              builder: (context, value, _) {
+                return LinearProgressIndicator(
+                  value: value,
+                  color: fillColor,
+                  minHeight: 12,
+                  backgroundColor: barChrome.$1,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMergedMealSectionCard(Set<String> mergedMeals) {
+    final kcal = _combinedMealKcalFor(mergedMeals);
+    final p = _combinedMealMacroFor(mergedMeals, "protein");
+    final c = _combinedMealMacroFor(mergedMeals, "carbs");
+    final f = _combinedMealMacroFor(mergedMeals, "fat");
+    final includedNames = mergedMeals.map(_displayMealName).join(", ");
+    final pGoal = (p.minG + p.maxG) / 2.0;
+    final cGoal = (c.minG + c.maxG) / 2.0;
+    final fGoal = (f.minG + f.maxG) / 2.0;
+
+    Future<void> addVia(String mode) async {
+      if (mode == "food") {
+        addTrackedFood(_kMergedMealCardId);
+      } else if (mode == "gen") {
+        openMealGenerator(meal: _kMergedMealCardId);
+      } else if (mode == "ai_photo") {
+        unawaited(_openAiPhotoTrackFlow(_kMergedMealCardId));
+      }
+    }
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+      color: _mealCardColors(_kMergedMealCardId).surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: _mealCardColors(_kMergedMealCardId).border,
+          width: 1.35,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.layers_outlined,
+                    color: Color(0xFFD4AF37), size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _openMealTrackedListPopup(_kMergedMealCardId),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          t("kcal_merge_combined_title"),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: context.sol.onCard,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: t("meal_add_menu"),
+                  onSelected: (v) => unawaited(addVia(v)),
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    size: 26,
+                    color: Color(0xFFD4AF37),
+                  ),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: "food", child: Text(t("add_food"))),
+                    PopupMenuItem(
+                      value: "gen",
+                      child: Text(t("generator")),
+                    ),
+                    PopupMenuItem(
+                      value: "ai_photo",
+                      child: Text(t("track_add_ai_photo")),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              tFmt("kcal_merge_combined_includes", {"m": includedNames}),
+              style: TextStyle(fontSize: 12, color: context.sol.muted),
+            ),
+            const SizedBox(height: 10),
+            _mergedOpenProgressRow(
+              label: t("calories"),
+              eaten: kcal.eaten,
+              goalMid: kcal.targetMid,
+              baseColor: const Color(0xFFD4AF37),
+              decimals: 0,
+            ),
+            _mergedOpenProgressRow(
+              label: t("protein"),
+              eaten: p.eatenG,
+              goalMid: pGoal,
+              baseColor: _proteinColor,
+            ),
+            _mergedOpenProgressRow(
+              label: t("carbs"),
+              eaten: c.eatenG,
+              goalMid: cGoal,
+              baseColor: _carbColor,
+            ),
+            _mergedOpenProgressRow(
+              label: t("fat"),
+              eaten: f.eatenG,
+              goalMid: fGoal,
+              baseColor: _fatColor,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMergedMealLockedDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t("kcal_merge_locked_title")),
+        content: Text(t("kcal_merge_locked_body")),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(t("cancel")),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              unawaited(_showKcalMergeOverviewDialog());
+            },
+            child: Text(t("kcal_merge_open_combined")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showKcalMergeOverviewDialog() async {
+    final dayRange = dailyKcalRange();
+    final dayTargetMid = (dayRange.minKcal + dayRange.maxKcal) / 2.0;
+    final dayEaten =
+        _mealTotals.values.fold(0.0, (s, m) => s + (m['calories'] ?? 0.0));
+    final dayRest = dayTargetMid - dayEaten;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        var useAllMeals = true;
+        final selectedMeals = <String>{...meals};
+
+        return StatefulBuilder(
+          builder: (ctx, setL) {
+            final activeMeals = useAllMeals
+                ? List<String>.from(meals)
+                : meals.where(selectedMeals.contains).toList();
+            final combined = _combinedMealKcalFor(activeMeals);
+            final combinedRest = combined.targetMid - combined.eaten;
+            final mealRows =
+                <({String meal, double targetMid, double eaten, double delta})>[];
+            for (final meal in activeMeals) {
+              final d = _mealKcalDelta(meal);
+              mealRows.add((
+                meal: meal,
+                targetMid: d.targetMid,
+                eaten: d.eaten,
+                delta: d.delta,
+              ));
+            }
+
+            return AlertDialog(
+              title: Text(t("kcal_merge_title")),
+              content: _solDialogConstrainedBody(
+                ctx,
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      tFmt("kcal_merge_day_line", {
+                        "goal": dayTargetMid.toStringAsFixed(0),
+                        "eaten": dayEaten.toStringAsFixed(0),
+                        "rest": dayRest.toStringAsFixed(0),
+                      }),
+                      style: const TextStyle(
+                          fontSize: 12.5, color: Colors.white70),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      t("kcal_merge_scope_title"),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ChoiceChip(
+                          selected: useAllMeals,
+                          label: Text(t("kcal_merge_scope_all")),
+                          onSelected: (_) async {
+                            if (useAllMeals) return;
+                            final ok = await _confirmPreMergeMixIfNeeded(
+                              Set<String>.from(meals),
+                              ctx,
+                            );
+                            if (!ok) return;
+                            setL(() => useAllMeals = true);
+                          },
+                        ),
+                        ChoiceChip(
+                          selected: !useAllMeals,
+                          label: Text(t("kcal_merge_scope_selected")),
+                          onSelected: (_) => setL(() => useAllMeals = false),
+                        ),
+                      ],
+                    ),
+                    if (!useAllMeals) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: meals
+                            .map(
+                              (m) => FilterChip(
+                                selected: selectedMeals.contains(m),
+                                label: Text(_displayMealName(m)),
+                                onSelected: (on) async {
+                                  final next = Set<String>.from(selectedMeals);
+                                  if (on) {
+                                    next.add(m);
+                                  } else {
+                                    if (next.length <= 1) return;
+                                    next.remove(m);
+                                  }
+                                  final ok = await _confirmPreMergeMixIfNeeded(
+                                      next, ctx);
+                                  if (!ok) return;
+                                  setL(() {
+                                    selectedMeals
+                                      ..clear()
+                                      ..addAll(next);
+                                  });
+                                },
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Text(
+                      t("kcal_merge_meal_split"),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    ...mealRows.map(
+                      (r) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          "${_displayMealName(r.meal)}: ${r.eaten.toStringAsFixed(0)} / ${r.targetMid.toStringAsFixed(0)} kcal (${r.delta >= 0 ? '+' : ''}${r.delta.toStringAsFixed(0)})",
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      tFmt("kcal_merge_combined_rest", {
+                        "rest": combinedRest.toStringAsFixed(0),
+                      }),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFD4AF37),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      tFmt("kcal_merge_combined_line", {
+                        "eaten": combined.eaten.toStringAsFixed(0),
+                        "target": combined.targetMid.toStringAsFixed(0),
+                        "delta":
+                            "${combined.delta >= 0 ? '+' : ''}${combined.delta.toStringAsFixed(0)}",
+                      }),
+                      style: const TextStyle(
+                          fontSize: 12.5, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(t("cancel")),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _mergedMealsByDay.remove(selectedDayKey);
+                    });
+                    _saveAppState();
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(t("kcal_merge_mode_off")),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    if (activeMeals.isEmpty) return;
+                    final ok = await _confirmPreMergeMixIfNeeded(
+                      Set<String>.from(activeMeals),
+                      ctx,
+                    );
+                    if (!ok) return;
+                    setState(() {
+                      final merged = Set<String>.from(activeMeals);
+                      _mergedMealsByDay[selectedDayKey] = merged;
+                      _collapseMergedMeals(merged);
+                    });
+                    _saveAppState();
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(t("kcal_merge_mode_on")),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMealKcalRow({
+    required double current,
+    required double minKcal,
+    required double maxKcal,
+    bool expanded = false,
+    VoidCallback? onToggle,
+  }) {
+    final cap = maxKcal > 0 ? maxKcal : 1.0;
+    final visualRatio = (current / cap).clamp(0.0, 1.0);
+    final minRatio = (minKcal / cap).clamp(0.0, 1.0);
+
+    Color statusColor;
+    if (current < minKcal) {
+      statusColor = const Color(0xFFD4AF37);
+    } else if (current <= maxKcal) {
+      statusColor = const Color(0xFF4CAF50);
+    } else {
+      statusColor = const Color(0xFFE53935);
+    }
+
+    final inner = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_fire_department,
+                  size: 18, color: Color(0xFFD4AF37)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  t("calories"),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Text(
+                "${current.toStringAsFixed(1)} / ${_fmtRangeKcal(minKcal, maxKcal)}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              if (onToggle != null) ...[
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  duration: const Duration(milliseconds: 220),
+                  turns: expanded ? 0.5 : 0,
+                  child: const Icon(Icons.keyboard_arrow_down,
+                      color: Colors.white70, size: 20),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: visualRatio,
+                  color: statusColor,
+                  minHeight: 12,
+                  backgroundColor: Colors.white12,
+                ),
+              ),
+              Positioned.fill(
+                child: LayoutBuilder(builder: (ctx, c) {
+                  final w = c.maxWidth;
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: (w * minRatio - 1)
+                            .clamp(0.0, w - 2)
+                            .toDouble(),
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 2,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (onToggle == null) {
+      return inner;
+    }
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(10),
+      child: inner,
+    );
+  }
+
+  /// Einfach-Modus: ein Balken (Ist-kcal) mit zwei vertikalen Strichen = Unter- und Obergrenze. Zielmitte nur als Text oben.
+  /// [scaleEnd] = Obergrenze×1,1: rechter Puffer ~10% der Leiste für sichtbaren Rot-Bereich oberhalb der 2. Marke.
+  Widget _mealKcalSimpleCorridorBar({
+    required double current,
+    required double minKcal,
+    required double maxKcal,
+    required Color statusColor,
+    required Color trackColor,
+    required Color minTickColor,
+    required Color maxTickColor,
+  }) {
+    const overfill = 1.1;
+    final safeMaxK = maxKcal > 0.01 ? maxKcal : 1.0;
+    final scaleEnd = safeMaxK * overfill;
+    final fillDenom = math.max(scaleEnd, current);
+    final dFill = fillDenom > 0.01 ? fillDenom : 1.0;
+    final visualRatio = (current / dFill).clamp(0.0, 1.0).toDouble();
+    final minRatio = (minKcal / scaleEnd).clamp(0.0, 1.0).toDouble();
+    final maxRatio = (maxKcal / scaleEnd).clamp(0.0, 1.0).toDouble();
+    final hasBandKcal = (maxKcal - minKcal).abs() > 1e-2 &&
+        (maxRatio - minRatio).abs() > 1e-4;
+    final zielmitteRatio = ((minRatio + maxRatio) / 2).clamp(0.0, 1.0);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: visualRatio,
+            color: statusColor,
+            minHeight: 14,
+            backgroundColor: trackColor,
+          ),
+        ),
+        Positioned.fill(
+          child: LayoutBuilder(
+            builder: (ctx, c) {
+              final w = c.maxWidth;
+              if (w <= 0) return const SizedBox.shrink();
+              Widget lineAt(double ratio, Color lineColor) {
+                final left = (w * ratio - 1)
+                    .clamp(0.0, math.max(0.0, w - 2))
+                    .toDouble();
+                return Positioned(
+                  left: left,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 2,
+                    color: lineColor,
+                  ),
+                );
+              }
+              return Stack(
+                children: [
+                  lineAt(minRatio, minTickColor),
+                  lineAt(maxRatio, maxTickColor),
+                  if (hasBandKcal)
+                    Positioned(
+                      left: (w * zielmitteRatio - 1.25)
+                          .clamp(0.0, w - 2.5)
+                          .toDouble(),
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 2.5,
+                        color: const Color(0xFFD4AF37),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Kompakte Zeile: Balken, Kcal-Zahl, optional [+] (wenn [showInlineAdd]).
+  /// [simple]: Zielmitte + ein Balken, zwei Striche = Korridor. Fortgeschritten: derselbe
+  /// Korridor (zwei Striche, 1,1× Skala) für konsistente Darstellung.
+  Widget _buildMealKcalRowCompact(
+    String meal, {
+    required double current,
+    required double minKcal,
+    required double maxKcal,
+    bool simple = false,
+    bool showInlineAdd = true,
+  }) {
+    final mc = _mealCardColors(meal);
+    final barChrome = _kcalBarChromeForSurface(mc.surface);
+    final tx = _mealSlotTextForSurface(mc.surface);
+    const kOver = 1.1;
+    final safeMaxK = maxKcal > 0.01 ? maxKcal : 1.0;
+    final scaleEndK = safeMaxK * kOver;
+    final dFillK = math.max(scaleEndK, current);
+    final visualRatio =
+        dFillK > 0.01 ? (current / dFillK).clamp(0.0, 1.0) : 0.0;
+    final minRatio = (minKcal / scaleEndK).clamp(0.0, 1.0);
+    final maxRatioK = (maxKcal / scaleEndK).clamp(0.0, 1.0);
+    final drawSecondKTick = (maxKcal - minKcal).abs() > 1e-6 &&
+        (maxRatioK - minRatio).abs() > 1e-4;
+    final midK = (minKcal + maxKcal) / 2.0;
+    final hasBandKcal = (maxKcal - minKcal).abs() > 1e-2;
+    final zielmitteRatioK = scaleEndK > 1e-9
+        ? (midK / scaleEndK).clamp(0.0, 1.0)
+        : 0.0;
+    final rangeStr = _fmtRangeKcal(minKcal, maxKcal);
+
+    final zielmitteRow = Row(
+      children: [
+        Expanded(
+          child: Text(
+            tFmt("meal_kcal_simple_target", {
+              "k": midK.toStringAsFixed(0),
+            }),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: tx.ziel,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Text(
+          rangeStr,
+          style: TextStyle(fontSize: 11, color: tx.range),
+        ),
+      ],
+    );
+
+    Color statusColor;
+    if (current < minKcal) {
+      statusColor = const Color(0xFFD4AF37);
+    } else if (current <= maxKcal) {
+      statusColor = const Color(0xFF4CAF50);
+    } else {
+      statusColor = const Color(0xFFE53935);
+    }
+
+    final bar = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: visualRatio,
+            color: statusColor,
+            minHeight: 14,
+            backgroundColor: barChrome.$1,
+          ),
+        ),
+        Positioned.fill(
+          child: LayoutBuilder(builder: (ctx, c) {
+            final w = c.maxWidth;
+            if (w <= 0) return const SizedBox.shrink();
+            return Stack(
+              children: [
+                Positioned(
+                  left: (w * minRatio - 1)
+                      .clamp(0.0, w - 2)
+                      .toDouble(),
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 2,
+                    color: barChrome.$2,
+                  ),
+                ),
+                if (drawSecondKTick)
+                  Positioned(
+                    left: (w * maxRatioK - 1)
+                        .clamp(0.0, w - 2)
+                        .toDouble(),
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 2,
+                      color: barChrome.$3,
+                    ),
+                  ),
+                if (hasBandKcal)
+                  Positioned(
+                    left: (w * zielmitteRatioK - 1.25)
+                        .clamp(0.0, w - 2.5)
+                        .toDouble(),
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 2.5,
+                      color: const Color(0xFFD4AF37),
+                    ),
+                  ),
+              ],
+            );
+          }),
+        ),
+      ],
+    );
+
+    final kcalAddTrailing = <Widget>[
+      const SizedBox(width: 8),
+      Text(
+        current.toStringAsFixed(0),
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 16,
+          color: tx.kcal,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+      const SizedBox(width: 4),
+      Text(
+        t("kcal_shorthand"),
+        style: TextStyle(
+          fontSize: 11,
+          color: tx.kcalShorthand,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      if (showInlineAdd)
+        PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          tooltip: t("meal_add_menu"),
+          icon: const Icon(
+            Icons.add_circle,
+            size: 28,
+            color: Color(0xFFD4AF37),
+          ),
+          onSelected: (v) {
+            if (v == "food") {
+              addTrackedFood(meal);
+            } else if (v == "gen") {
+              openMealGenerator(meal: meal);
+            } else if (v == "ai_photo") {
+              unawaited(_openAiPhotoTrackFlow(meal));
+            }
+          },
+          itemBuilder: (c) => [
+            PopupMenuItem(value: "food", child: Text(t("add_food"))),
+            PopupMenuItem(value: "gen", child: Text(t("generator"))),
+            PopupMenuItem(
+              value: "ai_photo",
+              child: Text(t("track_add_ai_photo")),
+            ),
+          ],
+        ),
+    ];
+
+    if (simple) {
+      final simpleBar = _mealKcalSimpleCorridorBar(
+        current: current,
+        minKcal: minKcal,
+        maxKcal: maxKcal,
+        statusColor: statusColor,
+        trackColor: barChrome.$1,
+        minTickColor: barChrome.$2,
+        maxTickColor: barChrome.$3,
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          zielmitteRow,
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: simpleBar),
+              ...kcalAddTrailing,
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        zielmitteRow,
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: bar),
+            ...kcalAddTrailing,
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _maybeShowWeekStartOnboarding() {
+    if (!mounted) return;
+    if (weekStartIntroDone) {
+      _maybeShowWeekRecap();
+      return;
+    }
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(t("week_start_dialog_title")),
+        content: Text(
+          t("week_start_dialog_body"),
+          style: const TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                weekStartWeekday = DateTime.monday;
+                weekStartIntroDone = true;
+              });
+              _saveAppState();
+              Navigator.pop(ctx);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _maybeShowWeekRecap();
+              });
+            },
+            child: Text(t("week_start_monday")),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                weekStartWeekday = DateTime.sunday;
+                weekStartIntroDone = true;
+              });
+              _saveAppState();
+              Navigator.pop(ctx);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _maybeShowWeekRecap();
+              });
+            },
+            child: Text(t("week_start_sunday")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _maybeShowWeekRecap() {
+    if (!mounted) return;
+    if (!weekStartIntroDone) return;
+    final today = _dateOnlyLocal(DateTime.now());
+    final thisWS = _startOfWeekContaining(today, weekStartWeekday);
+    final thisKey = dateKeyFromDate(thisWS);
+    if (_lastRecapForWeekStartKey == thisKey) return;
+    final daysIn = today.difference(thisWS).inDays;
+    if (daysIn > 3) return;
+
+    final endPrev = thisWS.subtract(const Duration(days: 1));
+    final endKey = dateKeyFromDate(endPrev);
+    final roll = _rollup7DayStats(endKey);
+    final hasData =
+        roll.avgEatenKcal > 1.0 || roll.weightLogCount > 0 || roll.goalDayCount > 0;
+    if (!hasData) {
+      setState(() {
+        _lastRecapForWeekStartKey = thisKey;
+      });
+      _saveAppState();
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t("week_recap_title")),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                t("week_recap_sub"),
+                style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 12.5,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 10),
+              _weekRollupDataColumn(roll, withEncourage: true),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _lastRecapForWeekStartKey = thisKey;
+              });
+              _saveAppState();
+              Navigator.pop(ctx);
+            },
+            child: Text(t("week_recap_ok")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressBar(
+      String label, double current, double goal, Color color) {
+    final ratio = goal <= 0 ? 0.0 : (current / goal).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+      child: Column(
+        children: [
+          LinearProgressIndicator(
+            value: ratio,
+            color: color,
+            minHeight: 8,
+            backgroundColor: Colors.white12,
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              "$label ${(ratio * 100).toStringAsFixed(0)}%",
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMacroRangeBarLabel({
+    required String label,
+    required double current,
+    required double scaleEnd,
+    required double? dayTotalGoalG,
+    required double? mealCenterGoalG,
+    Color mainTextColor = const Color(0xFFEDEDE5),
+    Color footTextColor = const Color(0xFF8E8C88),
+  }) {
+    String? foot;
+    double? displayPct;
+    if (mealCenterGoalG != null && mealCenterGoalG > 1e-9) {
+      displayPct = 100.0 * current / mealCenterGoalG;
+      foot = t("macro_bar_footnote_meal_slot");
+    } else if (dayTotalGoalG != null && dayTotalGoalG > 1e-9) {
+      displayPct = 100.0 * current / dayTotalGoalG;
+      foot = t("macro_bar_footnote_of_day");
+    }
+    if (displayPct != null) {
+      return Text.rich(
+        TextSpan(
+          style: TextStyle(
+            fontSize: 12,
+            color: mainTextColor,
+          ),
+          children: [
+            TextSpan(text: "$label "),
+            TextSpan(
+              text: "${displayPct.toStringAsFixed(1)}%",
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            TextSpan(
+              text: " $foot",
+              style: TextStyle(
+                fontSize: 11,
+                color: footTextColor,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Text(
+      scaleEnd > 0
+          ? "$label ${(current / scaleEnd * 100).toStringAsFixed(1)}%"
+          : label,
+      style: TextStyle(fontSize: 12, color: mainTextColor),
+    );
+  }
+
+  // Range-Progressbar: zwei Striche = min/max. [overfill] verlängert die Leiste nur
+  // visuell (0…maxVal×1,1) — g-/kcal-Ziele und KPI-Zeilen bleiben unverändert.
+  Widget _buildRangeProgressBar({
+    required String label,
+    required double current,
+    required double minVal,
+    required double maxVal,
+    required Color baseColor,
+    /// Tagesmenge (g) — für Tages-Übersicht: %-Zeile = Anteil am Tagesziel.
+    double? dayTotalGoalG,
+    /// Mittel-Ziel (g) dieser **Mahlzeit** für dieses Makro — %-Zeile = Ist : Slot-Zentrum
+    /// (wenn null: wie bisher nur mit [dayTotalGoalG]).
+    double? mealCenterGoalG,
+    double minHeight = 10,
+    bool showLabel = true,
+    double? recommendVal,
+    /// Hintergrund der Leiste: hell → dunkle Spur, dunkel → helle Spur (wie Tageskarte / Mahlzeit).
+    Color? rangeBarSurface,
+  }) {
+    final barSurf = rangeBarSurface ?? context.sol.dailyCard;
+    final lightCard = barSurf.computeLuminance() > 0.42;
+    final sol = context.sol;
+    final labelMain = lightCard ? sol.onCard : const Color(0xFFEDEDE5);
+    final labelFoot = lightCard ? sol.soft : const Color(0xFF8E8C88);
+    final barChrome = _kcalBarChromeForSurface(barSurf);
+    const overfill = 1.1;
+    final safeMax = maxVal > 0.01 ? maxVal : 1.0;
+    // Nur visuelles Pufferstück hinter maxVal; keine Auswirkung auf min/max-Angaben.
+    final scaleEnd = safeMax * overfill;
+    final dFill = math.max(scaleEnd, current);
+    final visualRatio = dFill > 0.01 ? (current / dFill).clamp(0.0, 1.0) : 0.0;
+    final minRatio = (minVal / scaleEnd).clamp(0.0, 1.0);
+    final maxRatio = (maxVal / scaleEnd).clamp(0.0, 1.0);
+    final rV = recommendVal;
+    final recR = rV != null ? (rV / scaleEnd).clamp(0.0, 1.0) : null;
+    final hasBand = (maxVal - minVal).abs() > 1e-6;
+    final centerG = (minVal + maxVal) * 0.5;
+    final centerRatio = scaleEnd > 1e-9
+        ? (centerG / scaleEnd).clamp(0.0, 1.0)
+        : 0.0;
+    // Weiche Tages-Bilanz vs. Zielmitte (Mitte des Min–Max-Bandes): getrennt zeichnen.
+    final nudgeRec = rV != null &&
+        recR != null &&
+        (!hasBand || (recR - centerRatio).abs() > 0.012);
+    final drawSecondTick =
+        (maxVal - minVal).abs() > 1e-6 && (maxRatio - minRatio).abs() > 1e-4;
+
+    Color statusColor;
+    if (current < minVal) {
+      statusColor = baseColor;
+    } else if (current <= maxVal) {
+      statusColor = const Color(0xFF4CAF50);
+    } else {
+      statusColor = const Color(0xFFE53935);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 520),
+                  curve: Curves.easeOutCubic,
+                  tween: Tween<double>(begin: 0, end: visualRatio),
+                  builder: (context, value, child) {
+                    return LinearProgressIndicator(
+                      value: value,
+                      color: statusColor,
+                      minHeight: minHeight,
+                      backgroundColor: barChrome.$1,
+                    );
+                  },
+                ),
+              ),
+              Positioned.fill(
+                child: LayoutBuilder(builder: (ctx, c) {
+                  final w0 = c.maxWidth;
+                  if (w0 <= 0) return const SizedBox.shrink();
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: (w0 * minRatio - 1)
+                            .clamp(0.0, w0 - 2)
+                            .toDouble(),
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 2,
+                          color: barChrome.$2,
+                        ),
+                      ),
+                      if (drawSecondTick)
+                        Positioned(
+                          left: (w0 * maxRatio - 1)
+                              .clamp(0.0, w0 - 2)
+                              .toDouble(),
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 2,
+                            color: barChrome.$3,
+                          ),
+                        ),
+                      if (hasBand)
+                        Positioned(
+                          left: (w0 * centerRatio - 1.25)
+                              .clamp(0.0, w0 - 2.5)
+                              .toDouble(),
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 2.5,
+                            color: const Color(0xFFD4AF37),
+                          ),
+                        ),
+                      if (nudgeRec)
+                        Positioned(
+                          left: (w0 * recR - 0.75)
+                              .clamp(0.0, w0 - 1.5)
+                              .toDouble(),
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 2,
+                            color: const Color(0xFFFFB74D)
+                                .withValues(alpha: 0.95),
+                          ),
+                        ),
+                    ],
+                  );
+                }),
+              ),
+            ],
+          ),
+          if (showLabel)
+            Align(
+              alignment: Alignment.centerRight,
+              child: _buildMacroRangeBarLabel(
+                label: label,
+                current: current,
+                scaleEnd: scaleEnd,
+                dayTotalGoalG: dayTotalGoalG,
+                mealCenterGoalG: mealCenterGoalG,
+                mainTextColor: labelMain,
+                footTextColor: labelFoot,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Formatierter Range-Text "min–max einheit" (verwendet "–" Gedankenstrich).
+  String _fmtRangeG(double minVal, double maxVal) {
+    final lo = minVal.toStringAsFixed(1);
+    final hi = maxVal.toStringAsFixed(1);
+    if (isSelectedDayCrashout) {
+      return "≥ $lo g · ${t("cheatday_no_max")}";
+    }
+    if (lo == hi) return "$lo g";
+    return "$lo–$hi g";
+  }
+
+  String _fmtRangeKcal(double minVal, double maxVal) {
+    final lo = minVal.toStringAsFixed(1);
+    final hi = maxVal.toStringAsFixed(1);
+    if (isSelectedDayCrashout) {
+      return "≥ $lo kcal · ${t("cheatday_no_max")}";
+    }
+    if (lo == hi) return "$lo kcal";
+    return "$lo–$hi kcal";
+  }
+
+  /// Meal Generator: oben rechts — je eine SOL-Empfehlung süß & salzig für die gewählte Mahlzeit.
+  void _openMealGenSolRecipeIdeasSheet({
+    required BuildContext context,
+    required String mealLabel,
+    required void Function(Food food, String flavor) onPick,
+  }) {
+    final sweet = _topPicksRezepte(
+      recipeFlavorFilter: "sweet",
+      solReorderFilter: _trackAddSolTypeFilter,
+    );
+    final salty = _topPicksRezepte(
+      recipeFlavorFilter: "salty",
+      solReorderFilter: _trackAddSolTypeFilter,
+    );
+    final sweetFood = sweet.isNotEmpty ? sweet.first : null;
+    final saltyFood = salty.isNotEmpty ? salty.first : null;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        Widget ideaRow(String flavorLabel, Food? food, String flavor) {
+          return Material(
+            color: const Color(0xFF242424),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    flavorLabel,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: Color(0xFFD4AF37),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (food == null)
+                    Text(
+                      t("gen_no_recipe_pick"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.white54,
+                      ),
+                    )
+                  else ...[
+                    Text(
+                      food.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _foodGenMacroLineForPicker(food, forCategory: "Rezepte"),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white60,
+                        height: 1.25,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          onPick(food, flavor);
+                          Navigator.pop(sheetCtx);
+                        },
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: Text(t("gen_pick_recipe")),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.restaurant_menu,
+                          color: Color(0xFFD4AF37), size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          t("gen_recipe_ideas_title"),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    mealLabel,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    t("gen_recipe_ideas_sub"),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white54,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ideaRow(t("recipe_flavor_sweet"), sweetFood, "sweet"),
+                  const SizedBox(height: 10),
+                  ideaRow(t("recipe_flavor_salty"), saltyFood, "salty"),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void openMealGenerator({String? meal}) {
+    if (meal != null && _isMealMergedLocked(meal)) {
+      unawaited(_showMergedMealLockedDialog());
+      return;
+    }
+    _updateMealTotals();
+    final sm = meal ?? "Main Meal";
+    final anchor = _anchoredLastMealIdForKcal();
+    if (anchor != null &&
+        sm == anchor &&
+        lastMealTrackPromptEnabled &&
+        !lastMealKcalByDay.containsKey(selectedDayKey)) {
+      unawaited(_openMealGeneratorAfterLastMealPrompt(meal: meal));
+      return;
+    }
+    _openMealGeneratorImpl(meal: meal);
+  }
+
+  Future<void> _openMealGeneratorAfterLastMealPrompt({String? meal}) async {
+    final m = meal ?? "Main Meal";
+    if (!await _ensureLastMealKcalChoiceIfNeeded(m)) {
+      if (!mounted) return;
+      return;
+    }
+    if (!mounted) return;
+    _openMealGeneratorImpl(meal: meal);
+  }
+
+  void _openMealGeneratorImpl({String? meal}) {
+    _updateMealTotals();
+    String selectedMeal = meal ?? "Main Meal";
+    String generatorMode = "Normal";
+    Food? proteinFood;
+    Food? carbsFood;
+    Food? fatFood;
+    String mealGenRecipeFlavor = "all";
+    Food? optionalMealRecipe;
+    final mealRecipePortionCtrl = TextEditingController(text: "1");
+    var wizardStep = 1;
+    final genSearchCtrl = TextEditingController();
+    final genPGram = TextEditingController();
+    final genCGram = TextEditingController();
+    final genFGram = TextEditingController();
+    final genFoodListScroll = ScrollController();
+    final genMealPCtrl = TextEditingController(
+        text: mealMacros[selectedMeal]!["protein"].toString());
+    final genMealCCtrl = TextEditingController(
+        text: mealMacros[selectedMeal]!["carbs"].toString());
+    final genMealFCtrl = TextEditingController(
+        text: mealMacros[selectedMeal]!["fat"].toString());
+
+    void syncGenMealCtrlsFromSettings() {
+      final m = mealMacros[selectedMeal]!;
+      genMealPCtrl.text = m["protein"].toString();
+      genMealCCtrl.text = m["carbs"].toString();
+      genMealFCtrl.text = m["fat"].toString();
+    }
+
+    List<Food> foodsByMode(String category, String mode) {
+      final all = foodDatabase.where((f) => f.isInCategory(category)).toList();
+      if (mode == "Diät") {
+        final filtered = all.where((f) => f.type.startsWith("Diät")).toList();
+        return filtered.isNotEmpty ? filtered : all;
+      }
+      if (mode == "Aufbau") {
+        final filtered = all.where((f) => f.type.startsWith("Aufbau")).toList();
+        return filtered.isNotEmpty ? filtered : all;
+      }
+      return all;
+    }
+
+    double det3(
+      double a11,
+      double a12,
+      double a13,
+      double a21,
+      double a22,
+      double a23,
+      double a31,
+      double a32,
+      double a33,
+    ) {
+      return a11 * (a22 * a33 - a23 * a32) -
+          a12 * (a21 * a33 - a23 * a31) +
+          a13 * (a21 * a32 - a22 * a31);
+    }
+
+    Map<String, dynamic> solveCombo(
+      Food pFood,
+      Food cFood,
+      Food fFood,
+      double remainingProtein,
+      double remainingCarbs,
+      double remainingFat,
+    ) {
+      double pGrams = 0;
+      double cGrams = 0;
+      double fGrams = 0;
+      bool usedFallback = false;
+
+      final a11 = pFood.protein / 100.0;
+      final a12 = cFood.protein / 100.0;
+      final a13 = fFood.protein / 100.0;
+      final a21 = pFood.carbs / 100.0;
+      final a22 = cFood.carbs / 100.0;
+      final a23 = fFood.carbs / 100.0;
+      final a31 = pFood.fat / 100.0;
+      final a32 = cFood.fat / 100.0;
+      final a33 = fFood.fat / 100.0;
+
+      final detA = det3(a11, a12, a13, a21, a22, a23, a31, a32, a33);
+
+      if (detA.abs() > 1e-9) {
+        final detX = det3(
+          remainingProtein,
+          a12,
+          a13,
+          remainingCarbs,
+          a22,
+          a23,
+          remainingFat,
+          a32,
+          a33,
+        );
+        final detY = det3(
+          a11,
+          remainingProtein,
+          a13,
+          a21,
+          remainingCarbs,
+          a23,
+          a31,
+          remainingFat,
+          a33,
+        );
+        final detZ = det3(
+          a11,
+          a12,
+          remainingProtein,
+          a21,
+          a22,
+          remainingCarbs,
+          a31,
+          a32,
+          remainingFat,
+        );
+        pGrams = detX / detA;
+        cGrams = detY / detA;
+        fGrams = detZ / detA;
+      } else {
+        usedFallback = true;
+      }
+
+      if (pGrams.isNaN ||
+          cGrams.isNaN ||
+          fGrams.isNaN ||
+          pGrams < 0 ||
+          cGrams < 0 ||
+          fGrams < 0 ||
+          usedFallback) {
+        usedFallback = true;
+        pGrams = pFood.protein > 0 ? (remainingProtein / pFood.protein) * 100 : 0;
+        final remCarbsAfterP =
+            (remainingCarbs - (pFood.carbs * pGrams / 100.0)).clamp(0.0, 9999.0);
+        cGrams = cFood.carbs > 0 ? (remCarbsAfterP / cFood.carbs) * 100 : 0;
+        final fatCoveredByP = pFood.fat * pGrams / 100.0;
+        final fatCoveredByC = cFood.fat * cGrams / 100.0;
+        final remFatAfterPC =
+            (remainingFat - fatCoveredByP - fatCoveredByC).clamp(0.0, 9999.0);
+        fGrams = fFood.fat > 0 ? (remFatAfterPC / fFood.fat) * 100 : 0;
+      }
+
+      pGrams = pGrams.clamp(0.0, 5000.0);
+      cGrams = cGrams.clamp(0.0, 5000.0);
+      fGrams = fGrams.clamp(0.0, 5000.0);
+
+      final solvedProtein = pFood.protein * pGrams / 100.0 +
+          cFood.protein * cGrams / 100.0 +
+          fFood.protein * fGrams / 100.0;
+      final solvedCarbs = pFood.carbs * pGrams / 100.0 +
+          cFood.carbs * cGrams / 100.0 +
+          fFood.carbs * fGrams / 100.0;
+      final solvedFat = pFood.fat * pGrams / 100.0 +
+          cFood.fat * cGrams / 100.0 +
+          fFood.fat * fGrams / 100.0;
+      final totalKcal = pFood.calories * pGrams / 100.0 +
+          cFood.calories * cGrams / 100.0 +
+          fFood.calories * fGrams / 100.0;
+
+      return {
+        "pGrams": pGrams,
+        "cGrams": cGrams,
+        "fGrams": fGrams,
+        "solvedProtein": solvedProtein,
+        "solvedCarbs": solvedCarbs,
+        "solvedFat": solvedFat,
+        "totalKcal": totalKcal,
+        "fallback": usedFallback,
+      };
+    }
+
+    Map<String, dynamic> fromGrams(
+      Food? pFood,
+      Food? cFood,
+      Food? fFood,
+      double pG,
+      double cG,
+      double fG, {
+      bool fallback = false,
+    }) {
+      final solvedProtein = (pFood?.protein ?? 0) * pG / 100.0 +
+          (cFood?.protein ?? 0) * cG / 100.0 +
+          (fFood?.protein ?? 0) * fG / 100.0;
+      final solvedCarbs = (pFood?.carbs ?? 0) * pG / 100.0 +
+          (cFood?.carbs ?? 0) * cG / 100.0 +
+          (fFood?.carbs ?? 0) * fG / 100.0;
+      final solvedFat = (pFood?.fat ?? 0) * pG / 100.0 +
+          (cFood?.fat ?? 0) * cG / 100.0 +
+          (fFood?.fat ?? 0) * fG / 100.0;
+      final totalKcal = (pFood?.calories ?? 0) * pG / 100.0 +
+          (cFood?.calories ?? 0) * cG / 100.0 +
+          (fFood?.calories ?? 0) * fG / 100.0;
+      return {
+        "pGrams": pG,
+        "cGrams": cG,
+        "fGrams": fG,
+        "solvedProtein": solvedProtein,
+        "solvedCarbs": solvedCarbs,
+        "solvedFat": solvedFat,
+        "totalKcal": totalKcal,
+        "fallback": fallback,
+      };
+    }
+
+    /// 1–3 Lebensmittel: Rest-Makro als kleinste-Quadrate-Lösung; 3 voll
+    /// besetzt = wie [solveCombo].
+    Map<String, dynamic> solveMealGenFlexible(
+      Food? pF,
+      Food? cF,
+      Food? fF,
+      double rP,
+      double rC,
+      double rF,
+    ) {
+      if (pF == null && cF == null && fF == null) {
+        return {
+          "pGrams": 0.0,
+          "cGrams": 0.0,
+          "fGrams": 0.0,
+          "solvedProtein": 0.0,
+          "solvedCarbs": 0.0,
+          "solvedFat": 0.0,
+          "totalKcal": 0.0,
+          "fallback": false,
+        };
+      }
+      if (pF != null && cF != null && fF != null) {
+        return solveCombo(pF, cF, fF, rP, rC, rF);
+      }
+      final list = <(Food, int)>[];
+      if (pF != null) list.add((pF, 0));
+      if (cF != null) list.add((cF, 1));
+      if (fF != null) list.add((fF, 2));
+      if (list.length == 1) {
+        final food = list[0].$1;
+        final a0 = food.protein / 100, a1 = food.carbs / 100, a2 = food.fat / 100;
+        final denom = a0 * a0 + a1 * a1 + a2 * a2;
+        var g = 0.0;
+        if (denom > 1e-12) {
+          g = (a0 * rP + a1 * rC + a2 * rF) / denom;
+        }
+        g = g.clamp(0.0, 5000.0);
+        var pG = 0.0, cG = 0.0, fG = 0.0;
+        if (list[0].$2 == 0) {
+          pG = g;
+        } else if (list[0].$2 == 1) {
+          cG = g;
+        } else {
+          fG = g;
+        }
+        return fromGrams(pF, cF, fF, pG, cG, fG, fallback: denom <= 1e-12);
+      }
+      if (list.length == 2) {
+        final A = list[0].$1, B = list[1].$1;
+        final sa = list[0].$2, sb = list[1].$2;
+        final a0 = A.protein / 100, a1c = A.carbs / 100, a1f = A.fat / 100;
+        final b0 = B.protein / 100, b1c = B.carbs / 100, b1f = B.fat / 100;
+        final ata00 = a0 * a0 + a1c * a1c + a1f * a1f;
+        final ata01 = a0 * b0 + a1c * b1c + a1f * b1f;
+        final ata11 = b0 * b0 + b1c * b1c + b1f * b1f;
+        final atb0 = a0 * rP + a1c * rC + a1f * rF;
+        final atb1 = b0 * rP + b1c * rC + b1f * rF;
+        final det = ata00 * ata11 - ata01 * ata01;
+        var gA = 0.0, gB = 0.0;
+        var fb = false;
+        if (det.abs() < 1e-12) {
+          gA = a0 > 1e-9 ? (rP / a0) : 0.0;
+          gB = 0.0;
+          fb = true;
+        } else {
+          gA = (atb0 * ata11 - atb1 * ata01) / det;
+          gB = (ata00 * atb1 - ata01 * atb0) / det;
+        }
+        gA = gA.clamp(0.0, 5000.0);
+        gB = gB.clamp(0.0, 5000.0);
+        final pG = (sa == 0 ? gA : 0.0) + (sb == 0 ? gB : 0.0);
+        final cG = (sa == 1 ? gA : 0.0) + (sb == 1 ? gB : 0.0);
+        final fG = (sa == 2 ? gA : 0.0) + (sb == 2 ? gB : 0.0);
+        return fromGrams(pF, cF, fF, pG, cG, fG, fallback: fb);
+      }
+      return {
+        "pGrams": 0.0,
+        "cGrams": 0.0,
+        "fGrams": 0.0,
+        "solvedProtein": 0.0,
+        "solvedCarbs": 0.0,
+        "solvedFat": 0.0,
+        "totalKcal": 0.0,
+        "fallback": true,
+      };
+    }
+
+    double tasteScore(Food pFood, Food cFood, Food fFood) {
+      final p = pFood.name.toLowerCase();
+      final c = cFood.name.toLowerCase();
+      final f = fFood.name.toLowerCase();
+      double score = 0;
+
+      if (p.contains("magerquark") && c.contains("hafer") && f.contains("nüsse")) {
+        score += 3.2;
+      }
+      if ((p.contains("hähnchen") || p.contains("huhn")) &&
+          c.contains("reis") &&
+          (f.contains("avocado") || f.contains("olivenöl"))) {
+        score += 3.0;
+      }
+      if (p.contains("rind") && c.contains("reis") && f.contains("avocado")) {
+        score += 2.8;
+      }
+      if (p.contains("lachs") && c.contains("kartoffel") && f.contains("avocado")) {
+        score += 2.5;
+      }
+      if (p.contains("seitan") && c.contains("reis") && f.contains("olivenöl")) {
+        score += 2.2;
+      }
+      if (p.contains("quark") && c.contains("banane") && f.contains("nüsse")) {
+        score += 2.0;
+      }
+      return score;
+    }
+
+    void applyBestSuggestion({
+      required String mode,
+      required double remainingProtein,
+      required double remainingCarbs,
+      required double remainingFat,
+    }) {
+      final proteins = foodsByMode("Protein", mode);
+      final carbs = foodsByMode("Carbs", mode);
+      final fats = foodsByMode("Fett", mode);
+      if (proteins.isEmpty || carbs.isEmpty || fats.isEmpty) return;
+
+      Food? bestP;
+      Food? bestC;
+      Food? bestF;
+      double bestScore = -1e18;
+
+      for (final pFood in proteins.take(12)) {
+        for (final cFood in carbs.take(12)) {
+          for (final fFood in fats.take(12)) {
+            final solved = solveCombo(
+              pFood,
+              cFood,
+              fFood,
+              remainingProtein,
+              remainingCarbs,
+              remainingFat,
+            );
+            final pErr = (solved["solvedProtein"] - remainingProtein).abs();
+            final cErr = (solved["solvedCarbs"] - remainingCarbs).abs();
+            final fErr = (solved["solvedFat"] - remainingFat).abs();
+            final totalErr = pErr + cErr + fErr;
+            final totalGrams =
+                solved["pGrams"] + solved["cGrams"] + solved["fGrams"];
+            final kcal = solved["totalKcal"];
+
+            double score = -totalErr * 8 - (totalGrams / 250.0);
+            score += tasteScore(pFood, cFood, fFood);
+            if (_kFavoriteProteinNames.contains(pFood.name)) {
+              score += 2.6;
+            }
+            if (mode == "Diät") score += -(kcal / 350.0);
+            if (mode == "Aufbau") score += (kcal / 350.0);
+            if (solved["fallback"] == true) score -= 0.6;
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestP = pFood;
+              bestC = cFood;
+              bestF = fFood;
+            }
+          }
+        }
+      }
+
+      proteinFood = bestP ?? proteins.first;
+      carbsFood = bestC ?? carbs.first;
+      fatFood = bestF ?? fats.first;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          double sumOtherMeals(String macroKey) {
+            var s = 0.0;
+            mealMacros.forEach((m, values) {
+              if (m != selectedMeal) s += values[macroKey] ?? 0;
+            });
+            return s;
+          }
+
+          final pFreeM = 100.0 - sumOtherMeals("protein");
+          final cFreeM = 100.0 - sumOtherMeals("carbs");
+          final fFreeM = 100.0 - sumOtherMeals("fat");
+          final baseM = mealMacros[selectedMeal]!;
+          final gp = _safeDouble(genMealPCtrl.text);
+          final gc = _safeDouble(genMealCCtrl.text);
+          final gf = _safeDouble(genMealFCtrl.text);
+          final pPct = gp ?? baseM["protein"]!;
+          final cPct = gc ?? baseM["carbs"]!;
+          final fPct = gf ?? baseM["fat"]!;
+
+          final gE0 = effectiveMacroGoalsForDay(selectedDayKey);
+          final mealGoalProtein = gE0.protein * (pPct / 100.0);
+          final mealGoalCarbs = gE0.carbs * (cPct / 100.0);
+          final mealGoalFat = gE0.fat * (fPct / 100.0);
+
+          final consumedProtein = _mealTotals[selectedMeal]!["protein"] ?? 0;
+          final consumedCarbs = _mealTotals[selectedMeal]!["carbs"] ?? 0;
+          final consumedFat = _mealTotals[selectedMeal]!["fat"] ?? 0;
+
+          final remainingProtein = (mealGoalProtein - consumedProtein).clamp(0.0, 9999.0);
+          final remainingCarbs = (mealGoalCarbs - consumedCarbs).clamp(0.0, 9999.0);
+          final remainingFat = (mealGoalFat - consumedFat).clamp(0.0, 9999.0);
+
+          final solvedBase = solveMealGenFlexible(
+            proteinFood,
+            carbsFood,
+            fatFood,
+            remainingProtein,
+            remainingCarbs,
+            remainingFat,
+          );
+          var pGramsS = solvedBase["pGrams"] as double;
+          var cGramsS = solvedBase["cGrams"] as double;
+          var fGramsS = solvedBase["fGrams"] as double;
+          if (wizardStep == 4) {
+            pGramsS = _tryParseUserNumber(genPGram.text) ?? pGramsS;
+            cGramsS = _tryParseUserNumber(genCGram.text) ?? cGramsS;
+            fGramsS = _tryParseUserNumber(genFGram.text) ?? fGramsS;
+          }
+          final solvedDisp = fromGrams(
+            proteinFood,
+            carbsFood,
+            fatFood,
+            pGramsS,
+            cGramsS,
+            fGramsS,
+          );
+          final pGrams = pGramsS;
+          final cGrams = cGramsS;
+          final fGrams = fGramsS;
+          final solvedProtein = solvedDisp["solvedProtein"] as double;
+          final solvedCarbs = solvedDisp["solvedCarbs"] as double;
+          final solvedFat = solvedDisp["solvedFat"] as double;
+          final usedFallback = (solvedBase["fallback"] as bool?) ?? false;
+          final sumGap = (solvedProtein - remainingProtein).abs() +
+              (solvedCarbs - remainingCarbs).abs() +
+              (solvedFat - remainingFat).abs();
+          var warnSkips = <String>[];
+          if (remainingProtein > 2 && proteinFood == null) {
+            warnSkips.add(
+              tFmt("gen_warn_skipped", {
+                "m": t("protein"),
+                "g": remainingProtein.toStringAsFixed(0),
+              }),
+            );
+          }
+          if (remainingCarbs > 2 && carbsFood == null) {
+            warnSkips.add(
+              tFmt("gen_warn_skipped", {
+                "m": t("carbs"),
+                "g": remainingCarbs.toStringAsFixed(0),
+              }),
+            );
+          }
+          if (remainingFat > 2 && fatFood == null) {
+            warnSkips.add(
+              tFmt("gen_warn_skipped", {
+                "m": t("fat"),
+                "g": remainingFat.toStringAsFixed(0),
+              }),
+            );
+          }
+          final warnMismatch =
+              sumGap > 12.0 && warnSkips.isEmpty && wizardStep == 4;
+
+          final mq = MediaQuery.of(context).size;
+          final wDialog = mq.width * 0.92;
+          return AlertDialog(
+            title: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "${t("meal_generator_title")} (${_displayMealName(selectedMeal)})",
+                        maxLines: 2,
+                      ),
+                      if (wizardStep < 4)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: TextButton(
+                            onPressed: () {
+                              final pL = foodsByMode("Protein", generatorMode);
+                              final cL = foodsByMode("Carbs", generatorMode);
+                              final fL = foodsByMode("Fett", generatorMode);
+                              if (pL.isEmpty || cL.isEmpty || fL.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("gen_suggest_no_foods"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                applyBestSuggestion(
+                                  mode: generatorMode,
+                                  remainingProtein: remainingProtein,
+                                  remainingCarbs: remainingCarbs,
+                                  remainingFat: remainingFat,
+                                );
+                                final s = solveMealGenFlexible(
+                                  proteinFood,
+                                  carbsFood,
+                                  fatFood,
+                                  remainingProtein,
+                                  remainingCarbs,
+                                  remainingFat,
+                                );
+                                genPGram.text =
+                                    (s["pGrams"]! as double).toStringAsFixed(1);
+                                genCGram.text =
+                                    (s["cGrams"]! as double).toStringAsFixed(1);
+                                genFGram.text =
+                                    (s["fGrams"]! as double).toStringAsFixed(1);
+                                wizardStep = 4;
+                              });
+                            },
+                            child: Text(t("gen_suggest"),
+                                textAlign: TextAlign.center),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: t("gen_recipe_ideas_title"),
+                  icon: const Icon(
+                    Icons.restaurant_menu_outlined,
+                    color: Color(0xFFD4AF37),
+                  ),
+                  onPressed: () {
+                    _openMealGenSolRecipeIdeasSheet(
+                      context: context,
+                      mealLabel: _displayMealName(selectedMeal),
+                      onPick: (food, flavor) {
+                        setDialogState(() {
+                          optionalMealRecipe = food;
+                          mealGenRecipeFlavor = flavor;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: math.min(460, math.max(280, wDialog)),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: generatorMode,
+                      items: ["Normal", "Diät", "Aufbau"]
+                          .map((m) => DropdownMenuItem(
+                                value: m,
+                                child: Text(
+                                  m == "Normal" ? m : _tModeName(m),
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() {
+                            generatorMode = value;
+                            proteinFood = null;
+                            carbsFood = null;
+                            fatFood = null;
+                            wizardStep = 1;
+                            genSearchCtrl.clear();
+                            if (genFoodListScroll.hasClients) {
+                              genFoodListScroll.jumpTo(0);
+                            }
+                          });
+                        }
+                      },
+                      decoration: InputDecoration(labelText: t("mode")),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedMeal,
+                      items: meals
+                          .map((m) => DropdownMenuItem(
+                                value: m, child: Text(_displayMealName(m))))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() {
+                            selectedMeal = value;
+                            syncGenMealCtrlsFromSettings();
+                            proteinFood = null;
+                            carbsFood = null;
+                            fatFood = null;
+                            wizardStep = 1;
+                            genSearchCtrl.clear();
+                            if (genFoodListScroll.hasClients) {
+                              genFoodListScroll.jumpTo(0);
+                            }
+                          });
+                        }
+                      },
+                      decoration: InputDecoration(labelText: t("meal")),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      t("gen_meal_macro_preset"),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFD4AF37),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      t("gen_meal_macro_hint"),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white60,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "${t("protein")} — ${t("free_suffix")}: ${pFreeM.toStringAsFixed(1)}% · ${t("carbs")} — ${t("free_suffix")}: ${cFreeM.toStringAsFixed(1)}% · ${t("fat")} — ${t("free_suffix")}: ${fFreeM.toStringAsFixed(1)}%",
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: pPct > pFreeM + 0.01 ||
+                                cPct > cFreeM + 0.01 ||
+                                fPct > fFreeM + 0.01
+                            ? Colors.orange
+                            : Colors.white54,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: genMealPCtrl,
+                      onChanged: (_) => setDialogState(() {}),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _touchInputDecoration(
+                          "${t("protein")} % (≤ ${pFreeM.toStringAsFixed(1)})"),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: genMealCCtrl,
+                      onChanged: (_) => setDialogState(() {}),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _touchInputDecoration(
+                          "${t("carbs")} % (≤ ${cFreeM.toStringAsFixed(1)})"),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: genMealFCtrl,
+                      onChanged: (_) => setDialogState(() {}),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _touchInputDecoration(
+                          "${t("fat")} % (≤ ${fFreeM.toStringAsFixed(1)})"),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              syncGenMealCtrlsFromSettings();
+                            });
+                          },
+                          child: Text(t("gen_meal_macro_reset")),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            final pVal = _safeDouble(genMealPCtrl.text);
+                            final cVal = _safeDouble(genMealCCtrl.text);
+                            final fVal = _safeDouble(genMealFCtrl.text);
+                            if (pVal == null || cVal == null || fVal == null) {
+                              return;
+                            }
+                            if (pVal > pFreeM + 0.01 ||
+                                cVal > cFreeM + 0.01 ||
+                                fVal > fFreeM + 0.01) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(t("distribution_too_high")),
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() {
+                              mealMacros[selectedMeal]!["protein"] = pVal;
+                              mealMacros[selectedMeal]!["carbs"] = cVal;
+                              mealMacros[selectedMeal]!["fat"] = fVal;
+                            });
+                            _saveAppState();
+                            setDialogState(() {});
+                            _updateMealTotals();
+                          },
+                          child: Text(t("gen_meal_macro_save")),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "${t("missing_protein")}: ${remainingProtein.toStringAsFixed(1)}g",
+                        style: const TextStyle(color: _proteinColor, fontSize: 14),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "${t("missing_carbs")}: ${remainingCarbs.toStringAsFixed(1)}g",
+                        style: const TextStyle(color: _carbColor, fontSize: 14),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "${t("missing_fat")}: ${remainingFat.toStringAsFixed(1)}g",
+                        style: const TextStyle(color: _fatColor, fontSize: 14),
+                      ),
+                    ),
+                    if (wizardStep < 4) ...[
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 4),
+                        clipBehavior: Clip.antiAlias,
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF100E0A),
+                          borderRadius: BorderRadius.circular(
+                              _mealGenWizardGroupRadius),
+                          border: Border.all(
+                            color: const Color(0x40D4AF37),
+                            width: 0.65,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            LinearProgressIndicator(
+                              value: (wizardStep.clamp(1, 3)) / 3.0,
+                              backgroundColor: Colors.white10,
+                              minHeight: 5,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              {
+                                    1: t("gen_step_1"),
+                                    2: t("gen_step_2"),
+                                    3: t("gen_step_3"),
+                                  }[wizardStep] ??
+                                  "",
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFFD4AF37),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: genSearchCtrl,
+                              onChanged: (_) => setDialogState(() {}),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                labelText: t("gen_search"),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (wizardStep > 1)
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () {
+                                    setDialogState(() {
+                                      wizardStep -= 1;
+                                      genSearchCtrl.clear();
+                                      if (genFoodListScroll.hasClients) {
+                                        genFoodListScroll.jumpTo(0);
+                                      }
+                                    });
+                                  },
+                                  icon: const Icon(Icons.arrow_back, size: 18),
+                                  label: Text(t("gen_back")),
+                                ),
+                              ),
+                            Builder(
+                              builder: (listCtx) {
+                                final cat = wizardStep == 1
+                                    ? "Protein"
+                                    : (wizardStep == 2
+                                        ? "Carbs"
+                                        : "Fett");
+                                final q =
+                                    genSearchCtrl.text.toLowerCase().trim();
+                                final list = foodsByMode(cat, generatorMode)
+                                    .where(
+                                      (f) =>
+                                          q.isEmpty ||
+                                          f.name.toLowerCase().contains(q),
+                                    )
+                                    .toList()
+                                  ..sort(
+                                    (a, b) => a.name
+                                        .toLowerCase()
+                                        .compareTo(b.name.toLowerCase()),
+                                  );
+                                return _mealGenScrollableFoodList(
+                                  listContext: listCtx,
+                                  controller: genFoodListScroll,
+                                  inWizardGroup: true,
+                                  children: [
+                              ListTile(
+                                leading: const Icon(
+                                  Icons.not_interested_outlined,
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  t("gen_none"),
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
+                                onTap: () {
+                                  setDialogState(() {
+                                    if (wizardStep == 1) {
+                                      proteinFood = null;
+                                    } else if (wizardStep == 2) {
+                                      carbsFood = null;
+                                    } else {
+                                      fatFood = null;
+                                      final s = solveMealGenFlexible(
+                                        proteinFood,
+                                        carbsFood,
+                                        fatFood,
+                                        remainingProtein,
+                                        remainingCarbs,
+                                        remainingFat,
+                                      );
+                                      genPGram.text =
+                                          (s["pGrams"]! as double).toStringAsFixed(1);
+                                      genCGram.text =
+                                          (s["cGrams"]! as double).toStringAsFixed(1);
+                                      genFGram.text =
+                                          (s["fGrams"]! as double).toStringAsFixed(1);
+                                      wizardStep = 4;
+                                      if (genFoodListScroll.hasClients) {
+                                        genFoodListScroll.jumpTo(0);
+                                      }
+                                      return;
+                                    }
+                                    genSearchCtrl.clear();
+                                    wizardStep += 1;
+                                    if (genFoodListScroll.hasClients) {
+                                      genFoodListScroll.jumpTo(0);
+                                    }
+                                  });
+                                },
+                              ),
+                              ...list.map(
+                                (f) {
+                                  return ListTile(
+                                    title: Text(
+                                      f.name,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      _foodGenMacroLineForPicker(
+                                        f,
+                                        forCategory: cat,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: Colors.white60,
+                                        height: 1.2,
+                                        fontFeatures: [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      setDialogState(() {
+                                        if (wizardStep == 1) {
+                                          proteinFood = f;
+                                          genSearchCtrl.clear();
+                                          wizardStep = 2;
+                                        } else if (wizardStep == 2) {
+                                          carbsFood = f;
+                                          genSearchCtrl.clear();
+                                          wizardStep = 3;
+                                        } else {
+                                          fatFood = f;
+                                          final s = solveMealGenFlexible(
+                                            proteinFood,
+                                            carbsFood,
+                                            fatFood,
+                                            remainingProtein,
+                                            remainingCarbs,
+                                            remainingFat,
+                                          );
+                                          genPGram.text = (s["pGrams"]! as double)
+                                              .toStringAsFixed(1);
+                                          genCGram.text = (s["cGrams"]! as double)
+                                              .toStringAsFixed(1);
+                                          genFGram.text = (s["fGrams"]! as double)
+                                              .toStringAsFixed(1);
+                                          genSearchCtrl.clear();
+                                          wizardStep = 4;
+                                        }
+                                        if (genFoodListScroll.hasClients) {
+                                          genFoodListScroll.jumpTo(0);
+                                        }
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        t("gen_step_review"),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFD4AF37),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        t("gen_review_explain"),
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          color: Colors.white70,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (warnSkips.isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF5D4037).withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFFA726), width: 0.6),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (final w in warnSkips)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    w,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.35,
+                                      color: Color(0xFFFFE0B2),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      if (warnMismatch)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.deepOrange.shade900.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            tFmt("gen_warn_mismatch", {
+                              "s": sumGap.toStringAsFixed(0),
+                            }),
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Color(0xFFFFAB91),
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      if (proteinFood != null) ...[
+                        Text(
+                          "${t("recommendation")}: ${proteinFood!.name}",
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _foodGenMacroLineForPicker(
+                            proteinFood!,
+                            forCategory: "Protein",
+                          ),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white54,
+                            height: 1.3,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: genPGram,
+                          onChanged: (_) => setDialogState(() {}),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: "${t("gen_grams_field")} (${t("protein")})",
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      if (carbsFood != null) ...[
+                        Text(
+                          "${t("recommendation")}: ${carbsFood!.name}",
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _foodGenMacroLineForPicker(
+                            carbsFood!,
+                            forCategory: "Carbs",
+                          ),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white54,
+                            height: 1.3,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: genCGram,
+                          onChanged: (_) => setDialogState(() {}),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: "${t("gen_grams_field")} (${t("carbs")})",
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      if (fatFood != null) ...[
+                        Text(
+                          "${t("recommendation")}: ${fatFood!.name}",
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _foodGenMacroLineForPicker(
+                            fatFood!,
+                            forCategory: "Fett",
+                          ),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white54,
+                            height: 1.3,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: genFGram,
+                          onChanged: (_) => setDialogState(() {}),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: "${t("gen_grams_field")} (${t("fat")})",
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      Text(
+                        "${t("achieved")}: ${t("abbr_protein")} ${solvedProtein.toStringAsFixed(1)}g | ${t("abbr_carbs")} ${solvedCarbs.toStringAsFixed(1)}g | ${t("abbr_fat")} ${solvedFat.toStringAsFixed(1)}g",
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      if (usedFallback)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            t("fallback_note"),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            setDialogState(() {
+                              wizardStep = 3;
+                            });
+                          },
+                          icon: const Icon(Icons.tune, size: 18),
+                          label: Text(t("gen_back")),
+                        ),
+                      ),
+                      const Divider(),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          t("meal_gen_optional_recipe"),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFD4AF37),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: ["all", "sweet", "salty"]
+                              .map(
+                                (fl) => Padding(
+                                  padding: const EdgeInsets.only(right: 6.0),
+                                  child: ChoiceChip(
+                                    label: Text(
+                                      fl == "all"
+                                          ? t("recipe_flavor_all")
+                                          : (fl == "sweet"
+                                              ? t("recipe_flavor_sweet")
+                                              : t("recipe_flavor_salty")),
+                                    ),
+                                    selected: mealGenRecipeFlavor == fl,
+                                    onSelected: (_) {
+                                      setDialogState(() {
+                                        mealGenRecipeFlavor = fl;
+                                        optionalMealRecipe = null;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Builder(
+                        builder: (ctx) {
+                          final recipeOptions = foodDatabase
+                              .where(
+                                (f) =>
+                                    f.category == "Rezepte" &&
+                                    _recipeMatchesFlavorFilter(
+                                        f, mealGenRecipeFlavor),
+                              )
+                              .toList()
+                            ..sort(
+                              (a, b) =>
+                                  a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+                            );
+                          Food? resolvedRecipe;
+                          if (optionalMealRecipe != null) {
+                            for (final f in recipeOptions) {
+                              if (f.name == optionalMealRecipe!.name) {
+                                resolvedRecipe = f;
+                                break;
+                              }
+                            }
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              DropdownButtonFormField<Food?>(
+                                value: resolvedRecipe,
+                                items: [
+                                  const DropdownMenuItem<Food?>(
+                                    value: null,
+                                    child: Text("—"),
+                                  ),
+                                  ...recipeOptions.map(
+                                    (f) => DropdownMenuItem<Food?>(
+                                      value: f,
+                                      child: _mealGenRecipeDropdownItem(f),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (v) =>
+                                    setDialogState(() => optionalMealRecipe = v),
+                                decoration: InputDecoration(
+                                  labelText: t("cat_recipes"),
+                                ),
+                              ),
+                              if (resolvedRecipe != null) ...[
+                                const SizedBox(height: 6),
+                                TextField(
+                                  controller: mealRecipePortionCtrl,
+                                  keyboardType: const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: t("track_recipe_portion_label"),
+                                    border: const OutlineInputBorder(),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t("cancel")),
+              ),
+              if (wizardStep == 4)
+                TextButton(
+                  onPressed: () {
+                    bool added = false;
+                    setState(() {
+                      if (proteinFood != null && pGrams > 0) {
+                        trackedFoods.add(TrackedFood(
+                          food: proteinFood!,
+                          grams: pGrams,
+                          meal: selectedMeal,
+                          dayKey: selectedDayKey,
+                        ));
+                        added = true;
+                      }
+                      if (carbsFood != null && cGrams > 0) {
+                        trackedFoods.add(TrackedFood(
+                          food: carbsFood!,
+                          grams: cGrams,
+                          meal: selectedMeal,
+                          dayKey: selectedDayKey,
+                        ));
+                        added = true;
+                      }
+                      if (fatFood != null && fGrams > 0) {
+                        trackedFoods.add(TrackedFood(
+                          food: fatFood!,
+                          grams: fGrams,
+                          meal: selectedMeal,
+                          dayKey: selectedDayKey,
+                        ));
+                        added = true;
+                      }
+                      if (optionalMealRecipe != null) {
+                        Food? rf;
+                        for (final f in foodDatabase) {
+                          if (f.name == optionalMealRecipe!.name &&
+                              f.category == "Rezepte" &&
+                              _recipeMatchesFlavorFilter(
+                                  f, mealGenRecipeFlavor)) {
+                            rf = f;
+                            break;
+                          }
+                        }
+                        if (rf != null) {
+                          final m = _tryParseUserNumber(mealRecipePortionCtrl.text) ?? 1.0;
+                          if (m > 0) {
+                            final g = rf.basePortionGrams != null
+                                ? m * rf.basePortionGrams!
+                                : m * 100.0;
+                            if (g > 0) {
+                              trackedFoods.add(TrackedFood(
+                                food: rf,
+                                grams: g,
+                                meal: selectedMeal,
+                                dayKey: selectedDayKey,
+                              ));
+                              added = true;
+                            }
+                          }
+                        }
+                      }
+                    });
+                    _saveAppState();
+                    Navigator.pop(context);
+                    if (added) {
+                      _showBlessing();
+                      _applyDailyKcalOverSchedule();
+                    }
+                  },
+                  child: Text(t("add_to_tracking")),
+                ),
+            ],
+          );
+        },
+      ),
+    ).then((_) {
+      genFoodListScroll.dispose();
+    });
+  }
+
+  // ---------------- ADD TRACK ----------------
+
+  List<Map<String, dynamic>> _catalogMapsForAi() {
+    const maxItems = 3000;
+    final def = foodDatabase.where((f) => f.isDefault).toList();
+    final rest = foodDatabase.where((f) => !f.isDefault).toList();
+    var list = <Food>[...def, ...rest];
+    if (list.length > maxItems) {
+      list = list.sublist(0, maxItems);
+    }
+    return list
+        .map(
+          (f) => {
+            "n": f.name,
+            "p": f.protein,
+            "c": f.carbs,
+            "f": f.fat,
+            "k": f.calories,
+            "cat": f.category,
+          },
+        )
+        .toList();
+  }
+
+  Future<void> _openAiPhotoTrackFlow(String meal) async {
+    if (geminiApiKey.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t("ai_no_key")),
+          action: SnackBarAction(
+            label: t("ai_open_settings"),
+            onPressed: () {
+              setState(() => selectedIndex = 3);
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    if (foodDatabase.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("ai_error_empty_db"))),
+      );
+      return;
+    }
+    if (!await _ensureLastMealKcalChoiceIfNeeded(meal)) {
+      if (!mounted) return;
+      return;
+    }
+    if (!mounted) return;
+    final src = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(t("ai_pick_source")),
+        content: Text(
+          t("ai_pick_source_sub"),
+          style: const TextStyle(color: Colors.white60, fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, "gal"),
+            child: Text(t("ai_gallery")),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, "cam"),
+            child: Text(t("ai_camera")),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: Text(t("cancel")),
+          ),
+        ],
+      ),
+    );
+    if (src == null || !mounted) return;
+    final picker = ImagePicker();
+    final xfile = await picker.pickImage(
+      source: src == "cam" ? ImageSource.camera : ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (xfile == null || !mounted) return;
+    final bytes = await xfile.readAsBytes();
+    var mime = "image/jpeg";
+    final pl = xfile.path.toLowerCase();
+    if (pl.endsWith(".png")) mime = "image/png";
+    if (pl.endsWith(".webp")) mime = "image/webp";
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(child: Text(t("ai_analyzing"))),
+          ],
+        ),
+      ),
+    );
+    try {
+      final raw = await aiphoto.requestGeminiMealEstimate(
+        apiKey: geminiApiKey,
+        imageBytes: bytes,
+        mimeType: mime,
+        catalog: aiphoto.buildAiFoodCatalog(
+          _catalogMapsForAi(),
+          maxItems: 3000,
+        ),
+        languageHint: languageCode,
+      );
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      if (!mounted) return;
+      if (raw.items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t("ai_error_empty"))),
+        );
+        return;
+      }
+      if (!mounted) return;
+      final picked = await showDialog<List<({Food food, double grams})>?>(
+        context: context,
+        builder: (ctx) => _AiMealReviewDialog(
+          dish: raw.dish,
+          lines: raw.items,
+          foodDatabase: foodDatabase,
+          t: t,
+          tFmt: tFmt,
+          touchInputDecoration: _touchInputDecoration,
+        ),
+      );
+      if (picked == null || picked.isEmpty || !mounted) return;
+      setState(() {
+        for (final row in picked) {
+          trackedFoods.add(
+            TrackedFood(
+              food: row.food,
+              grams: row.grams,
+              meal: meal,
+              dayKey: selectedDayKey,
+            ),
+          );
+        }
+      });
+      _saveAppState();
+      _showBlessing();
+      _applyDailyKcalOverSchedule();
+    } catch (e) {
+      if (mounted) {
+        final nav = Navigator.of(context, rootNavigator: true);
+        if (nav.canPop()) nav.pop();
+      }
+      if (!mounted) return;
+      var err = t("ai_error_net");
+      final s = e.toString();
+      if (s.contains("timeout")) err = t("ai_error_timeout");
+      if (s.contains("blocked")) err = t("ai_error_blocked");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(err)),
+      );
+      return;
+    }
+  }
+
+  void addTrackedFood(String meal) {
+    if (_isMealMergedLocked(meal)) {
+      unawaited(_showMergedMealLockedDialog());
+      return;
+    }
+    final anchor = _anchoredLastMealIdForKcal();
+    if (anchor != null &&
+        meal == anchor &&
+        lastMealTrackPromptEnabled &&
+        !lastMealKcalByDay.containsKey(selectedDayKey)) {
+      unawaited(_addTrackedFoodAfterLastMealPrompt(meal));
+      return;
+    }
+    _addTrackedFoodImpl(meal);
+  }
+
+  Future<void> _addTrackedFoodAfterLastMealPrompt(String meal) async {
+    if (!await _ensureLastMealKcalChoiceIfNeeded(meal)) {
+      if (!mounted) return;
+      return;
+    }
+    if (!mounted) return;
+    _addTrackedFoodImpl(meal);
+  }
+
+  void _addTrackedFoodImpl(String meal) {
+    Food? selectedFood;
+    final recipePortionCtrl = TextEditingController(text: "1");
+    final recipeGramCtrl = TextEditingController();
+    final advCtrl = TextEditingController();
+    String selectedCategory = "Alle";
+    /// Wie Datenbank-Filter: Alle | Diät | Aufbau
+    var trackTypeFilter = _trackAddSolTypeFilter;
+    String trackRecipeFlavorFilter = "all";
+    /// "all" | "komplex" | "einfach" — nur bei Kategorie Carbs
+    String trackCarbSubFilter = "all";
+    String inputMode = "grams";
+    double trackScrollDisplayValue = 100.0;
+    double trackScrollGrams = 100.0;
+    String recipeSimpleMode = "portion";
+    bool recipeAdvanced = false;
+    String advInputMode = "kcal";
+
+    List<Food> filteredFoods(String category) {
+      List<Food> list;
+      if (category == "Alle") {
+        list = List<Food>.from(foodDatabase);
+      } else {
+        list = foodDatabase.where((f) => f.isInCategory(category)).toList();
+      }
+      if (category == "Carbs") {
+        if (trackCarbSubFilter == "komplex") {
+          list = list.where((f) => f.carbKind == "komplex").toList();
+        } else if (trackCarbSubFilter == "einfach") {
+          list = list.where((f) => f.carbKind == "einfach").toList();
+        }
+      }
+      if (trackTypeFilter != "Alle") {
+        list = list.where((f) {
+          if (trackTypeFilter == "Diät") return f.type.startsWith("Diät");
+          if (trackTypeFilter == "Aufbau") {
+            return f.type.startsWith("Aufbau");
+          }
+          return true;
+        }).toList();
+      }
+      list = list
+          .where(
+            (f) => _recipeMatchesFlavorFilter(f, trackRecipeFlavorFilter),
+          )
+          .toList();
+      return list;
+    }
+
+    void syncRecipeFields(Food? val) {
+      if (val == null || !val.isRecipe) return;
+      recipeAdvanced = false;
+      if (val.basePortionGrams != null) {
+        recipePortionCtrl.text = "1";
+        recipeGramCtrl.text = val.basePortionGrams!.toStringAsFixed(0);
+        recipeSimpleMode = "portion";
+      } else {
+        recipeSimpleMode = "grams";
+        if (recipeGramCtrl.text.trim().isEmpty) {
+          recipeGramCtrl.text = "100";
+        }
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final foods = filteredFoods(selectedCategory);
+          final tfSol = trackTypeFilter;
+          final solProtein = _topPicksProtein(solReorderFilter: tfSol);
+          final solFett = _topPicksFett(solReorderFilter: tfSol);
+          final solBallast = _topPicksBallaststoffe(solReorderFilter: tfSol);
+          final solCarbsK = _topPicksCarbsKomplex(solReorderFilter: tfSol);
+          final solCarbsE = _topPicksCarbsEinfach(solReorderFilter: tfSol);
+          final solRezepte = _topPicksRezepte(
+            solReorderFilter: tfSol,
+            recipeFlavorFilter: trackRecipeFlavorFilter,
+          );
+          final fInList = (selectedFood != null && foods.contains(selectedFood!))
+              ? selectedFood
+              : null;
+
+          double? gPreview;
+          bool showMacroHint = false;
+
+          if (fInList != null) {
+            if (fInList.isRecipe) {
+              if (recipeAdvanced) {
+                gPreview = _gramsForTrackedAdd(
+                    fInList, advInputMode, advCtrl.text);
+                showMacroHint = gPreview == null &&
+                    _tryParseUserNumber(advCtrl.text) != null &&
+                    _tryParseUserNumber(advCtrl.text)! > 0;
+              } else {
+                if (recipeSimpleMode == "portion" &&
+                    fInList.basePortionGrams != null) {
+                  final m = _tryParseUserNumber(recipePortionCtrl.text);
+                  if (m != null && m > 0) {
+                    gPreview = m * fInList.basePortionGrams!;
+                  }
+                } else {
+                  gPreview = _tryParseUserNumber(recipeGramCtrl.text);
+                }
+              }
+            } else {
+              gPreview = _gramsFromTrackInputDisplay(
+                  fInList, inputMode, trackScrollDisplayValue);
+              showMacroHint = gPreview == null && trackScrollDisplayValue > 0;
+            }
+          }
+
+          return AlertDialog(
+            title: Text(t("choose_food")),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButton<String>(
+                    isExpanded: true,
+                    value: selectedCategory,
+                    items: [
+                      "Alle",
+                      "Carbs",
+                      "Protein",
+                      "Fett",
+                      "Ballaststoffe",
+                      "Obst",
+                      "Gemüse",
+                      "Rezepte",
+                    ]
+                        .map((e) =>
+                            DropdownMenuItem(value: e, child: Text(_tCat(e))))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val == null) return;
+                      setDialogState(() {
+                        selectedCategory = val;
+                        selectedFood = null;
+                        if (val != "Carbs") {
+                          trackCarbSubFilter = "all";
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      t("mode"),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFFD4AF37),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ["Alle", "Diät", "Aufbau"]
+                          .map(
+                            (mode) => Padding(
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: FilterChip(
+                                label: Text(
+                                  _tTypeFilter(mode),
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                selected: trackTypeFilter == mode,
+                                onSelected: (_) {
+                                  if (trackTypeFilter == mode) return;
+                                  setDialogState(() {
+                                    trackTypeFilter = mode;
+                                    selectedFood = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      t("recipe_flavor_filter_label"),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white60,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ["all", "sweet", "salty"]
+                          .map(
+                            (fl) => Padding(
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: FilterChip(
+                                label: Text(
+                                  fl == "all"
+                                      ? t("recipe_flavor_all")
+                                      : (fl == "sweet"
+                                          ? t("recipe_flavor_sweet")
+                                          : t("recipe_flavor_salty")),
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                selected: trackRecipeFlavorFilter == fl,
+                                onSelected: (_) {
+                                  setDialogState(() {
+                                    trackRecipeFlavorFilter = fl;
+                                    selectedFood = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  if (selectedCategory == "Carbs") ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        t("track_carb_subfilter_label"),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          (
+                            "all",
+                            t("type_all"),
+                          ),
+                          (
+                            "komplex",
+                            t("carb_tag_complex"),
+                          ),
+                          (
+                            "einfach",
+                            t("carb_tag_simple"),
+                          ),
+                        ]
+                            .map(
+                              (e) => Padding(
+                                padding: const EdgeInsets.only(right: 6.0),
+                                child: FilterChip(
+                                  label: Text(
+                                    e.$2,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  selected: trackCarbSubFilter == e.$1,
+                                  onSelected: (_) {
+                                    if (trackCarbSubFilter == e.$1) {
+                                      return;
+                                    }
+                                    setDialogState(() {
+                                      trackCarbSubFilter = e.$1;
+                                      selectedFood = null;
+                                    });
+                                  },
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<Food>(
+                          isExpanded: true,
+                          value: fInList,
+                          hint: Text(
+                            t("choose_food"),
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 16),
+                          iconEnabledColor: Colors.white70,
+                          dropdownColor: const Color(0xFF1F1F1F),
+                          underline: Container(
+                            height: 1,
+                            color: Colors.white24,
+                          ),
+                          items: foods
+                              .map(
+                                (f) => DropdownMenuItem(
+                                  value: f,
+                                  child: Row(
+                                    children: [
+                                      if (_trackAddFoodIsSolGoldPick(
+                                        f,
+                                        typeFilter: tfSol,
+                                        solProtein: solProtein,
+                                        solFett: solFett,
+                                        solBallast: solBallast,
+                                        solCarbsK: solCarbsK,
+                                        solCarbsE: solCarbsE,
+                                        solRezepte: solRezepte,
+                                      ))
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(right: 5),
+                                          child: Tooltip(
+                                            message: t("track_sol_suggestion"),
+                                            child: const Icon(
+                                              Icons.star_rounded,
+                                              size: 18,
+                                              color: Color(0xFFD4AF37),
+                                            ),
+                                          ),
+                                        ),
+                                      Expanded(
+                                        child: Text(
+                                          f.name,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: foods.isEmpty
+                              ? null
+                              : (val) {
+                                  setDialogState(() {
+                                    selectedFood = val;
+                                    syncRecipeFields(val);
+                                  });
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Tooltip(
+                        message: t("track_barcode"),
+                        child: IconButton(
+                          onPressed: () async {
+                            final fetch = await _barcodeOpenFoodLookup();
+                            if (fetch == null) return;
+                            final code = fetch.barcode;
+                            Food? hit;
+                            for (final f in foodDatabase) {
+                              if (f.offBarcode == code) {
+                                hit = f;
+                                break;
+                              }
+                            }
+                            if (hit != null) {
+                              await _quickAddScannedFoodToTracking(
+                                hit,
+                                fixedMeal: meal,
+                                popSecondContext: dialogCtx,
+                              );
+                              return;
+                            }
+                            final added = await _showOffPreviewFromOff(fetch);
+                            if (added == null || !dialogCtx.mounted) {
+                              return;
+                            }
+                            setDialogState(() {
+                              selectedFood = added;
+                              selectedCategory = "Alle";
+                              inputMode = "grams";
+                              trackScrollDisplayValue = 100.0;
+                              trackScrollGrams = 100.0;
+                              recipeAdvanced = false;
+                              syncRecipeFields(added);
+                            });
+                          },
+                          icon: const Icon(Icons.qr_code_scanner),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 40, minHeight: 40),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Tooltip(
+                        message: t("ai_tracker_tooltip"),
+                        child: IconButton(
+                          onPressed: () {
+                            Navigator.pop(dialogCtx);
+                            unawaited(_openAiPhotoTrackFlow(meal));
+                          },
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
+                        ),
+                      ),
+                      if (fInList != null && fInList.isRecipe) ...[
+                        const SizedBox(width: 2),
+                        Tooltip(
+                          message: t("recipe_info_tooltip"),
+                          child: IconButton(
+                            onPressed: () => _showRecipeInfoDialog(
+                              fInList,
+                              useDatabasePcfStyling: false,
+                            ),
+                            icon: const Icon(
+                              Icons.info_outline,
+                              color: Color(0xFFD4AF37),
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                                minWidth: 40, minHeight: 40),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (fInList != null && fInList.isRecipe) ...[
+                    const SizedBox(height: 12),
+                    if (fInList.basePortionGrams != null)
+                      Text(
+                        tFmt("recipe_base_grams", {
+                          "g": fInList.basePortionGrams!.toStringAsFixed(0),
+                        }),
+                        style: const TextStyle(
+                            color: Color(0xFFD4AF37), fontSize: 12.5),
+                      ),
+                    if (fInList.basePortionGrams == null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6.0),
+                        child: Text(
+                          t("track_recipe_no_base"),
+                          style: const TextStyle(
+                              color: Colors.white60, fontSize: 12),
+                        ),
+                      ),
+                    if (recipeAdvanced) ...[
+                      Text(
+                        t("track_input_mode"),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      DropdownButton<String>(
+                        isExpanded: true,
+                        value: advInputMode,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 15),
+                        dropdownColor: const Color(0xFF1F1F1F),
+                        items: [
+                          DropdownMenuItem(
+                              value: "kcal",
+                              child: Text(t("track_mode_kcal"))),
+                          DropdownMenuItem(
+                              value: "protein",
+                              child: Text(t("track_mode_protein"))),
+                          DropdownMenuItem(
+                              value: "carbs",
+                              child: Text(t("track_mode_carbs"))),
+                          DropdownMenuItem(
+                              value: "fat", child: Text(t("track_mode_fat"))),
+                        ],
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setDialogState(() => advInputMode = val);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: advCtrl,
+                        onChanged: (_) => setDialogState(() {}),
+                        decoration: _touchInputDecoration(t("track_value_label")),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () {
+                            setDialogState(() => recipeAdvanced = false);
+                          },
+                          child: Text(t("track_back_simple")),
+                        ),
+                      ),
+                    ] else ...[
+                      if (fInList.basePortionGrams != null) ...[
+                        const SizedBox(height: 4),
+                        SegmentedButton<String>(
+                          segments: [
+                            ButtonSegment(
+                                value: "portion",
+                                label: FittedBox(
+                                    child: Text(t("track_recipe_portion_tab")))),
+                            ButtonSegment(
+                                value: "grams",
+                                label: FittedBox(
+                                    child: Text(t("track_recipe_grams_tab")))),
+                          ],
+                          selected: {recipeSimpleMode},
+                          onSelectionChanged: (s) {
+                            if (s.isEmpty) return;
+                            setDialogState(
+                                () => recipeSimpleMode = s.first);
+                          },
+                        ),
+                        if (recipeSimpleMode == "portion") ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            t("track_recipe_portion_label"),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          TextField(
+                            controller: recipePortionCtrl,
+                            onChanged: (_) => setDialogState(() {}),
+                            decoration: _touchInputDecoration(
+                                t("track_recipe_portion_label")),
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            t("track_recipe_presets"),
+                            style: const TextStyle(
+                                color: Colors.white60, fontSize: 11),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 5,
+                            runSpacing: 4,
+                            children: [0.25, 0.5, 1, 2].map((x) {
+                              final label = x == 0.25
+                                  ? "¼"
+                                  : x == 0.5
+                                      ? "½"
+                                      : x == 1
+                                          ? "1"
+                                          : "2";
+                              return ActionChip(
+                                label: Text(label),
+                                labelStyle: const TextStyle(
+                                    color: Color(0xFFE7D9C3)),
+                                backgroundColor: const Color(0xFF2A2A2A),
+                                onPressed: () {
+                                  setDialogState(() {
+                                    if (x == 0.25) {
+                                      recipePortionCtrl.text = "0.25";
+                                    } else if (x == 0.5) {
+                                      recipePortionCtrl.text = "0.5";
+                                    } else {
+                                      recipePortionCtrl.text =
+                                          x.toInt().toString();
+                                    }
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            t("track_recipe_grams_label"),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          TextField(
+                            controller: recipeGramCtrl,
+                            onChanged: (_) => setDialogState(() {}),
+                            decoration: _touchInputDecoration(
+                                t("track_recipe_grams_label")),
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ] else ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          t("track_recipe_grams_label"),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: recipeGramCtrl,
+                          onChanged: (_) => setDialogState(() {}),
+                          decoration: _touchInputDecoration(
+                              t("track_recipe_grams_label")),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ],
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () {
+                            setDialogState(() => recipeAdvanced = true);
+                          },
+                          child: Text(t("track_advanced")),
+                        ),
+                      ),
+                    ],
+                  ] else if (fInList != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      t("track_edit_portion_hint"),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _TrackPortionScrollPanel(
+                      key: ValueKey('add_${fInList.name}'),
+                      modes: _foodTrackModesFor(fInList),
+                      initialMode: inputMode,
+                      initialGrams: trackScrollGrams,
+                      modeShortLabel: _trackModeShortLabel,
+                      displayValueForGrams: (m, g) =>
+                          _trackDisplayValueForGrams(fInList, m, g),
+                      gramsFromDisplay: (m, d) =>
+                          _gramsFromTrackInputDisplay(fInList, m, d),
+                      onChanged: (m, d, g) {
+                        setDialogState(() {
+                          inputMode = m;
+                          trackScrollDisplayValue = d;
+                          trackScrollGrams = g;
+                        });
+                      },
+                      t: t,
+                    ),
+                  ],
+                  if (gPreview != null && fInList != null) ...[
+                    _trackPortionMacroPreview(fInList, gPreview),
+                  ] else if (showMacroHint) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      t("track_error_bad"),
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  if (selectedFood == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(t("choose_food"))),
+                    );
+                    return;
+                  }
+                  final f = selectedFood!;
+                  double? g;
+                  if (f.isRecipe) {
+                    if (recipeAdvanced) {
+                      g = _gramsForTrackedAdd(f, advInputMode, advCtrl.text);
+                    } else {
+                      if (recipeSimpleMode == "portion" &&
+                          f.basePortionGrams != null) {
+                        final m = _tryParseUserNumber(recipePortionCtrl.text);
+                        if (m == null || m <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(t("track_error_bad"))),
+                          );
+                          return;
+                        }
+                        g = m * f.basePortionGrams!;
+                      } else {
+                        g = _tryParseUserNumber(recipeGramCtrl.text);
+                      }
+                    }
+                  } else {
+                    g = _gramsFromTrackInputDisplay(
+                        f, inputMode, trackScrollDisplayValue);
+                  }
+                  if (g == null || g <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(t("track_error_bad"))),
+                    );
+                    return;
+                  }
+                  setState(() {
+                    trackedFoods.add(TrackedFood(
+                      food: f,
+                      grams: g!,
+                      meal: meal,
+                      dayKey: selectedDayKey,
+                    ));
+                  });
+                  _saveAppState();
+                  Navigator.pop(dialogCtx);
+                  _showBlessing();
+                  _applyDailyKcalOverSchedule();
+                },
+                child: Text(t("add")),
+              ),
+            ],
+          );
+        },
+      ),
+    ).then((_) {
+      recipePortionCtrl.dispose();
+      recipeGramCtrl.dispose();
+      advCtrl.dispose();
+    });
+  }
+
+  void _bumpModeDropdownKey() {
+    if (!mounted) return;
+    setState(() => _modeDropdownRevision++);
+  }
+
+  /// [forModeChange]: nach Moduswahl — kein Alters-Check im Anschluss am alten Modus; Rückgabe: übernommen ja/nein.
+  Future<bool> _openAutoCalculatorDialog({bool forModeChange = false}) async {
+    final wCtrl = TextEditingController(text: currentWeightKg.toStringAsFixed(1));
+    final bfCtrl = TextEditingController(text: bodyFatPercent.toStringAsFixed(1));
+    final ageCtrl = TextEditingController(text: ageYears.toString());
+    String localGender = genderCode;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+        title: Text(t("sol_calculator")),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (forModeChange) ...[
+                Text(
+                  t("calc_required_for_mode"),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFFFFE082),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Text(
+                t("gender_label"),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(
+                    value: "male",
+                    label: Text(t("gender_male")),
+                    icon: const Icon(Icons.male),
+                  ),
+                  ButtonSegment(
+                    value: "female",
+                    label: Text(t("gender_female")),
+                    icon: const Icon(Icons.female),
+                  ),
+                ],
+                selected: {localGender},
+                onSelectionChanged: (s) {
+                  setLocal(() => localGender = s.first);
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: wCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: _touchInputDecoration(t("weight_kg")),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: bfCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: _touchInputDecoration(t("bodyfat_pct")),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: t("bodyfat_what_title"),
+                    icon: const Icon(Icons.help_outline),
+                    onPressed: () => _showBodyFatInfo(sex: localGender),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.straighten, size: 18),
+                  label: Text(t("bodyfat_estimate_btn")),
+                  onPressed: () async {
+                    final initial = _safeDouble(bfCtrl.text) ?? bodyFatPercent;
+                    final estimated =
+                        await _openBodyFatEstimatorDialog(initial);
+                    if (estimated != null) {
+                      bfCtrl.text = estimated.toStringAsFixed(1);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+              TextField(
+                controller: ageCtrl,
+                keyboardType: TextInputType.number,
+                decoration: _touchInputDecoration(t("age")),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t("calc_note"),
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t("cancel")),
+          ),
+          TextButton(
+            onPressed: () {
+              final w = _safeDouble(wCtrl.text);
+              final bf = _safeDouble(bfCtrl.text);
+              final age = int.tryParse(ageCtrl.text);
+              if (w == null || bf == null || age == null) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(t("invalid_input"))),
+                );
+                return;
+              }
+              setState(() {
+                currentWeightKg = w.clamp(30.0, 300.0);
+                bodyFatPercent = bf.clamp(3.0, 60.0);
+                ageYears = age.clamp(10, 120);
+                genderCode = localGender;
+                if (nutritionMode != "Advanced") {
+                  _applyAutoNutritionTargets();
+                }
+              });
+              unawaited(_saveAppState());
+              Navigator.of(ctx).pop(true);
+              if (forModeChange) {
+                return;
+              }
+              final blockKey = _ageBlockReasonForMode(nutritionMode);
+              if (blockKey != null) {
+                _showModeAgeBlockedDialog(blockKey);
+              }
+            },
+            child: Text(t("apply")),
+          ),
+        ],
+      ),
+      ),
+    );
+    return result == true;
+  }
+
+  /// [sex]: `"male"` | `"female"` — nur passende Silhouetten (gleiche Auswahl wie im Dialog).
+  void _showBodyFatInfo({String? sex}) {
+    final isFemale = (sex ?? genderCode) == "female";
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(t("bodyfat_what_title")),
+        content: SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("bodyfat_what_body"),
+                  style: const TextStyle(height: 1.45, fontSize: 14),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  t("bodyfat_ref_section_title"),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: Color(0xFFD4AF37),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  t("bodyfat_ref_section_hint"),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white70,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  isFemale ? t("bodyfat_sex_female") : t("bodyfat_sex_male"),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _kfaInfoReferenceGrid(
+                  _bodyFatVisualLadder(isFemale),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t("got_it")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// KFA-Visualeiter (Mann/Frau) inkl. Referenzbilder pro Stufe.
+  List<Map<String, dynamic>> _bodyFatVisualLadder(bool female) {
+    if (female) {
+      return [
+        {
+          "mid": 16.0,
+          "range": "14–17%",
+          "key": "bodyfat_vis_f_1",
+          "img": "assets/bodyfat/f1.png"
+        },
+        {
+          "mid": 19.0,
+          "range": "18–20%",
+          "key": "bodyfat_vis_f_2",
+          "img": "assets/bodyfat/f2.png"
+        },
+        {
+          "mid": 22.5,
+          "range": "21–24%",
+          "key": "bodyfat_vis_f_3",
+          "img": "assets/bodyfat/f3.png"
+        },
+        {
+          "mid": 27.0,
+          "range": "25–29%",
+          "key": "bodyfat_vis_f_4",
+          "img": "assets/bodyfat/f4.png"
+        },
+        {
+          "mid": 31.5,
+          "range": "30–33%",
+          "key": "bodyfat_vis_f_5",
+          "img": "assets/bodyfat/f5.png"
+        },
+        {
+          "mid": 36.0,
+          "range": "34%+",
+          "key": "bodyfat_vis_f_6",
+          "img": "assets/bodyfat/f6.png"
+        },
+      ];
+    }
+    return [
+      {
+        "mid": 9.0,
+        "range": "8–10%",
+        "key": "bodyfat_vis_m_1",
+        "img": "assets/bodyfat/m2.png"
+      },
+      {
+        "mid": 12.0,
+        "range": "11–13%",
+        "key": "bodyfat_vis_m_2",
+        "img": "assets/bodyfat/m1.png"
+      },
+      {
+        "mid": 15.5,
+        "range": "14–17%",
+        "key": "bodyfat_vis_m_3",
+        "img": "assets/bodyfat/m3.png"
+      },
+      {
+        "mid": 20.0,
+        "range": "18–22%",
+        "key": "bodyfat_vis_m_4",
+        "img": "assets/bodyfat/m4.png"
+      },
+      {
+        "mid": 25.0,
+        "range": "23–27%",
+        "key": "bodyfat_vis_m_5",
+        "img": "assets/bodyfat/m5.png"
+      },
+      {
+        "mid": 30.0,
+        "range": "28%+",
+        "key": "bodyfat_vis_m_6",
+        "img": "assets/bodyfat/m6.png"
+      },
+    ];
+  }
+
+  Widget _kfaLadderImageTile(String assetPath) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.asset(
+        assetPath,
+        width: 76,
+        height: 100,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Container(
+          width: 76,
+          height: 100,
+          color: const Color(0xFF1A1A1A),
+          alignment: Alignment.center,
+          child: const Icon(
+            Icons.person_outline,
+            color: Colors.white24,
+            size: 36,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Kompakte Referenz-Kacheln für den KFA-Info-Dialog.
+  Widget _kfaInfoReferenceGrid(List<Map<String, dynamic>> ladder) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 10,
+      alignment: WrapAlignment.start,
+      children: ladder.map((e) {
+        final range = e["range"] as String;
+        final key = e["key"] as String;
+        final img = e["img"] as String;
+        return SizedBox(
+          width: 110,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  img,
+                  height: 130,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 130,
+                    color: const Color(0xFF1A1A1A),
+                    child: const Icon(Icons.image_not_supported_outlined,
+                        color: Colors.white24),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                range,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+              Text(
+                t(key),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  height: 1.2,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // Navy body-fat formula (cm version).
+  // Men:   %BF = 86.010 * log10(waist - neck) - 70.041 * log10(height) + 36.76
+  // Women: %BF = 163.205 * log10(waist + hip - neck) - 97.684 * log10(height) - 78.387
+  double? _navyBodyFat({
+    required bool isFemale,
+    required double heightCm,
+    required double waistCm,
+    required double neckCm,
+    double? hipCm,
+  }) {
+    if (heightCm <= 0 || waistCm <= 0 || neckCm <= 0) return null;
+    if (isFemale && (hipCm == null || hipCm <= 0)) return null;
+    double bf;
+    if (isFemale) {
+      final inside = waistCm + (hipCm ?? 0) - neckCm;
+      if (inside <= 0) return null;
+      bf = 163.205 * (math.log(inside) / math.ln10) -
+          97.684 * (math.log(heightCm) / math.ln10) -
+          78.387;
+    } else {
+      final inside = waistCm - neckCm;
+      if (inside <= 0) return null;
+      bf = 86.010 * (math.log(inside) / math.ln10) -
+          70.041 * (math.log(heightCm) / math.ln10) +
+          36.76;
+    }
+    if (bf.isNaN || bf.isInfinite) return null;
+    return bf.clamp(3.0, 60.0);
+  }
+
+  Future<double?> _openBodyFatEstimatorDialog(double initial) {
+    String method = "tape";
+    bool isFemale = genderCode == "female";
+    final heightCtrl = TextEditingController();
+    final waistCtrl = TextEditingController();
+    final neckCtrl = TextEditingController();
+    final hipCtrl = TextEditingController();
+    double? visualChoiceMidpoint;
+
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          double? estimate;
+          String? errorText;
+
+          if (method == "tape") {
+            final h = _safeDouble(heightCtrl.text);
+            final w = _safeDouble(waistCtrl.text);
+            final n = _safeDouble(neckCtrl.text);
+            final hp = _safeDouble(hipCtrl.text);
+            if (h != null && w != null && n != null) {
+              estimate = _navyBodyFat(
+                isFemale: isFemale,
+                heightCm: h,
+                waistCm: w,
+                neckCm: n,
+                hipCm: hp,
+              );
+              if (estimate == null) {
+                errorText = t("bodyfat_invalid_input");
+              }
+            }
+          } else {
+            estimate = visualChoiceMidpoint;
+          }
+
+          final ladder = _bodyFatVisualLadder(isFemale);
+
+          return AlertDialog(
+            title: Text(t("bodyfat_estimator_title")),
+            content: SizedBox(
+              width: 380,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Sex toggle
+                    Row(
+                      children: [
+                        Text("${t("bodyfat_sex")}: "),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: SegmentedButton<bool>(
+                            segments: [
+                              ButtonSegment(
+                                value: false,
+                                label: Text(t("bodyfat_sex_male")),
+                              ),
+                              ButtonSegment(
+                                value: true,
+                                label: Text(t("bodyfat_sex_female")),
+                              ),
+                            ],
+                            selected: {isFemale},
+                            onSelectionChanged: (s) => setD(() {
+                              isFemale = s.first;
+                              visualChoiceMidpoint = null;
+                            }),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Method toggle
+                    SegmentedButton<String>(
+                      segments: [
+                        ButtonSegment(
+                          value: "tape",
+                          label: Text(t("bodyfat_method_tape")),
+                          icon: const Icon(Icons.straighten, size: 16),
+                        ),
+                        ButtonSegment(
+                          value: "visual",
+                          label: Text(t("bodyfat_method_visual")),
+                          icon: const Icon(Icons.remove_red_eye_outlined,
+                              size: 16),
+                        ),
+                      ],
+                      selected: {method},
+                      onSelectionChanged: (s) =>
+                          setD(() => method = s.first),
+                    ),
+                    const SizedBox(height: 12),
+                    if (method == "tape") ...[
+                      TextField(
+                        controller: heightCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: _touchInputDecoration(t("bodyfat_height")),
+                        onChanged: (_) => setD(() {}),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: waistCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: _touchInputDecoration(t("bodyfat_waist")),
+                        onChanged: (_) => setD(() {}),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: neckCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: _touchInputDecoration(t("bodyfat_neck")),
+                        onChanged: (_) => setD(() {}),
+                      ),
+                      if (isFemale) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: hipCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration:
+                              _touchInputDecoration(t("bodyfat_hip")),
+                          onChanged: (_) => setD(() {}),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        t("bodyfat_navy_hint"),
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
+                      ),
+                    ] else ...[
+                      Text(
+                        t("bodyfat_visual_hint"),
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      ...ladder.map((entry) {
+                        final mid = entry["mid"] as double;
+                        final range = entry["range"] as String;
+                        final imgPath = entry["img"] as String;
+                        final selected = visualChoiceMidpoint == mid;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: InkWell(
+                            onTap: () => setD(
+                                () => visualChoiceMidpoint = mid),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 8, horizontal: 10),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: selected
+                                      ? const Color(0xFFD4AF37)
+                                      : Colors.white24,
+                                  width: selected ? 2 : 1,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  _kfaLadderImageTile(imgPath),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          range,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          t(entry["key"] as String),
+                                          style: const TextStyle(
+                                              fontSize: 12, height: 1.25),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                    const SizedBox(height: 14),
+                    if (errorText != null)
+                      Text(
+                        errorText,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    if (estimate != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 10, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0xFFD4AF37)
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.track_changes,
+                                color: Color(0xFFD4AF37)),
+                            const SizedBox(width: 8),
+                            Text(
+                              "${t("bodyfat_result")}: ${estimate.toStringAsFixed(1)} %",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: estimate == null
+                    ? null
+                    : () => Navigator.pop(
+                        ctx, double.parse(estimate!.toStringAsFixed(1))),
+                child: Text(t("bodyfat_apply_result")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickDay() async {
+    final initial = dateFromKey(selectedDayKey);
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(t("calendar_pick_title")),
+          content: SingleChildScrollView(
+            child: _WeekStartCalendarPicker(
+              weekStartWeekday: weekStartWeekday,
+              initialDate: initial,
+              weekdayShort: _tWeekdayShort,
+              legendText: t("calendar_weekstart_legend"),
+              onDayPicked: (d) {
+                Navigator.of(ctx).pop(d);
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+          ],
+        );
+      },
+    );
+    if (picked == null) return;
+    setState(() {
+      selectedDayKey = dateKeyFromDate(picked);
+      if (nutritionMode == "Diät") {
+        _applyAutoNutritionTargets();
+      }
+    });
+    _saveAppState();
+    _showDayBalanceDialog();
+  }
+
+  Widget _dayBalanceSectionTitle(String title, {bool isFirst = false}) {
+    return Padding(
+      padding: EdgeInsets.only(top: isFirst ? 0 : 12, bottom: 6),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFFD4AF37),
+        ),
+      ),
+    );
+  }
+
+  Widget _dayBalanceHintLine(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFF8E8C88),
+          fontSize: 10.5,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+
+  /// KPI-Zeilen: Texte aus [t] enden oft mit „:“ — für Zwei-Spalten-Layout nur das letzte entfernen.
+  String _balanceRowLabel(String translated) {
+    final s = translated.trim();
+    if (s.endsWith(':')) return s.substring(0, s.length - 1);
+    return s;
+  }
+
+  Widget _dayBalanceKpiRow(String label, String value,
+      {FontWeight valueWeight = FontWeight.w500}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFFAEAEAE),
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 4,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                color: const Color(0xFFEDEDE5),
+                fontSize: 12.5,
+                fontWeight: valueWeight,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDayBalanceDialog() {
+    _updateMealTotals();
+    final totalCalories =
+        _mealTotals.values.fold(0.0, (s, m) => s + m['calories']!);
+    final totalGrams =
+        _mealTotals.values.fold(0.0, (s, m) => s + m['grams']!);
+    final totalProtein = _mealTotals.values.fold(0.0, (s, m) => s + m['protein']!);
+    final totalCarbs = _mealTotals.values.fold(0.0, (s, m) => s + m['carbs']!);
+    final totalFat = _mealTotals.values.fold(0.0, (s, m) => s + m['fat']!);
+
+    final selectedDayDate = dateFromKey(selectedDayKey);
+    final calWeekStart2 = _startOfWeekContaining(selectedDayDate, weekStartWeekday);
+    final weeklyWeights = weightHistory.entries.where((e) {
+      final d = dateFromKey(e.key);
+      return !d.isBefore(calWeekStart2) && !d.isAfter(selectedDayDate);
+    }).toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final weeklyDelta = weeklyWeights.length >= 2
+        ? (weeklyWeights.last.value.kg - weeklyWeights.first.value.kg)
+        : null;
+
+    final weekRoll = _rollup7DayStats(selectedDayKey);
+    final wDeltaDisplay = weekRoll.weeklyDeltaKg ?? weeklyDelta;
+    final windowId = weekRoll.windowId;
+    var moodPicked = weeklyMoodByWindow[windowId];
+
+    final note = dayNotes[selectedDayKey] ?? "";
+    final dayWeight = weightHistory[selectedDayKey];
+    final rangeDay = dailyKcalRange();
+    String moodKeyForText(String? code) {
+      if (code == "great") return "week_mood_text_great";
+      if (code == "ok") return "week_mood_text_ok";
+      if (code == "low") return "week_mood_text_low";
+      return "";
+    }
+
+    showDialog(
+      context: context,
+      builder: (dCtx) {
+        return StatefulBuilder(
+          builder: (context, setD) {
+            return AlertDialog(
+              title: Text("${t("day_balance_prefix")} $selectedDayKey"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _dayBalanceSectionTitle(t("day_balance_sec_today"),
+                        isFirst: true),
+                    _dayBalanceKpiRow(
+                      t("calories"),
+                      "${totalCalories.toStringAsFixed(1)} / ${_fmtRangeKcal(rangeDay.minKcal, rangeDay.maxKcal)}",
+                    ),
+                    _dayBalanceKpiRow(
+                      t("volume_day_kpi"),
+                      "${_fmtGramsKpi(totalGrams)} g",
+                    ),
+                    _dayBalanceKpiRow(
+                      t("protein"),
+                      "${totalProtein.toStringAsFixed(1)} g",
+                    ),
+                    _dayBalanceKpiRow(
+                      t("carbs"),
+                      "${totalCarbs.toStringAsFixed(1)} g",
+                    ),
+                    _dayBalanceKpiRow(
+                      t("fat"),
+                      "${totalFat.toStringAsFixed(1)} g",
+                    ),
+                    _dayBalanceSectionTitle(t("day_balance_sec_weight")),
+                    if (dayWeight != null)
+                      _dayBalanceKpiRow(
+                        t("weight"),
+                        _weightKpiLine(dayWeight),
+                        valueWeight: FontWeight.w600,
+                      )
+                    else
+                      _dayBalanceKpiRow(t("weight"), "—",
+                          valueWeight: FontWeight.normal),
+                    if (dayWeight != null && dayWeight.hasFormImage)
+                      _weightFormImagePreview(
+                        path: dayWeight.formImagePath,
+                        b64: dayWeight.formImageB64,
+                        maxHeight: 140,
+                        onTap: () => _showWeightFormImageFullscreen(
+                          path: dayWeight.formImagePath,
+                          b64: dayWeight.formImageB64,
+                        ),
+                      ),
+                    _dayBalanceSectionTitle(t("day_balance_sec_calendar")),
+                    _dayBalanceHintLine(t("day_balance_cw_sub")),
+                    _dayBalanceKpiRow(
+                      t("day_balance_cw_row_label"),
+                      wDeltaDisplay == null
+                          ? "—"
+                          : "${wDeltaDisplay >= 0 ? "+" : ""}${wDeltaDisplay.toStringAsFixed(1)} kg",
+                    ),
+                    _dayBalanceSectionTitle(t("day_balance_sec_rolling7")),
+                    _dayBalanceHintLine(t("week_rollup_subtitle")),
+                    _dayBalanceKpiRow(
+                      _balanceRowLabel(t("week_rollup_intake_l")),
+                      "${weekRoll.avgEatenKcal.toStringAsFixed(0)} kcal",
+                    ),
+                    if (weekRoll.goalDayCount > 0 &&
+                        weekRoll.avgDeficitPerDay != null) ...[
+                      _dayBalanceKpiRow(
+                        _balanceRowLabel(t("week_rollup_deficit_day_l")),
+                        "${weekRoll.avgDeficitPerDay!.toStringAsFixed(0)} kcal/Tag",
+                      ),
+                      _dayBalanceKpiRow(
+                        _balanceRowLabel(t("week_rollup_deficit_sum_l")),
+                        "${weekRoll.totalDeficitKcal.toStringAsFixed(0)} kcal",
+                      ),
+                    ],
+                    _dayBalanceKpiRow(
+                      _balanceRowLabel(t("week_rollup_target_band_l")),
+                      tFmt("week_rollup_target_band_v", {
+                        "lo": weekRoll.bandLo.toStringAsFixed(0),
+                        "hi": weekRoll.bandHi.toStringAsFixed(0),
+                        "mid": weekRoll.meanGoalKcal.toStringAsFixed(0),
+                      }),
+                    ),
+                    if (weekRoll.avgWeight != null)
+                      _dayBalanceKpiRow(
+                        _balanceRowLabel(t("week_rollup_w_avg_l")),
+                        "${weekRoll.avgWeight!.toStringAsFixed(1)} kg · n=${weekRoll.weightLogCount}",
+                      ),
+                    _dayBalanceSectionTitle(t("day_balance_sec_context")),
+                    _buildWeekTheoryBlock(
+                      totalDeficitKcal: weekRoll.totalDeficitKcal,
+                      weeklyDeltaKg: wDeltaDisplay,
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    const SizedBox(height: 8),
+                    Text(
+                      "${t("day_note")}:",
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      note.isNotEmpty ? note : t("no_note"),
+                      style: TextStyle(
+                        fontStyle: note.isNotEmpty
+                            ? FontStyle.normal
+                            : FontStyle.italic,
+                        color:
+                            note.isNotEmpty ? Colors.white : Colors.white70,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    const SizedBox(height: 6),
+                    Text(
+                      t("week_mood_title"),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        ChoiceChip(
+                          label: Text(t("week_mood_great")),
+                          selected: moodPicked == "great",
+                          onSelected: (_) {
+                            setD(() {
+                              moodPicked = "great";
+                            });
+                            setState(() {
+                              weeklyMoodByWindow[windowId] = "great";
+                            });
+                            _saveAppState();
+                          },
+                        ),
+                        ChoiceChip(
+                          label: Text(t("week_mood_ok")),
+                          selected: moodPicked == "ok",
+                          onSelected: (_) {
+                            setD(() {
+                              moodPicked = "ok";
+                            });
+                            setState(() {
+                              weeklyMoodByWindow[windowId] = "ok";
+                            });
+                            _saveAppState();
+                          },
+                        ),
+                        ChoiceChip(
+                          label: Text(t("week_mood_low")),
+                          selected: moodPicked == "low",
+                          onSelected: (_) {
+                            setD(() {
+                              moodPicked = "low";
+                            });
+                            setState(() {
+                              weeklyMoodByWindow[windowId] = "low";
+                            });
+                            _saveAppState();
+                          },
+                        ),
+                      ],
+                    ),
+                    if (moodPicked != null && moodPicked!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        t(moodKeyForText(moodPicked)),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFFE8CBA8),
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(dCtx);
+                    _openDayNoteDialog();
+                  },
+                  child: Text(t("edit_note")),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dCtx),
+                  child: const Text("OK"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _resetSelectedDayTracking() async {
+    final shouldReset = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(t("reset_day_title")),
+            content: Text("${t("reset_day_body")} ($selectedDayKey)"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(t("reset")),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!shouldReset) return;
+    setState(() {
+      trackedFoods.removeWhere((t) => t.dayKey == selectedDayKey);
+      lastMealKcalByDay.remove(selectedDayKey);
+    });
+    _saveAppState();
+    _applyDailyKcalOverSchedule();
+  }
+
+  Future<void> _openDayNoteDialog() async {
+    final ctrl = TextEditingController(text: dayNotes[selectedDayKey] ?? "");
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text("${t("day_note")} ($selectedDayKey)"),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 6,
+          minLines: 3,
+          decoration: _touchInputDecoration(t("note_hint")),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t("cancel")),
+          ),
+          TextButton(
+            onPressed: () {
+              final text = ctrl.text.trim();
+              setState(() {
+                if (text.isEmpty) {
+                  dayNotes.remove(selectedDayKey);
+                } else {
+                  dayNotes[selectedDayKey] = text;
+                }
+              });
+              _saveAppState();
+              Navigator.pop(context);
+            },
+            child: Text(t("save")),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openMealNoteDialog(String meal) async {
+    final key = selectedDayKey;
+    final initial = List<MealNoteLine>.from(
+      mealDayNoteLists[key]?[meal] ?? const <MealNoteLine>[],
+    );
+    final result = await showDialog<List<MealNoteLine>>(
+      context: context,
+      builder: (ctx) => _MealNoteChecklistDialog(
+        dayKey: key,
+        mealLabel: _displayMealName(meal),
+        initial: initial,
+        t: t,
+      ),
+    );
+    if (!mounted) return;
+    if (result == null) return;
+    setState(() {
+      if (result.isEmpty) {
+        final m = mealDayNoteLists[key];
+        if (m != null) {
+          m.remove(meal);
+          if (m.isEmpty) {
+            mealDayNoteLists.remove(key);
+          }
+        }
+      } else {
+        mealDayNoteLists.putIfAbsent(key, () => {})[meal] = result;
+      }
+    });
+    _saveAppState();
+  }
+
+  /// Max. 2× pro Tag beim App-Start, wenn noch keine Waage.
+  Future<void> _nudgeWeightOnAppOpen() async {
+    if (!mounted) return;
+    final k = dateKeyFromDate(DateTime.now());
+    if (weightHistory.containsKey(k)) return;
+    final prefs = await SharedPreferences.getInstance();
+    Map<String, int> m = {};
+    final raw = prefs.getString(_kWeightOpenCountByDayKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        m = Map<String, int>.from(
+          (jsonDecode(raw) as Map).map(
+            (a, b) => MapEntry(a.toString(), (b is int) ? b : int.parse(b.toString())),
+          ),
+        );
+      } catch (_) {}
+    }
+    final c = m[k] ?? 0;
+    if (c >= 2) return;
+    m[k] = c + 1;
+    await prefs.setString(_kWeightOpenCountByDayKey, jsonEncode(m));
+    if (!mounted) return;
+    await _openWeightDialog(forDayKey: k);
+  }
+
+  /// Tageskcal über Ziel: Optionen (Extra‑Schritte, Cheatday, ignorieren) — ein Mal pro erneutem «drüber»-Zustand (Prefs wird unter Ziel gelöscht).
+  Future<void> _checkDailyKcalOver() async {
+    if (!mounted) return;
+    if (_dailyOverDialogInFlight) return;
+    if (isCheatDay(selectedDayKey)) return;
+    _updateMealTotals();
+    final total = _mealTotals.values.fold(0.0, (s, e) => s + e['calories']!);
+    final g = goalCalories;
+    if (g <= 0) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (total <= g) {
+      if (prefs.getString(_kSurplusCheatPromptDayKey) == selectedDayKey) {
+        await prefs.remove(_kSurplusCheatPromptDayKey);
+      }
+      return;
+    }
+    if (prefs.getString(_kSurplusCheatPromptDayKey) == selectedDayKey) {
+      return;
+    }
+    if (!mounted) return;
+    _dailyOverDialogInFlight = true;
+    try {
+      final surplus = total - g;
+      final eaten = total.toStringAsFixed(0);
+      final goalS = g.toStringAsFixed(0);
+      final overS = surplus.toStringAsFixed(0);
+      final stepsEst = _walkStepsEstimateForKcal(surplus, currentWeightKg);
+      final curE = _effectiveCutExtraStepsTotal(selectedDayKey);
+      final solE =
+          _suggestedExtraStepsToCoverInSol(curE, surplus, currentWeightKg);
+      final kDelta = kcalFromExtraCutSteps(solE, currentWeightKg) -
+          kcalFromExtraCutSteps(curE, currentWeightKg);
+      if (!mounted) return;
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: Text(t("daily_over_title")),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  tFmt("daily_over_body", {
+                    "eaten": eaten,
+                    "goal": goalS,
+                    "over": overS,
+                  }),
+                  style: const TextStyle(height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  tFmt("daily_over_steps_est", {
+                    "steps": stepsEst.toString(),
+                    "kcal": surplus.toStringAsFixed(0),
+                  }),
+                  style: const TextStyle(height: 1.4, color: Colors.white70),
+                ),
+                if (nutritionMode == "Diät") ...[
+                  const SizedBox(height: 10),
+                  FilledButton.tonal(
+                    onPressed: () => Navigator.pop(ctx, "steps"),
+                    child: Text(t("daily_over_apply_steps")),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, "cheat"),
+                  child: Text(t("daily_over_cheat")),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, "ignore"),
+                  child: Text(
+                    t("daily_over_ignore"),
+                    style: const TextStyle(color: Color(0xFFE57373)),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, "later"),
+                  child: Text(
+                    t("surplus_later"),
+                    style: const TextStyle(color: Colors.white60),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (choice == "steps") {
+        if (nutritionMode == "Diät") {
+          setState(() {
+            final total = solE.clamp(3000, 20000);
+            final base = total.clamp(3000, 10000);
+            final extra = (total - base).clamp(0, 10000);
+            if (base == cutExtraStepsBaseline) {
+              cutExtraStepsByDay.remove(selectedDayKey);
+            } else {
+              cutExtraStepsByDay[selectedDayKey] = base;
+            }
+            if (extra <= 0) {
+              cutExtraStepsAdditionalByDay.remove(selectedDayKey);
+            } else {
+              cutExtraStepsAdditionalByDay[selectedDayKey] = extra;
+            }
+            _applyAutoNutritionTargets();
+          });
+          _saveAppState();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  tFmt("daily_over_snack_steps", {
+                    "k": kDelta.toStringAsFixed(0),
+                  }),
+                ),
+              ),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(t("daily_over_steps_no_diet"))),
+            );
+          }
+        }
+        await prefs.setString(_kSurplusCheatPromptDayKey, selectedDayKey);
+      } else if (choice == "cheat") {
+        await prefs.setString(_kSurplusCheatPromptDayKey, selectedDayKey);
+        if (mounted) unawaited(_openCheatDayManager(selectedDayKey));
+      } else if (choice == "ignore") {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (c2) => AlertDialog(
+            backgroundColor: const Color(0xFF1E1E1E),
+            title: Text(t("daily_over_ignore")),
+            content: Text(
+              t("daily_over_ignore_body"),
+              style: const TextStyle(height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(c2),
+                child: Text(t("dialog_got_it")),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        await prefs.setString(_kSurplusCheatPromptDayKey, selectedDayKey);
+      } else {
+        await prefs.setString(_kSurplusCheatPromptDayKey, selectedDayKey);
+      }
+    } finally {
+      _dailyOverDialogInFlight = false;
+    }
+  }
+
+  Future<void> _maybeAutoOpenWeightMorning({int stackWait = 0}) async {
+    if (!mounted) return;
+    if (!autoOpenWeightMorning) return;
+    final now = DateTime.now();
+    final h = now.hour;
+    if (h < 5 || h >= 12) return;
+
+    final todayKey = dateKeyFromDate(now);
+    if (weightHistory.containsKey(todayKey)) return;
+    if (_lastAutoWeightPromptDay == todayKey) return;
+
+    if (Navigator.of(context, rootNavigator: true).canPop()) {
+      if (stackWait < 10) {
+        await Future<void>.delayed(const Duration(milliseconds: 1400));
+        if (mounted) await _maybeAutoOpenWeightMorning(stackWait: stackWait + 1);
+      }
+      return;
+    }
+
+    setState(() {
+      _lastAutoWeightPromptDay = todayKey;
+    });
+    await _saveAppState();
+    if (!mounted) return;
+    await _openWeightDialog(forDayKey: todayKey);
+  }
+
+  String _weightKpiLine(_WeightDayEntry e) {
+    final kg = e.kg.toStringAsFixed(1);
+    if (e.recordedAt == null) {
+      return "$kg kg";
+    }
+    final ti = e.recordedAt!;
+    final hm =
+        "${ti.hour.toString().padLeft(2, '0')}:${ti.minute.toString().padLeft(2, '0')}";
+    return tFmt("weight_kpi_with_time", {"k": kg, "t": hm});
+  }
+
+  DateTime _dateTimeFromDayKeyAndTime(String dayKey, TimeOfDay tod) {
+    final d = dateFromKey(dayKey);
+    return DateTime(d.year, d.month, d.day, tod.hour, tod.minute);
+  }
+
+  bool _weightFormImageAvailable({String? path, String? b64}) {
+    if (b64 != null && b64.isNotEmpty) return true;
+    if (kIsWeb) return false;
+    return path != null && path.isNotEmpty && File(path).existsSync();
+  }
+
+  Widget _weightFormImageContent({
+    String? path,
+    String? b64,
+    BoxFit fit = BoxFit.contain,
+  }) {
+    if (b64 != null && b64.isNotEmpty) {
+      try {
+        return Image.memory(
+          base64Decode(b64),
+          fit: fit,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.broken_image, color: Colors.white38),
+        );
+      } catch (_) {}
+    }
+    if (!kIsWeb && path != null && path.isNotEmpty) {
+      final f = File(path);
+      if (f.existsSync()) {
+        return Image.file(
+          f,
+          fit: fit,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.broken_image, color: Colors.white38),
+        );
+      }
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _weightFormImagePreview({
+    String? path,
+    String? b64,
+    double maxHeight = 200,
+    VoidCallback? onTap,
+  }) {
+    if (!_weightFormImageAvailable(path: path, b64: b64)) {
+      return const SizedBox.shrink();
+    }
+    final img = ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: ColoredBox(
+        color: Colors.black26,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: maxHeight,
+            minWidth: double.infinity,
+          ),
+          child: _weightFormImageContent(path: path, b64: b64),
+        ),
+      ),
+    );
+    final wrapped = onTap == null
+        ? img
+        : GestureDetector(onTap: onTap, child: img);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: wrapped,
+    );
+  }
+
+  void _showWeightFormImageFullscreen({String? path, String? b64}) {
+    if (!_weightFormImageAvailable(path: path, b64: b64)) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: context.sol.dailyCard,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: _weightFormImageContent(path: path, b64: b64),
+              ),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openWeightDialog({String? forDayKey}) async {
+    final String dayKey;
+    if (forDayKey != null) {
+      dayKey = forDayKey;
+      if (selectedDayKey != forDayKey) {
+        setState(() => selectedDayKey = forDayKey);
+      }
+    } else {
+      dayKey = selectedDayKey;
+    }
+    final existing = weightHistory[dayKey];
+    final ctrl = TextEditingController(
+      text: existing != null ? existing.kg.toStringAsFixed(1) : "",
+    );
+    final dayD = dateFromKey(dayKey);
+    final now = DateTime.now();
+    var tod = TimeOfDay.fromDateTime(
+      existing?.recordedAt ??
+          DateTime(dayD.year, dayD.month, dayD.day, now.hour, now.minute),
+    );
+    String? imagePath = existing?.formImagePath;
+    String? imageB64 = existing?.formImageB64;
+
+    Future<void> pickFormImage(ImageSource source, void Function(void Function()) setL) async {
+      final x = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (x == null) return;
+      try {
+        final bytes = await x.readAsBytes();
+        if (kIsWeb) {
+          setL(() {
+            imageB64 = base64Encode(bytes);
+            imagePath = null;
+          });
+        } else {
+          final dir = await getApplicationDocumentsDirectory();
+          final sub = p.join(dir.path, 'weight_form');
+          await Directory(sub).create(recursive: true);
+          final dest = p.join(sub, '$dayKey.jpg');
+          await File(dest).writeAsBytes(bytes);
+          setL(() {
+            imagePath = dest;
+            imageB64 = base64Encode(bytes);
+          });
+        }
+      } catch (_) {}
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text("${t("enter_weight")} ($dayKey)"),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: _touchInputDecoration("kg"),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showTimePicker(
+                      context: ctx,
+                      initialTime: tod,
+                    );
+                    if (picked != null) {
+                      setL(() => tod = picked);
+                    }
+                  },
+                  icon: const Icon(Icons.schedule, size: 20),
+                  label: Text(
+                    "${t("weight_time_label")}: ${tod.hour.toString().padLeft(2, '0')}:${tod.minute.toString().padLeft(2, '0')}",
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => pickFormImage(ImageSource.gallery, setL),
+                        icon: const Icon(Icons.photo_library_outlined, size: 20),
+                        label: Text(t("weight_form_pick_gallery")),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => pickFormImage(ImageSource.camera, setL),
+                        icon: const Icon(Icons.photo_camera_outlined, size: 20),
+                        label: Text(t("weight_form_pick_camera")),
+                      ),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    t("weight_form_where_hint"),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white38,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                _weightFormImagePreview(
+                  path: imagePath,
+                  b64: imageB64,
+                  maxHeight: 220,
+                  onTap: () => _showWeightFormImageFullscreen(
+                    path: imagePath,
+                    b64: imageB64,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+            TextButton(
+              onPressed: () async {
+                final w = _safeDouble(ctrl.text);
+                if (w == null) return;
+                final at = _dateTimeFromDayKeyAndTime(dayKey, tod);
+                setState(() {
+                  weightHistory[dayKey] = _WeightDayEntry(
+                    kg: w,
+                    recordedAt: at,
+                    formImagePath: kIsWeb ? null : imagePath,
+                    formImageB64: kIsWeb ? imageB64 : null,
+                  );
+                  if (dayKey == dateKeyFromDate(DateTime.now())) {
+                    currentWeightKg = w;
+                    if (nutritionMode != "Advanced") {
+                      _applyAutoNutritionTargets();
+                    }
+                  }
+                });
+                await _saveAppState();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: Text(t("save")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBlessing() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (_) => _BlessingPopup(message: t("blessing")),
+    );
+  }
+
+  bool _mealNoteHasVisibleLines(String dayKey, String meal) {
+    final lines = mealDayNoteLists[dayKey]?[meal];
+    if (lines == null || lines.isEmpty) return false;
+    return lines.any((e) => e.text.trim().isNotEmpty);
+  }
+
+  bool _mealNoteHasOpenTodos(String dayKey, String meal) {
+    final lines = mealDayNoteLists[dayKey]?[meal];
+    if (lines == null) return false;
+    return lines.any((e) => e.text.trim().isNotEmpty && !e.done);
+  }
+}
+
+class _AiMealReviewDialog extends StatefulWidget {
+  const _AiMealReviewDialog({
+    required this.dish,
+    required this.lines,
+    required this.foodDatabase,
+    required this.t,
+    required this.tFmt,
+    required this.touchInputDecoration,
+  });
+
+  final String dish;
+  final List<aiphoto.AiLineRaw> lines;
+  final List<Food> foodDatabase;
+  final String Function(String) t;
+  final String Function(String, Map<String, Object>) tFmt;
+  final InputDecoration Function(String) touchInputDecoration;
+
+  @override
+  State<_AiMealReviewDialog> createState() => _AiMealReviewDialogState();
+}
+
+class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
+  late List<Food?> _selected;
+  late List<TextEditingController> _gramCtrls;
+  late List<bool> _aiMatched;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = [];
+    _aiMatched = [];
+    _gramCtrls = [];
+    for (final it in widget.lines) {
+      final m = aiphoto.matchFoodByAiName(
+        widget.foodDatabase,
+        it.catalogName,
+        (x) => x.name,
+      );
+      _selected.add(m ?? widget.foodDatabase.first);
+      _aiMatched.add(m != null);
+      _gramCtrls.add(
+        TextEditingController(text: it.grams.toStringAsFixed(0)),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _gramCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final foods = List<Food>.from(widget.foodDatabase)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return AlertDialog(
+      title: Text(widget.t("ai_review_title")),
+      content: _solConstrainedDialogScrollBody(
+        context,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.dish.isNotEmpty) ...[
+              Text(
+                widget.dish,
+                style: const TextStyle(
+                  color: Color(0xFFD4AF37),
+                  fontSize: 13.5,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            for (var i = 0; i < widget.lines.length; i++) ...[
+              if (!_aiMatched[i])
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    widget.tFmt("ai_unmatched_line", {
+                      "n": widget.lines[i].catalogName,
+                    }),
+                    style: const TextStyle(
+                      color: Color(0xFFFFB74D),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<Food>(
+                        isExpanded: true,
+                        value: _selected[i]!,
+                        decoration: widget.touchInputDecoration(
+                          widget.t("choose_food"),
+                        ),
+                        dropdownColor: const Color(0xFF1F1F1F),
+                        items: foods
+                            .map(
+                              (ff) => DropdownMenuItem(
+                                value: ff,
+                                child: Text(
+                                  ff.name,
+                                  style: const TextStyle(fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _selected[i] = v);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 76,
+                      child: TextField(
+                        controller: _gramCtrls[i],
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: widget.touchInputDecoration(
+                          widget.t("grams_short"),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: Text(widget.t("cancel")),
+        ),
+        FilledButton(
+          onPressed: () {
+            final out = <({Food food, double grams})>[];
+            for (var i = 0; i < _selected.length; i++) {
+              final f = _selected[i];
+              if (f == null) continue;
+              final raw = _gramCtrls[i].text.trim().replaceAll(",", ".");
+              final g = raw.isEmpty ? null : double.tryParse(raw);
+              if (g == null || g <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(widget.t("track_error_bad"))),
+                );
+                return;
+              }
+              out.add((food: f, grams: g));
+            }
+            if (out.isEmpty) return;
+            Navigator.pop(context, out);
+          },
+          child: Text(widget.t("ai_add_all")),
+        ),
+      ],
+    );
+  }
+}
+
+class _MealNoteChecklistDialog extends StatefulWidget {
+  const _MealNoteChecklistDialog({
+    required this.dayKey,
+    required this.mealLabel,
+    required this.initial,
+    required this.t,
+  });
+
+  final String dayKey;
+  final String mealLabel;
+  final List<MealNoteLine> initial;
+  final String Function(String) t;
+
+  @override
+  State<_MealNoteChecklistDialog> createState() =>
+      _MealNoteChecklistDialogState();
+}
+
+class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
+  late List<MealNoteLine> _rows;
+  late List<TextEditingController> _ctls;
+
+  @override
+  void initState() {
+    super.initState();
+    _rows = List<MealNoteLine>.from(widget.initial);
+    if (_rows.isEmpty) {
+      _rows = [const MealNoteLine()];
+    }
+    _ctls = _rows.map((e) => TextEditingController(text: e.text)).toList();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _syncTextFromFields() {
+    for (var i = 0; i < _rows.length; i++) {
+      _rows[i] = _rows[i].copyWith(text: _ctls[i].text);
+    }
+  }
+
+  void _addLine() {
+    setState(() {
+      _rows.add(const MealNoteLine());
+      _ctls.add(TextEditingController());
+    });
+  }
+
+  void _removeAt(int i) {
+    if (_rows.length <= 1) {
+      setState(() {
+        _rows[0] = const MealNoteLine();
+        _ctls[0].clear();
+      });
+      return;
+    }
+    setState(() {
+      _ctls[i].dispose();
+      _ctls.removeAt(i);
+      _rows.removeAt(i);
+    });
+  }
+
+  List<MealNoteLine> _buildResult() {
+    _syncTextFromFields();
+    return _rows
+        .map((e) => e.copyWith(text: e.text.trim()))
+        .where((e) => e.text.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    return AlertDialog(
+      title: Text("${t("meal_note")} — ${widget.mealLabel}"),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.dayKey,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.white60,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t("meal_note_checklist_sub"),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.white54,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 10),
+              ...List.generate(_rows.length, (i) => _rowWidget(i, t)),
+              const SizedBox(height: 2),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _addLine,
+                  icon: const Icon(Icons.add, size: 20),
+                  label: Text(t("meal_note_add_line")),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t("cancel")),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _buildResult()),
+          child: Text(t("save")),
+        ),
+      ],
+    );
+  }
+
+  Widget _rowWidget(int i, String Function(String) t) {
+    final r = _rows[i];
+    final canToggle = _ctls[i].text.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 0),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Checkbox(
+                value: r.done,
+                onChanged: canToggle
+                    ? (v) {
+                        setState(() {
+                          _syncTextFromFields();
+                          _rows[i] =
+                              _rows[i].copyWith(done: v ?? false);
+                        });
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          Expanded(
+            child: r.done
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10, left: 2),
+                    child: Text(
+                      _ctls[i].text.trim().isEmpty
+                          ? "…"
+                          : _ctls[i].text,
+                      maxLines: 4,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: Colors.white54,
+                        height: 1.25,
+                      ),
+                    ),
+                  )
+                : TextField(
+                    controller: _ctls[i],
+                    onChanged: (_) => setState(() {}),
+                    maxLines: 3,
+                    minLines: 1,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: t("meal_note_line_hint"),
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+          ),
+          IconButton(
+            padding: const EdgeInsets.only(top: 2),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.close, size: 20, color: Colors.white54),
+            onPressed: () => _removeAt(i),
+            tooltip: t("meal_note_remove_line"),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarcodeScanDialog extends StatefulWidget {
+  const _BarcodeScanDialog({required this.t});
+  final String Function(String) t;
+  @override
+  State<_BarcodeScanDialog> createState() => _BarcodeScanDialogState();
+}
+
+class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
+  final MobileScannerController _controller = MobileScannerController();
+  bool _closed = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.t("db_barcode_add")),
+      content: SizedBox(
+        width: 320,
+        height: 320,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            children: [
+              MobileScanner(
+                controller: _controller,
+                onDetect: (cap) {
+                  if (_closed) return;
+                  for (final b in cap.barcodes) {
+                    final v = b.rawValue;
+                    if (v == null || v.isEmpty) continue;
+                    if (v.replaceAll(RegExp(r'[^\d]'), "").length < 8) {
+                      continue;
+                    }
+                    _closed = true;
+                    if (context.mounted) {
+                      Navigator.of(context).pop<String>(v);
+                    }
+                    return;
+                  }
+                },
+              ),
+              Positioned(
+                right: 4,
+                top: 4,
+                child: Material(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(20),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () {
+                      if (_closed) return;
+                      _closed = true;
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekStartCalendarPicker extends StatefulWidget {
+  const _WeekStartCalendarPicker({
+    required this.weekStartWeekday,
+    required this.initialDate,
+    required this.weekdayShort,
+    required this.legendText,
+    required this.onDayPicked,
+  });
+
+  final int weekStartWeekday;
+  final DateTime initialDate;
+  final String Function(int) weekdayShort;
+  final String legendText;
+  final void Function(DateTime) onDayPicked;
+
+  @override
+  State<_WeekStartCalendarPicker> createState() =>
+      _WeekStartCalendarPickerState();
+}
+
+class _WeekStartCalendarPickerState extends State<_WeekStartCalendarPicker> {
+  late DateTime _visibleMonth;
+  late DateTime _selected;
+
+  static DateTime _only(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initialDate;
+    _visibleMonth = DateTime(i.year, i.month, 1);
+    _selected = _only(i);
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  int _daysInMonth(int y, int m) => DateTime(y, m + 1, 0).day;
+
+  void _onCellTap(DateTime d) {
+    if (d.isBefore(DateTime(2020, 1, 1)) || d.isAfter(DateTime(2100, 12, 31))) {
+      return;
+    }
+    final od = _only(d);
+    setState(() => _selected = od);
+    widget.onDayPicked(od);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final y = _visibleMonth.year;
+    final m = _visibleMonth.month;
+    final first = DateTime(y, m, 1);
+    final dim = _daysInMonth(y, m);
+    final lead = first.weekday - 1;
+    final totalCells = ((lead + dim + 6) ~/ 7) * 7;
+    final loc = MaterialLocalizations.of(context);
+    final monthYear = loc.formatMonthYear(_visibleMonth);
+    final today = _only(DateTime.now());
+
+    return SizedBox(
+      width: 340,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: () {
+                  setState(() {
+                    _visibleMonth = DateTime(y, m - 1, 1);
+                    if (_visibleMonth.isBefore(DateTime(2020, 1, 1))) {
+                      _visibleMonth = DateTime(2020, 1, 1);
+                    }
+                  });
+                },
+              ),
+              Text(
+                monthYear,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: () {
+                  setState(() {
+                    _visibleMonth = DateTime(y, m + 1, 1);
+                    if (_visibleMonth.isAfter(DateTime(2100, 12, 1))) {
+                      _visibleMonth = DateTime(2100, 12, 1);
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: List.generate(7, (i) {
+              final wd = i + 1;
+              return Expanded(
+                child: Center(
+                  child: Text(
+                    widget.weekdayShort(wd),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white54,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 2),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
+              mainAxisExtent: 36,
+            ),
+            itemCount: totalCells,
+            itemBuilder: (context, i) {
+              if (i < lead || i >= lead + dim) {
+                return const SizedBox.shrink();
+              }
+              final day = i - lead + 1;
+              final d = DateTime(y, m, day);
+              final isWStart = d.weekday == widget.weekStartWeekday;
+              final isSel = _sameDay(d, _selected);
+              final isToday = _sameDay(d, today);
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _onCellTap(d),
+                  borderRadius: BorderRadius.circular(8),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: isWStart
+                          ? const Color(0x40D4AF37)
+                          : Colors.transparent,
+                      border: Border.all(
+                        color: isSel
+                            ? const Color(0xFFD4AF37)
+                            : (isToday
+                                ? Colors.white30
+                                : (isWStart
+                                    ? const Color(0x99D4AF37)
+                                    : Colors.transparent)),
+                        width: isSel ? 2.2 : 1,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        "$day",
+                        style: TextStyle(
+                          fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                          fontSize: 13,
+                          color: isSel
+                              ? const Color(0xFFD4AF37)
+                              : (isWStart
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.92)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                margin: const EdgeInsets.only(top: 2, right: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0x40D4AF37),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: const Color(0x99D4AF37),
+                    width: 1,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  widget.legendText,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white54,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BlessingPopup extends StatefulWidget {
+  final String message;
+  const _BlessingPopup({required this.message});
+
+  @override
+  State<_BlessingPopup> createState() => _BlessingPopupState();
+}
+
+class _BlessingPopupState extends State<_BlessingPopup>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    );
+    _fade = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 22),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 56),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 22),
+    ]).animate(_controller);
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.8, end: 1.04)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 22,
+      ),
+      TweenSequenceItem(tween: ConstantTween(1.04), weight: 56),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.04, end: 0.9)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 22,
+      ),
+    ]).animate(_controller);
+    _controller.forward().whenComplete(() {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const goldish = Color(0xFFD4AF37);
+    return Center(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Opacity(
+          opacity: _fade.value,
+          child: Transform.scale(scale: _scale.value, child: child),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  vertical: 22, horizontal: 26),
+              decoration: BoxDecoration(
+                color: const Color(0xFF101010),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: goldish.withValues(alpha: 0.35),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: goldish.withValues(alpha: 0.20),
+                    blurRadius: 36,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("🌞", style: TextStyle(fontSize: 52)),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontStyle: FontStyle.italic,
+                      height: 1.35,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

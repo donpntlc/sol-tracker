@@ -1,0 +1,46 @@
+# Codemagic: connect repo, then add an App Store Connect API key in
+# Team integrations → iOS: link it below as app_store_connect, or set env group credentials in UI.
+# Bundle ID matches ios/Runner: com.dean.macrotracker
+
+workflows:
+  ios-release:
+    name: iOS release
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.dean.macrotracker
+    # Un-comment when App Store Connect is added under Team → Integrations, and set the name:
+    # integrations:
+    #   app_store_connect: <your_key_name>
+    scripts:
+      - name: Set up iOS keychain
+        script: keychain initialize
+      - name: Fetch signing files
+        script: app-store-connect fetch-signing-files "com.dean.macrotracker"
+      - name: Add certificates
+        script: keychain add-certificates
+      - name: Set provisioning profiles
+        script: xcode-project use-profiles
+      - name: Get Flutter dependencies
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install
+      - name: Build iOS
+        script: flutter build ipa --release
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      # Optional: set recipients after enabling email in Codemagic app settings
+      # email:
+      #   recipients:
+      #     - you@example.com
+      # Optional TestFlight (requires App Store Connect + integration):
+      # app_store_connect:
+      #   auth: integration
+      #   submit_to_testflight: true
