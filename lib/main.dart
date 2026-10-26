@@ -12408,7 +12408,8 @@ class _MainScreenState extends State<MainScreen> {
                       title: Text(
                           "${_tCat(category)} (${foodsInCategory.length})"),
                       initiallyExpanded: databaseCategoryFilter != "Alle",
-                      children: foodsInCategory.map(_buildFoodCard).toList(),
+                      children: _withFoodDividers(
+                          foodsInCategory.map(_buildFoodCard).toList()),
                     ),
                   );
                 },
@@ -12419,6 +12420,24 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
     );
+  }
+
+  /// Feine Trennlinie zwischen Lebensmitteln / Rezepten in Listen.
+  List<Widget> _withFoodDividers(List<Widget> items) {
+    final out = <Widget>[];
+    for (var i = 0; i < items.length; i++) {
+      if (i > 0) {
+        out.add(Divider(
+          height: 1,
+          thickness: 0.5,
+          indent: 16,
+          endIndent: 16,
+          color: Colors.white.withValues(alpha: 0.10),
+        ));
+      }
+      out.add(items[i]);
+    }
+    return out;
   }
 
   Widget _databaseHighlightsCollapsible() {
