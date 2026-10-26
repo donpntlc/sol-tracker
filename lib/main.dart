@@ -636,6 +636,50 @@ class TrackedFood {
   }
 }
 
+double? foodGramsFromTrackInput(Food food, String inputMode, double v) {
+  if (v <= 0) return null;
+  switch (inputMode) {
+    case "grams":
+      return v;
+    case "kcal":
+      if (food.calories <= 0) return null;
+      return v * 100.0 / food.calories;
+    case "protein":
+      if (food.protein <= 0) return null;
+      return v * 100.0 / food.protein;
+    case "carbs":
+      if (food.carbs <= 0) return null;
+      return v * 100.0 / food.carbs;
+    case "fat":
+      if (food.fat <= 0) return null;
+      return v * 100.0 / food.fat;
+    default:
+      return null;
+  }
+}
+
+double? foodTrackDisplayForGrams(Food food, String inputMode, double grams) {
+  if (grams <= 0) return null;
+  switch (inputMode) {
+    case "grams":
+      return grams;
+    case "kcal":
+      if (food.calories <= 0) return null;
+      return grams * food.calories / 100.0;
+    case "protein":
+      if (food.protein <= 0) return null;
+      return grams * food.protein / 100.0;
+    case "carbs":
+      if (food.carbs <= 0) return null;
+      return grams * food.carbs / 100.0;
+    case "fat":
+      if (food.fat <= 0) return null;
+      return grams * food.fat / 100.0;
+    default:
+      return null;
+  }
+}
+
 /// Eine Zeile in der Mahlzeiten-Notiz (Checkbox + Text, z. B. „+ Elektrolyte“).
 class MealNoteLine {
   const MealNoteLine({this.text = '', this.done = false});
@@ -680,6 +724,145 @@ List<MealNoteLine> mealNoteLinesFromPrefsValue(dynamic v) {
   }
   return [];
 }
+
+// ───────────── Einkaufslisten (Tages- / Monats-Einkauf, Gruppen, Notizen) ─────────────
+
+class _ShoppingListGroup {
+  _ShoppingListGroup({required this.id, required this.name});
+  String id;
+  String name;
+
+  Map<String, dynamic> toMap() => {'id': id, 'n': name};
+
+  factory _ShoppingListGroup.fromMap(Map<String, dynamic> m) {
+    return _ShoppingListGroup(
+      id: (m['id'] ?? m['i'] ?? '').toString(),
+      name: (m['n'] ?? '').toString(),
+    );
+  }
+
+  _ShoppingListGroup copy() => _ShoppingListGroup(id: id, name: name);
+}
+
+class _ShoppingListEntry {
+  _ShoppingListEntry({
+    required this.id,
+    required this.groupId,
+    required this.label,
+    this.quantity = '',
+    this.done = false,
+    this.isNote = false,
+    this.linkedFoodName,
+    this.recipeSourceName,
+  });
+  String id;
+  String groupId;
+  String label;
+  String quantity;
+  bool done;
+  bool isNote;
+  String? linkedFoodName;
+  String? recipeSourceName;
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'g': groupId,
+        'l': label,
+        'q': quantity,
+        'd': done,
+        'n': isNote,
+        'f': linkedFoodName,
+        'rs': recipeSourceName,
+      };
+
+  factory _ShoppingListEntry.fromMap(Map<String, dynamic> m) {
+    return _ShoppingListEntry(
+      id: (m['id'] ?? m['i'] ?? '').toString(),
+      groupId: (m['g'] ?? '_def').toString(),
+      label: (m['l'] ?? '').toString(),
+      quantity: (m['q'] ?? '').toString(),
+      done: m['d'] == true,
+      isNote: m['n'] == true,
+      linkedFoodName: m['f']?.toString(),
+      recipeSourceName: m['rs']?.toString(),
+    );
+  }
+
+  _ShoppingListEntry copy() => _ShoppingListEntry(
+        id: id,
+        groupId: groupId,
+        label: label,
+        quantity: quantity,
+        done: done,
+        isNote: isNote,
+        linkedFoodName: linkedFoodName,
+        recipeSourceName: recipeSourceName,
+      );
+}
+
+class _ShoppingListBundle {
+  _ShoppingListBundle({required this.groups, required this.entries});
+
+  List<_ShoppingListGroup> groups;
+  List<_ShoppingListEntry> entries;
+
+  static _ShoppingListBundle fresh() {
+    return _ShoppingListBundle(
+      groups: [_ShoppingListGroup(id: '_def', name: '')],
+      entries: [],
+    );
+  }
+
+  _ShoppingListBundle copy() => _ShoppingListBundle(
+        groups: groups.map((g) => g.copy()).toList(),
+        entries: entries.map((e) => e.copy()).toList(),
+      );
+
+  Map<String, dynamic> toMap() => {
+        'groups': groups.map((g) => g.toMap()).toList(),
+        'entries': entries.map((e) => e.toMap()).toList(),
+      };
+
+  factory _ShoppingListBundle.fromMap(Object? o) {
+    if (o is! Map) return fresh();
+    final m = Map<String, dynamic>.from(o);
+    final gRaw = m['groups'];
+    final eRaw = m['entries'];
+    var gl = <_ShoppingListGroup>[];
+    if (gRaw is List) {
+      for (final e in gRaw) {
+        if (e is Map) {
+          gl.add(_ShoppingListGroup.fromMap(Map<String, dynamic>.from(e)));
+        }
+      }
+    }
+    if (gl.isEmpty) {
+      gl = [_ShoppingListGroup(id: '_def', name: '')];
+    }
+    var el = <_ShoppingListEntry>[];
+    if (eRaw is List) {
+      for (final e in eRaw) {
+        if (e is Map) {
+          el.add(_ShoppingListEntry.fromMap(Map<String, dynamic>.from(e)));
+        }
+      }
+    }
+    return _ShoppingListBundle(groups: gl, entries: el);
+  }
+
+  String resolveGroupLabel(String groupId, String Function(String) t) {
+    for (final g in groups) {
+      if (g.id == groupId) {
+        if (g.name.trim().isEmpty) return t('shop_group_general');
+        return g.name;
+      }
+    }
+    return t('shop_group_general');
+  }
+}
+
+String _newShoppingId() =>
+    '${DateTime.now().microsecondsSinceEpoch}${math.Random().nextInt(900000) + 100000}';
 
 /// kcal-Korridor für i.d.R. Abend/letzte Nicht-Snack-Mahlzeit: entweder Makro-Band
 /// oder Tages-Rest inkl. optional Snack-Reserve.
@@ -773,6 +956,8 @@ class _TrackPortionScrollPanel extends StatefulWidget {
     required this.displayValueForGrams,
     required this.gramsFromDisplay,
     required this.onChanged,
+  _ShoppingListBundle shoppingDay = _ShoppingListBundle.fresh();
+  _ShoppingListBundle shoppingMonth = _ShoppingListBundle.fresh();
     required this.t,
   });
 
@@ -1027,6 +1212,7 @@ class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
               ),
             ),
             if (onCenterTap != null && centerLabel != null)
+  static const String _kShoppingListsKey = "shopping_lists_v1";
               Positioned(
                 left: 4,
                 right: 4,
@@ -1527,6 +1713,8 @@ class _MainScreenState extends State<MainScreen> {
   /// Frage vor Food/Gen/KI (letzte Nicht-Snack), wenn Tages-Entscheid fehlt.
   bool lastMealTrackPromptEnabled = true;
   final Map<String, _LastMealKcalChoice> lastMealKcalByDay = {};
+  /// Nach Klick „… füllen“ in der Makro-Tabelle: nach Lebensmittelwahl anwenden.
+  String? _pendingTrackFillApply;
 
   // Basis-Verteilung für den Performance-Endpunkt (Summe = 100 pro Makro)
   static const Map<String, Map<String, double>> _performanceMealMacros = {
@@ -3374,6 +3562,15 @@ class _MainScreenState extends State<MainScreen> {
         } catch (_) {}
       }
 
+      final shopRaw = prefs.getString(_kShoppingListsKey);
+      if (shopRaw != null && shopRaw.isNotEmpty) {
+        try {
+          final sm = Map<String, dynamic>.from(jsonDecode(shopRaw) as Map);
+          shoppingDay = _ShoppingListBundle.fromMap(sm['day']);
+          shoppingMonth = _ShoppingListBundle.fromMap(sm['month']);
+        } catch (_) {}
+      }
+
       // Nach jedem Start: SOL-Rezepte aus dem Code nachziehen (auch wenn [foodsRaw]
       // fehlt oder ältere Saves noch ohne neuen Eintrag sind).
       _ensureMissingSolDefaultRecipes();
@@ -3542,6 +3739,13 @@ class _MainScreenState extends State<MainScreen> {
     }
     await prefs.setInt(_kIntroUnlockSessionsKey, introUnlockSessionsToday);
     await prefs.setString(_kUserDbStarKey, jsonEncode(userDbStarByName));
+    await prefs.setString(
+      _kShoppingListsKey,
+      jsonEncode({
+        'day': shoppingDay.toMap(),
+        'month': shoppingMonth.toMap(),
+      }),
+    );
     await prefs.setString(
       _kUserFoodPerformanceKey,
       jsonEncode(userFoodPerformanceByName),
@@ -4115,6 +4319,29 @@ class _MainScreenState extends State<MainScreen> {
       "carb_tag_simple": "Einfach",
       "filter": "Filter",
       "search_food": "Lebensmittel suchen...",
+      "shop_title": "Einkaufslisten",
+      "shop_tab_day": "Tages-Einkauf",
+      "shop_tab_month": "Monats-Einkauf",
+      "shop_group_general": "Allgemein",
+      "shop_group_pick": "Gruppe / Laden",
+      "shop_new_group": "Neue Gruppe",
+      "shop_new_group_hint": "z. B. Rewe, Bioladen, Metro…",
+      "shop_add_note": "Notiz hinzufügen",
+      "shop_add_note_hint": "Freitext",
+      "shop_add_from_db": "Aus Datenbank",
+      "shop_quantity": "Menge / Einheit",
+      "shop_quantity_hint": "z. B. 2, 500 g, 1 Packung",
+      "shop_add_to_list": "Auf die Liste",
+      "shop_add_recipe": "Alle Zutaten auf die Liste",
+      "shop_add_recipe_title": "Rezept: Zutaten übernehmen",
+      "shop_clear_done": "Erledigte entfernen",
+      "shop_empty": "Noch nichts auf der Liste.",
+      "shop_cart_tooltip": "Einkaufslisten",
+      "shop_db_add": "Zum Einkaufswagen",
+      "shop_move_group": "Gruppe verschieben",
+      "shop_delete_entry": "Eintrag löschen",
+      "shop_cancel": "Abbrechen",
+      "shop_ingredient_count": "{n} Zutaten",
       "mode": "Modus",
       "delete": "Löschen",
       "values_per_100g": "Werte auf 100g",
@@ -4232,6 +4459,14 @@ class _MainScreenState extends State<MainScreen> {
       "track_preview": "→ ca. {g} g",
       "track_error_bad":
           "Ungültige Zahl, oder 0 in den Nährwerten/100g für dieses Ziel. Wähl anderes Ziel bzw. „Gramm“.",
+      "track_fill_none": "Nichts zu füllen: Ziel schon erreicht oder kein Abstand bis zur oberen Bandgrenze.",
+      "track_fill_group_label": "Balken füllen",
+      "track_fill_protein": "Protein füllen",
+      "track_fill_carbs": "KH füllen",
+      "track_fill_carb_complex": "Komplexe KH füllen",
+      "track_fill_carb_simple": "Einfache KH füllen",
+      "track_fill_fat": "Fett füllen",
+      "track_fill_kcal": "kcal füllen",
       "recipe_info_tooltip": "Rezept: Bild, Zutaten, Schritte",
       "recipe_ai_generate": "Bild (KI) erzeugen",
       "recipe_ai_placeholder_hint":
@@ -5106,6 +5341,29 @@ class _MainScreenState extends State<MainScreen> {
       "carb_tag_simple": "Simple",
       "filter": "Filter",
       "search_food": "Search food...",
+      "shop_title": "Shopping lists",
+      "shop_tab_day": "Today",
+      "shop_tab_month": "Monthly",
+      "shop_group_general": "General",
+      "shop_group_pick": "Group / store",
+      "shop_new_group": "New group",
+      "shop_new_group_hint": "e.g. grocery chain name",
+      "shop_add_note": "Add note",
+      "shop_add_note_hint": "Free text",
+      "shop_add_from_db": "From database",
+      "shop_quantity": "Quantity / unit",
+      "shop_quantity_hint": "e.g. 2, 500 g, 1 pack",
+      "shop_add_to_list": "Add to list",
+      "shop_add_recipe": "Add all ingredients",
+      "shop_add_recipe_title": "Recipe: add ingredients",
+      "shop_clear_done": "Remove checked",
+      "shop_empty": "Nothing on this list yet.",
+      "shop_cart_tooltip": "Shopping lists",
+      "shop_db_add": "Add to cart",
+      "shop_move_group": "Move to group",
+      "shop_delete_entry": "Delete item",
+      "shop_cancel": "Cancel",
+      "shop_ingredient_count": "{n} ingredients",
       "mode": "Mode",
       "delete": "Delete",
       "values_per_100g": "Values per 100g",
@@ -5220,6 +5478,14 @@ class _MainScreenState extends State<MainScreen> {
       "track_preview": "→ about {g} g",
       "track_error_bad":
           "Invalid number, or 0 in per-100g data for that target. Use grams or another target.",
+      "track_fill_none": "Nothing to add: target already met or no room to the band max.",
+      "track_fill_group_label": "Fill to band",
+      "track_fill_protein": "Fill protein",
+      "track_fill_carbs": "Fill carbs",
+      "track_fill_carb_complex": "Fill complex carbs",
+      "track_fill_carb_simple": "Fill simple carbs",
+      "track_fill_fat": "Fill fat",
+      "track_fill_kcal": "Fill kcal",
       "recipe_info_tooltip": "Recipe: image, ingredients, steps",
       "recipe_ai_generate": "Generate (AI) image",
       "recipe_ai_placeholder_hint":
@@ -5996,6 +6262,29 @@ class _MainScreenState extends State<MainScreen> {
         name: "Kokosöl",
         protein: 0,
         carbs: 0,
+      "shop_title": "Lista za kupovinu",
+      "shop_tab_day": "Dnevno",
+      "shop_tab_month": "Mesečno",
+      "shop_group_general": "Opšte",
+      "shop_group_pick": "Grupa / prodavnica",
+      "shop_new_group": "Nova grupa",
+      "shop_new_group_hint": "npr. naziv lanca",
+      "shop_add_note": "Dodaj belešku",
+      "shop_add_note_hint": "Slobodan tekst",
+      "shop_add_from_db": "Iz baze",
+      "shop_quantity": "Količina / jedinica",
+      "shop_quantity_hint": "npr. 2, 500 g",
+      "shop_add_to_list": "Na listu",
+      "shop_add_recipe": "Svi sastojci na listu",
+      "shop_add_recipe_title": "Recept: sastojci",
+      "shop_clear_done": "Ukloni označeno",
+      "shop_empty": "Lista je prazna.",
+      "shop_cart_tooltip": "Liste za kupovinu",
+      "shop_db_add": "U korpu",
+      "shop_move_group": "Premesti u grupu",
+      "shop_delete_entry": "Obriši stavku",
+      "shop_cancel": "Otkaži",
+      "shop_ingredient_count": "{n} sastojaka",
         sugar: 0,
         fiber: 0,
         fat: 100,
@@ -6110,6 +6399,14 @@ class _MainScreenState extends State<MainScreen> {
         isDefault: true,
         extraCategories: const ["Gemüse"],
       ),
+      "track_fill_none": "Nema šta popuniti: cilj postignut ili nema mesta do gornje granice opsega.",
+      "track_fill_group_label": "Popuni traku",
+      "track_fill_protein": "Protein: popuni",
+      "track_fill_carbs": "UH: popuni",
+      "track_fill_carb_complex": "Kompleksni UH: popuni",
+      "track_fill_carb_simple": "Jednostavni UH: popuni",
+      "track_fill_fat": "Mast: popuni",
+      "track_fill_kcal": "kcal: popuni",
       Food(
         name: "Blumenkohl",
         protein: 1.9,
@@ -6886,6 +7183,29 @@ class _MainScreenState extends State<MainScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+      "shop_title": "Listas de compras",
+      "shop_tab_day": "Dia",
+      "shop_tab_month": "Mês",
+      "shop_group_general": "Geral",
+      "shop_group_pick": "Grupo / loja",
+      "shop_new_group": "Novo grupo",
+      "shop_new_group_hint": "ex.: nome do supermercado",
+      "shop_add_note": "Adicionar nota",
+      "shop_add_note_hint": "Texto livre",
+      "shop_add_from_db": "Da base",
+      "shop_quantity": "Quantidade / unidade",
+      "shop_quantity_hint": "ex.: 2, 500 g",
+      "shop_add_to_list": "Adicionar à lista",
+      "shop_add_recipe": "Todos os ingredientes",
+      "shop_add_recipe_title": "Receita: ingredientes",
+      "shop_clear_done": "Remover feitos",
+      "shop_empty": "Lista vazia.",
+      "shop_cart_tooltip": "Listas de compras",
+      "shop_db_add": "Ao carrinho",
+      "shop_move_group": "Mover para grupo",
+      "shop_delete_entry": "Apagar item",
+      "shop_cancel": "Cancelar",
+      "shop_ingredient_count": "{n} ingredientes",
                   setState(() {
                     foodDatabase.removeWhere((f) => f.name == food.name);
                     userDbStarByName.remove(food.name);
@@ -6983,6 +7303,31 @@ class _MainScreenState extends State<MainScreen> {
                   t: t,
                   height: 200,
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                    onPressed: () async {
+                      Navigator.of(ctx).pop();
+                      await Future<void>.delayed(Duration.zero);
+                      if (mounted) {
+                        await _showRecipeToShoppingSheet(food);
+                      }
+                    },
+                    icon: const Icon(Icons.shopping_cart_outlined),
+                    label: Text(t("shop_add_recipe")),
+                  ),
+      "track_fill_none": "Nada a preencher: meta atingida ou sem espaço até ao máximo da faixa.",
+      "track_fill_group_label": "Preencher faixa",
+      "track_fill_protein": "Preencher proteína",
+      "track_fill_carbs": "Preencher hidratos",
+      "track_fill_carb_complex": "Hidratos complexos: preencher",
+      "track_fill_carb_simple": "Hidratos simples: preencher",
+      "track_fill_fat": "Preencher gordura",
+      "track_fill_kcal": "Preencher kcal",
+                ),
                 const Divider(height: 1, color: Color(0xFF2A2A2A)),
                 Expanded(
                   child: SingleChildScrollView(
@@ -7000,6 +7345,306 @@ class _MainScreenState extends State<MainScreen> {
             ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _openShoppingListsScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => _ShoppingListsEditor(
+          day: shoppingDay.copy(),
+          month: shoppingMonth.copy(),
+          foods: List<Food>.from(foodDatabase),
+          t: t,
+          onSaved: (d, m) {
+            setState(() {
+              shoppingDay = d;
+              shoppingMonth = m;
+            });
+            _saveAppState();
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showFoodToShoppingSheet(Food food) async {
+    if (!mounted) return;
+    var isMonth = false;
+    var groupId = shoppingDay.groups.first.id;
+    final qtyCtrl = TextEditingController(text: "1");
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setL) {
+            final b = isMonth ? shoppingMonth : shoppingDay;
+            if (!b.groups.any((g) => g.id == groupId)) {
+              groupId = b.groups.first.id;
+            }
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewInsetsOf(ctx).bottom + 16,
+                  left: 16,
+                  right: 16,
+                  top: 12,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        food.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        t("shop_add_to_list"),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white54,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<bool>(
+                        segments: [
+                          ButtonSegment<bool>(
+                            value: false,
+                            label: Text(t("shop_tab_day")),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text(t("shop_tab_month")),
+                          ),
+                        ],
+                        selected: {isMonth},
+                        onSelectionChanged: (s) {
+                          setL(() {
+                            isMonth = s.first;
+                            final nb = isMonth ? shoppingMonth : shoppingDay;
+                            groupId = nb.groups.first.id;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: groupId,
+                        isExpanded: true,
+                        decoration:
+                            _touchInputDecoration(t("shop_group_pick")),
+                        items: b.groups
+                            .map(
+                              (g) => DropdownMenuItem<String>(
+                                value: g.id,
+                                child: Text(
+                                  b.resolveGroupLabel(g.id, t),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) =>
+                            setL(() => groupId = v ?? groupId),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: qtyCtrl,
+                        decoration: _touchInputDecoration(t("shop_quantity")),
+                      ),
+                      const SizedBox(height: 18),
+                      FilledButton(
+                        onPressed: () {
+                          final bundle = isMonth ? shoppingMonth : shoppingDay;
+                          setState(() {
+                            bundle.entries.add(
+                              _ShoppingListEntry(
+                                id: _newShoppingId(),
+                                groupId: groupId,
+                                label: food.name,
+                                quantity: qtyCtrl.text.trim(),
+                                linkedFoodName: food.name,
+                              ),
+                            );
+                          });
+                          _saveAppState();
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(t("shop_add_to_list")),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: Text(t("shop_add_to_list")),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    qtyCtrl.dispose();
+  }
+
+  Future<void> _showRecipeToShoppingSheet(Food recipe) async {
+    if (!mounted) return;
+    if (recipe.ingredients.isEmpty) return;
+    var isMonth = false;
+    var groupId = shoppingDay.groups.first.id;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setL) {
+            final b = isMonth ? shoppingMonth : shoppingDay;
+            if (!b.groups.any((g) => g.id == groupId)) {
+              groupId = b.groups.first.id;
+            }
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      t("shop_add_recipe_title"),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      recipe.name,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SegmentedButton<bool>(
+                      segments: [
+                        ButtonSegment<bool>(
+                          value: false,
+                          label: Text(t("shop_tab_day")),
+                        ),
+                        ButtonSegment<bool>(
+                          value: true,
+                          label: Text(t("shop_tab_month")),
+                        ),
+                      ],
+                      selected: {isMonth},
+                      onSelectionChanged: (s) {
+                        setL(() {
+                          isMonth = s.first;
+                          final nb = isMonth ? shoppingMonth : shoppingDay;
+                          groupId = nb.groups.first.id;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: groupId,
+                      isExpanded: true,
+                      decoration:
+                          _touchInputDecoration(t("shop_group_pick")),
+                      items: b.groups
+                          .map(
+                            (g) => DropdownMenuItem<String>(
+                              value: g.id,
+                              child: Text(
+                                b.resolveGroupLabel(g.id, t),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setL(() => groupId = v ?? groupId),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      t("shop_ingredient_count").replaceAll(
+                        "{n}",
+                        "${recipe.ingredients.length}",
+                      ),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white38,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          recipe.ingredients.join("\n"),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: Colors.white60,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: () {
+                        final bundle = isMonth ? shoppingMonth : shoppingDay;
+                        setState(() {
+                          for (final line in recipe.ingredients) {
+                            final t0 = line.trim();
+                            if (t0.isEmpty) continue;
+                            bundle.entries.add(
+                              _ShoppingListEntry(
+                                id: _newShoppingId(),
+                                groupId: groupId,
+                                label: t0,
+                                recipeSourceName: recipe.name,
+                              ),
+                            );
+                          }
+                        });
+                        _saveAppState();
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(t("shop_add_recipe")),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.shopping_cart_outlined),
+                      label: Text(t("shop_add_recipe")),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -7121,6 +7766,84 @@ class _MainScreenState extends State<MainScreen> {
         textAlign: TextAlign.center,
       ),
     );
+  }
+
+  /// Rest-Menge (g) bis **Obergrenze** des Makro-Bands für [meal] (Ziel: Balken auffüllen).
+  double? _mealMacroFillGapG(
+    String meal,
+    String macro, {
+    String? preWorkoutCarbKind,
+  }) {
+    if (macro == "carbs" &&
+        meal == "Pre-Workout" &&
+        (preWorkoutCarbKind == "komplex" || preWorkoutCarbKind == "einfach")) {
+      final gDayM = effectiveMacroGoalsForDay(selectedDayKey);
+      final dayCarbG = gDayM.carbs;
+      if (dayCarbG <= 0.01) return null;
+      final maxG = preWorkoutCarbKind == "komplex"
+          ? dayCarbG * 0.20
+          : dayCarbG * 0.15;
+      final split = _mealCarbKindSplitG("Pre-Workout");
+      final current =
+          preWorkoutCarbKind == "komplex" ? split.komplex : split.einfach;
+      return (maxG - current).clamp(0.0, 1e9);
+    }
+    final r = dynamicMealMacroRangeG(meal, macro);
+    final cur = _mealTotals[meal]![macro] ?? 0.0;
+    // Bis zur Zielmitte des Bands auffüllen.
+    return ((r.minG + r.maxG) / 2 - cur).clamp(0.0, 1e9);
+  }
+
+  /// Rest-kcal bis **Obergrenze** des Mahlzeiten-kcal-Bands.
+  double? _mealKcalFillGap(String meal) {
+    final r = displayMealKcalRangeForUi(meal);
+    final cur = _mealTotals[meal]!['calories'] ?? 0.0;
+    return ((r.minKcal + r.maxKcal) / 2 - cur).clamp(0.0, 1e9);
+  }
+
+  /// Gramm, sodass [food] ungefähr [gap] g des Ziel-Makros (bzw. kcal) in [meal] deckt.
+  double? _fillGramsForTarget(
+    Food food,
+    String inputMode,
+    String meal, {
+    String? preWorkoutCarbKind,
+  }) {
+    if (inputMode == "grams") return null;
+    if (inputMode == "kcal") {
+      final gap = _mealKcalFillGap(meal);
+      if (gap == null || gap <= 0) return null;
+      return _gramsFromTrackInputDisplay(food, "kcal", gap);
+    }
+    if (inputMode == "protein" || inputMode == "carbs" || inputMode == "fat") {
+      final macro = inputMode;
+      if (macro == "carbs" && meal == "Pre-Workout") {
+        final k = preWorkoutCarbKind;
+        if (k == "komplex" || k == "einfach") {
+          final gap = _mealMacroFillGapG(meal, "carbs", preWorkoutCarbKind: k);
+          if (gap == null || gap <= 0) return null;
+          return _gramsFromTrackInputDisplay(food, "carbs", gap);
+        }
+        return null;
+      }
+      final gap = _mealMacroFillGapG(meal, macro);
+      if (gap == null || gap <= 0) return null;
+      return _gramsFromTrackInputDisplay(food, macro, gap);
+    }
+    return null;
+  }
+
+  /// „Balken füllen“: setzt Eingabemodus + angezeigten Wert, oder `null` → Snackbar.
+  ({String text, String mode})? _tryTrackFillField(
+    Food food,
+    String meal,
+    String target, {
+    String? preWorkoutCarbKind,
+  }) {
+    final g = _fillGramsForTarget(food, target, meal,
+        preWorkoutCarbKind: preWorkoutCarbKind);
+    if (g == null || g <= 0) return null;
+    final d = _trackDisplayValueForGrams(food, target, g);
+    return (text: (d ?? g).toStringAsFixed(0), mode: target);
   }
 
   @override
@@ -11510,6 +12233,11 @@ class _MainScreenState extends State<MainScreen> {
         title: Text(t("food_database")),
         actions: [
           IconButton(
+            tooltip: t("shop_cart_tooltip"),
+            onPressed: _openShoppingListsScreen,
+            icon: const Icon(Icons.shopping_cart_outlined),
+          ),
+          IconButton(
             tooltip: t("db_barcode_add"),
             onPressed: _openBarcodeAddFlow,
             icon: const Icon(Icons.qr_code_scanner),
@@ -12017,12 +12745,30 @@ class _MainScreenState extends State<MainScreen> {
         ? fixedMeal
         : (meals.contains("Snacks") ? "Snacks" : meals.first);
     final g = TextEditingController(text: "100");
+    var inputMode = "grams";
     if (!mounted) return;
     final useMealPicker = fixedMeal == null || !meals.contains(fixedMeal);
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setL) => AlertDialog(
+        builder: (ctx, setL) {
+          void applyMealFill(String mode, {String? preCarb}) {
+            final gFill = _fillGramsForTarget(food, mode, meal,
+                preWorkoutCarbKind: preCarb);
+            if (gFill == null || gFill <= 0) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(t("track_fill_none"))),
+              );
+              return;
+            }
+            setL(() {
+              inputMode = mode;
+              final d = _trackDisplayValueForGrams(food, mode, gFill);
+              g.text = (d ?? gFill).toStringAsFixed(1);
+            });
+          }
+          return AlertDialog(
           backgroundColor: const Color(0xFF1E1E1E),
           title: Text(t("barcode_add_to_track")),
           content: Column(
@@ -12064,11 +12810,124 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 10),
               ],
+              Text(
+                t("track_input_mode"),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              DropdownButtonFormField<String>(
+                value: inputMode,
+                isExpanded: true,
+                decoration: _touchInputDecoration(t("track_input_mode")),
+                items: [
+                  DropdownMenuItem(
+                    value: "grams",
+                    child: Text(t("track_mode_grams")),
+                  ),
+                  if (food.calories > 0.01)
+                    DropdownMenuItem(
+                      value: "kcal",
+                      child: Text(t("track_mode_kcal")),
+                    ),
+                  if (food.protein > 0.01)
+                    DropdownMenuItem(
+                      value: "protein",
+                      child: Text(t("track_mode_protein")),
+                    ),
+                  if (food.carbs > 0.01)
+                    DropdownMenuItem(
+                      value: "carbs",
+                      child: Text(t("track_mode_carbs")),
+                    ),
+                  if (food.fat > 0.01)
+                    DropdownMenuItem(
+                      value: "fat",
+                      child: Text(t("track_mode_fat")),
+                    ),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setL(() => inputMode = v);
+                },
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  t("track_fill_group_label"),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFFFFB74D),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: [
+                  if (food.protein > 0.01)
+                    ActionChip(
+                      label: Text(
+                        t("track_fill_protein"),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      onPressed: () => applyMealFill("protein"),
+                    ),
+                  if (food.carbs > 0.01 && meal != "Pre-Workout")
+                    ActionChip(
+                      label: Text(
+                        t("track_fill_carbs"),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      onPressed: () => applyMealFill("carbs"),
+                    ),
+                  if (meal == "Pre-Workout" && food.carbs > 0.01) ...[
+                    ActionChip(
+                      label: Text(
+                        t("track_fill_carb_complex"),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      onPressed: () => applyMealFill("carbs", preCarb: "komplex"),
+                    ),
+                    ActionChip(
+                      label: Text(
+                        t("track_fill_carb_simple"),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      onPressed: () => applyMealFill("carbs", preCarb: "einfach"),
+                    ),
+                  ],
+                  if (food.fat > 0.01)
+                    ActionChip(
+                      label: Text(
+                        t("track_fill_fat"),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      onPressed: () => applyMealFill("fat"),
+                    ),
+                  if (food.calories > 0.01)
+                    ActionChip(
+                      label: Text(
+                        t("track_fill_kcal"),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      onPressed: () => applyMealFill("kcal"),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
               TextField(
                 controller: g,
+                onChanged: (_) => setL(() {}),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: _touchInputDecoration("${t("grams")} (g)"),
+                decoration: _touchInputDecoration(t("track_value_label")),
               ),
             ],
           ),
@@ -12079,7 +12938,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             FilledButton(
               onPressed: () {
-                final gv = _tryParseUserNumber(g.text);
+                final gv = _gramsForTrackedAdd(food, inputMode, g.text);
                 if (gv == null || gv <= 0) return;
                 setState(() {
                   trackedFoods.add(
@@ -12103,7 +12962,8 @@ class _MainScreenState extends State<MainScreen> {
               child: Text(t("add")),
             ),
           ],
-        ),
+        );
+        },
       ),
     );
   }
@@ -12705,6 +13565,13 @@ class _MainScreenState extends State<MainScreen> {
               title: Text(t("db_edit_food")),
               onTap: () => _openEditUserFoodDialog(food),
             ),
+          ListTile(
+            dense: true,
+            leading:
+                const Icon(Icons.shopping_cart_outlined, color: Color(0xFFD4AF37)),
+            title: Text(t("shop_db_add")),
+            onTap: () => _showFoodToShoppingSheet(food),
+          ),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: _foodCardDetailContent(
@@ -14205,6 +15072,37 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Nach Pfeil: nur **Makro-Tabelle** (Balken P/C/F), ohne Food-Buttons/Listen.
+  /// „Füllen“: Lebensmittel wählen → Menge bis zur Zielmitte/Bandgrenze vorschlagen.
+  Widget _trackFillButton(String meal, String code) {
+    final key = switch (code) {
+      "p" => "track_fill_protein",
+      "c" => "track_fill_carbs",
+      "cP" => "track_fill_carb_complex",
+      "cE" => "track_fill_carb_simple",
+      "f" => "track_fill_fat",
+      _ => "track_fill_kcal",
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+          minimumSize: const Size(0, 30),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: () {
+          _pendingTrackFillApply = code;
+          addTrackedFood(meal);
+        },
+        icon: Icon(
+          code == "k" ? Icons.bolt : Icons.vertical_align_top,
+          size: 16,
+        ),
+        label: Text(t(key), style: const TextStyle(fontSize: 12)),
+      ),
+    );
+  }
+
   Widget _mealMacroTableBlock(String meal) {
     final totals = _mealTotals[meal]!;
     final pR = dynamicMealMacroRangeG(meal, "protein");
@@ -14301,6 +15199,7 @@ class _MainScreenState extends State<MainScreen> {
                 recommendVal: recG.p,
                 rangeBarSurface: mSurf,
               ),
+              _trackFillButton(meal, "p"),
             ],
           ),
         ),
@@ -14329,6 +15228,7 @@ class _MainScreenState extends State<MainScreen> {
                   recommendVal: null,
                   rangeBarSurface: mSurf,
                 ),
+                _trackFillButton(meal, "cP"),
                 Padding(
                   padding: const EdgeInsets.only(left: 2, right: 2, bottom: 2),
                   child: Align(
@@ -14361,6 +15261,7 @@ class _MainScreenState extends State<MainScreen> {
                   recommendVal: null,
                   rangeBarSurface: mSurf,
                 ),
+                _trackFillButton(meal, "cE"),
                 Padding(
                   padding: const EdgeInsets.only(left: 2, right: 2, bottom: 2),
                   child: Align(
@@ -14396,6 +15297,7 @@ class _MainScreenState extends State<MainScreen> {
                   recommendVal: recG.c,
                   rangeBarSurface: mSurf,
                 ),
+                _trackFillButton(meal, "c"),
               ],
               _kpiLine(
                 t("of_which_sugar"),
@@ -14428,6 +15330,8 @@ class _MainScreenState extends State<MainScreen> {
                 recommendVal: recG.f,
                 rangeBarSurface: mSurf,
               ),
+              _trackFillButton(meal, "f"),
+              _trackFillButton(meal, "k"),
             ],
           ),
         ),
@@ -21024,6 +21928,11 @@ class _MainScreenState extends State<MainScreen> {
           t: t,
           tFmt: tFmt,
           touchInputDecoration: _touchInputDecoration,
+          trackMeal: meal,
+          fillGramsForTarget: (food, mode, {preCarb}) =>
+              _fillGramsForTarget(food, mode, meal,
+                  preWorkoutCarbKind: preCarb),
+          displayValueForGrams: _trackDisplayValueForGrams,
         ),
       );
       if (picked == null || picked.isEmpty || !mounted) return;
@@ -21085,6 +21994,10 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _addTrackedFoodImpl(String meal) {
+    var pendingFillLocal = _pendingTrackFillApply;
+    if (pendingFillLocal != null) {
+      _pendingTrackFillApply = null;
+    }
     Food? selectedFood;
     final recipePortionCtrl = TextEditingController(text: "1");
     final recipeGramCtrl = TextEditingController();
@@ -21152,6 +22065,72 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDialogState) {
+          void tryApplyPendingFill(Food f) {
+            if (pendingFillLocal == null) return;
+            final tag = pendingFillLocal!;
+            String? target;
+            String? preCarb;
+            switch (tag) {
+              case "p":
+                target = "protein";
+                break;
+              case "c":
+                target = "carbs";
+                break;
+              case "f":
+                target = "fat";
+                break;
+              case "k":
+                target = "kcal";
+                break;
+              case "cP":
+                target = "carbs";
+                preCarb = "komplex";
+                break;
+              case "cE":
+                target = "carbs";
+                preCarb = "einfach";
+                break;
+              default:
+                target = null;
+            }
+            void onFail() {
+              if (!dialogCtx.mounted) return;
+              ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                SnackBar(content: Text(t("track_fill_none"))),
+              );
+            }
+
+            if (target == null) {
+              pendingFillLocal = null;
+              return;
+            }
+            if (tag == "c" && meal == "Pre-Workout") {
+              onFail();
+              pendingFillLocal = null;
+              return;
+            }
+            final r = _tryTrackFillField(
+              f,
+              meal,
+              target,
+              preWorkoutCarbKind: preCarb,
+            );
+            if (r == null) {
+              onFail();
+              pendingFillLocal = null;
+              return;
+            }
+            if (f.isRecipe) {
+              recipeAdvanced = true;
+              advInputMode = r.mode;
+              advCtrl.text = r.text;
+            } else {
+              inputMode = r.mode;
+              amountCtrl.text = r.text;
+            }
+            pendingFillLocal = null;
+          }
           final foods = filteredFoods(selectedCategory);
           final tfSol = trackTypeFilter;
           final solProtein = _topPicksProtein(solReorderFilter: tfSol);
@@ -21426,9 +22405,11 @@ class _MainScreenState extends State<MainScreen> {
                           onChanged: foods.isEmpty
                               ? null
                               : (val) {
+                                  if (val == null) return;
                                   setDialogState(() {
                                     selectedFood = val;
                                     syncRecipeFields(val);
+                                    tryApplyPendingFill(val);
                                   });
                                 },
                         ),
@@ -21574,6 +22555,165 @@ class _MainScreenState extends State<MainScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
                         style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          t("track_fill_group_label"),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFFFFB74D),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: [
+                          if (fInList.protein > 0.01)
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_protein"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                    fInList, meal, "protein");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  advInputMode = r.mode;
+                                  advCtrl.text = r.text;
+                                });
+                              },
+                            ),
+                          if (fInList.carbs > 0.01 && meal != "Pre-Workout")
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_carbs"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                    fInList, meal, "carbs");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  advInputMode = r.mode;
+                                  advCtrl.text = r.text;
+                                });
+                              },
+                            ),
+                          if (meal == "Pre-Workout" && fInList.carbs > 0.01) ...[
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_carb_complex"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                  fInList,
+                                  meal,
+                                  "carbs",
+                                  preWorkoutCarbKind: "komplex",
+                                );
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  advInputMode = r.mode;
+                                  advCtrl.text = r.text;
+                                });
+                              },
+                            ),
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_carb_simple"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r = _tryTrackFillField(
+                                  fInList,
+                                  meal,
+                                  "carbs",
+                                  preWorkoutCarbKind: "einfach",
+                                );
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  advInputMode = r.mode;
+                                  advCtrl.text = r.text;
+                                });
+                              },
+                            ),
+                          ],
+                          if (fInList.fat > 0.01)
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_fat"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r =
+                                    _tryTrackFillField(fInList, meal, "fat");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  advInputMode = r.mode;
+                                  advCtrl.text = r.text;
+                                });
+                              },
+                            ),
+                          if (fInList.calories > 0.01)
+                            ActionChip(
+                              label: Text(
+                                t("track_fill_kcal"),
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              onPressed: () {
+                                final r =
+                                    _tryTrackFillField(fInList, meal, "kcal");
+                                if (r == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(t("track_fill_none"))),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() {
+                                  advInputMode = r.mode;
+                                  advCtrl.text = r.text;
+                                });
+                              },
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Align(
@@ -21759,6 +22899,165 @@ class _MainScreenState extends State<MainScreen> {
                         fontSize: 11,
                         fontStyle: FontStyle.italic,
                       ),
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        t("track_fill_group_label"),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFFFFB74D),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 4,
+                      children: [
+                        if (fInList.protein > 0.01)
+                          ActionChip(
+                            label: Text(
+                              t("track_fill_protein"),
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              final r = _tryTrackFillField(
+                                  fInList, meal, "protein");
+                              if (r == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("track_fill_none"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                inputMode = r.mode;
+                                amountCtrl.text = r.text;
+                              });
+                            },
+                          ),
+                        if (fInList.carbs > 0.01 && meal != "Pre-Workout")
+                          ActionChip(
+                            label: Text(
+                              t("track_fill_carbs"),
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              final r = _tryTrackFillField(
+                                  fInList, meal, "carbs");
+                              if (r == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("track_fill_none"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                inputMode = r.mode;
+                                amountCtrl.text = r.text;
+                              });
+                            },
+                          ),
+                        if (meal == "Pre-Workout" && fInList.carbs > 0.01) ...[
+                          ActionChip(
+                            label: Text(
+                              t("track_fill_carb_complex"),
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              final r = _tryTrackFillField(
+                                fInList,
+                                meal,
+                                "carbs",
+                                preWorkoutCarbKind: "komplex",
+                              );
+                              if (r == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("track_fill_none"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                inputMode = r.mode;
+                                amountCtrl.text = r.text;
+                              });
+                            },
+                          ),
+                          ActionChip(
+                            label: Text(
+                              t("track_fill_carb_simple"),
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              final r = _tryTrackFillField(
+                                fInList,
+                                meal,
+                                "carbs",
+                                preWorkoutCarbKind: "einfach",
+                              );
+                              if (r == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("track_fill_none"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                inputMode = r.mode;
+                                amountCtrl.text = r.text;
+                              });
+                            },
+                          ),
+                        ],
+                        if (fInList.fat > 0.01)
+                          ActionChip(
+                            label: Text(
+                              t("track_fill_fat"),
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              final r =
+                                  _tryTrackFillField(fInList, meal, "fat");
+                              if (r == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("track_fill_none"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                inputMode = r.mode;
+                                amountCtrl.text = r.text;
+                              });
+                            },
+                          ),
+                        if (fInList.calories > 0.01)
+                          ActionChip(
+                            label: Text(
+                              t("track_fill_kcal"),
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              final r =
+                                  _tryTrackFillField(fInList, meal, "kcal");
+                              if (r == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(t("track_fill_none"))),
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                inputMode = r.mode;
+                                amountCtrl.text = r.text;
+                              });
+                            },
+                          ),
+                      ],
                     ),
                   ],
                 ],
@@ -23465,6 +24764,9 @@ class _AiMealReviewDialog extends StatefulWidget {
     required this.t,
     required this.tFmt,
     required this.touchInputDecoration,
+    required this.trackMeal,
+    required this.fillGramsForTarget,
+    required this.displayValueForGrams,
   });
 
   final String dish;
@@ -23473,6 +24775,14 @@ class _AiMealReviewDialog extends StatefulWidget {
   final String Function(String) t;
   final String Function(String, Map<String, Object>) tFmt;
   final InputDecoration Function(String) touchInputDecoration;
+  final String trackMeal;
+  final double? Function(
+    Food food,
+    String inputMode, {
+    String? preCarb,
+  }) fillGramsForTarget;
+  final double? Function(Food food, String inputMode, double grams)
+      displayValueForGrams;
 
   @override
   State<_AiMealReviewDialog> createState() => _AiMealReviewDialogState();
@@ -23482,6 +24792,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
   late List<Food?> _selected;
   late List<TextEditingController> _gramCtrls;
   late List<bool> _aiMatched;
+  late List<String> _inputMode;
 
   @override
   void initState() {
@@ -23489,6 +24800,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
     _selected = [];
     _aiMatched = [];
     _gramCtrls = [];
+    _inputMode = [];
     for (final it in widget.lines) {
       final m = aiphoto.matchFoodByAiName(
         widget.foodDatabase,
@@ -23500,6 +24812,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
       _gramCtrls.add(
         TextEditingController(text: it.grams.toStringAsFixed(0)),
       );
+      _inputMode.add("grams");
     }
   }
 
@@ -23550,49 +24863,203 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
                 ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<Food>(
-                        isExpanded: true,
-                        value: _selected[i]!,
-                        decoration: widget.touchInputDecoration(
-                          widget.t("choose_food"),
-                        ),
-                        dropdownColor: const Color(0xFF1F1F1F),
-                        items: foods
-                            .map(
-                              (ff) => DropdownMenuItem(
-                                value: ff,
-                                child: Text(
-                                  ff.name,
-                                  style: const TextStyle(fontSize: 14),
-                                  overflow: TextOverflow.ellipsis,
+                child: Builder(
+                  builder: (context) {
+                    final f = _selected[i]!;
+                    void applyRowFill(String mode, {String? preCarb}) {
+                      final gFill = widget.fillGramsForTarget(
+                        f,
+                        mode,
+                        preCarb: preCarb,
+                      );
+                      if (gFill == null || gFill <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(widget.t("track_fill_none")),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() {
+                        _inputMode[i] = mode;
+                        final d = widget.displayValueForGrams(f, mode, gFill);
+                        _gramCtrls[i].text = (d ?? gFill).toStringAsFixed(1);
+                      });
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<Food>(
+                                isExpanded: true,
+                                value: f,
+                                decoration: widget.touchInputDecoration(
+                                  widget.t("choose_food"),
                                 ),
+                                dropdownColor: const Color(0xFF1F1F1F),
+                                items: foods
+                                    .map(
+                                      (ff) => DropdownMenuItem(
+                                        value: ff,
+                                        child: Text(
+                                          ff.name,
+                                          style: const TextStyle(fontSize: 14),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() => _selected[i] = v);
+                                },
                               ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _selected[i] = v);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 76,
-                      child: TextField(
-                        controller: _gramCtrls[i],
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
+                            ),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 100,
+                              child: DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                value: _inputMode[i],
+                                decoration: widget.touchInputDecoration(""),
+                                items: [
+                                  DropdownMenuItem(
+                                    value: "grams",
+                                    child: Text(
+                                      widget.t("track_mode_grams"),
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  if (f.calories > 0.01)
+                                    DropdownMenuItem(
+                                      value: "kcal",
+                                      child: Text(
+                                        widget.t("track_mode_kcal"),
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  if (f.protein > 0.01)
+                                    DropdownMenuItem(
+                                      value: "protein",
+                                      child: Text(
+                                        widget.t("track_mode_protein"),
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  if (f.carbs > 0.01)
+                                    DropdownMenuItem(
+                                      value: "carbs",
+                                      child: Text(
+                                        widget.t("track_mode_carbs"),
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  if (f.fat > 0.01)
+                                    DropdownMenuItem(
+                                      value: "fat",
+                                      child: Text(
+                                        widget.t("track_mode_fat"),
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                ],
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() => _inputMode[i] = v);
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                        decoration: widget.touchInputDecoration(
-                          widget.t("grams_short"),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: _gramCtrls[i],
+                          onChanged: (_) => setState(() {}),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: widget.touchInputDecoration(
+                            widget.t("track_value_label"),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            widget.t("track_fill_group_label"),
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFFFFB74D),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          children: [
+                            if (f.protein > 0.01)
+                              ActionChip(
+                                label: Text(
+                                  widget.t("track_fill_protein"),
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                                onPressed: () => applyRowFill("protein"),
+                              ),
+                            if (f.carbs > 0.01 &&
+                                widget.trackMeal != "Pre-Workout")
+                              ActionChip(
+                                label: Text(
+                                  widget.t("track_fill_carbs"),
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                                onPressed: () => applyRowFill("carbs"),
+                              ),
+                            if (widget.trackMeal == "Pre-Workout" &&
+                                f.carbs > 0.01) ...[
+                              ActionChip(
+                                label: Text(
+                                  widget.t("track_fill_carb_complex"),
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                                onPressed: () => applyRowFill("carbs",
+                                    preCarb: "komplex"),
+                              ),
+                              ActionChip(
+                                label: Text(
+                                  widget.t("track_fill_carb_simple"),
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                                onPressed: () => applyRowFill("carbs",
+                                    preCarb: "einfach"),
+                              ),
+                            ],
+                            if (f.fat > 0.01)
+                              ActionChip(
+                                label: Text(
+                                  widget.t("track_fill_fat"),
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                                onPressed: () => applyRowFill("fat"),
+                              ),
+                            if (f.calories > 0.01)
+                              ActionChip(
+                                label: Text(
+                                  widget.t("track_fill_kcal"),
+                                  style: const TextStyle(fontSize: 10.5),
+                                ),
+                                onPressed: () => applyRowFill("kcal"),
+                              ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -23610,15 +25077,23 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
             for (var i = 0; i < _selected.length; i++) {
               final f = _selected[i];
               if (f == null) continue;
+              final mode = _inputMode[i];
               final raw = _gramCtrls[i].text.trim().replaceAll(",", ".");
-              final g = raw.isEmpty ? null : double.tryParse(raw);
-              if (g == null || g <= 0) {
+              final v = raw.isEmpty ? null : double.tryParse(raw);
+              if (v == null || v <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(widget.t("track_error_bad"))),
                 );
                 return;
               }
-              out.add((food: f, grams: g));
+              final gOut = foodGramsFromTrackInput(f, mode, v);
+              if (gOut == null || gOut <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(widget.t("track_error_bad"))),
+                );
+                return;
+              }
+              out.add((food: f, grams: gOut));
             }
             if (out.isEmpty) return;
             Navigator.pop(context, out);
@@ -24225,6 +25700,493 @@ class _BlessingPopupState extends State<_BlessingPopup>
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ShoppingListsEditor extends StatefulWidget {
+  const _ShoppingListsEditor({
+    required this.day,
+    required this.month,
+    required this.foods,
+    required this.t,
+    required this.onSaved,
+  });
+
+  final _ShoppingListBundle day;
+  final _ShoppingListBundle month;
+  final List<Food> foods;
+  final String Function(String) t;
+  final void Function(_ShoppingListBundle day, _ShoppingListBundle month)
+      onSaved;
+
+  @override
+  State<_ShoppingListsEditor> createState() => _ShoppingListsEditorState();
+}
+
+class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
+  late _ShoppingListBundle day;
+  late _ShoppingListBundle month;
+  bool isMonthTab = false;
+
+  @override
+  void initState() {
+    super.initState();
+    day = widget.day;
+    month = widget.month;
+  }
+
+  void _persist() => widget.onSaved(day, month);
+
+  _ShoppingListBundle get _b => isMonthTab ? month : day;
+
+  Future<void> _moveEntryDialog(
+      _ShoppingListBundle b, _ShoppingListEntry e) async {
+    var gid = e.groupId;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text(widget.t("shop_move_group")),
+          content: DropdownButtonFormField<String>(
+            value: gid,
+            isExpanded: true,
+            items: b.groups
+                .map(
+                  (g) => DropdownMenuItem<String>(
+                    value: g.id,
+                    child: Text(
+                      b.resolveGroupLabel(g.id, widget.t),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) => setL(() => gid = v ?? gid),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(widget.t("shop_cancel")),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() => e.groupId = gid);
+                _persist();
+                Navigator.pop(ctx);
+              },
+              child: Text(widget.t("save")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _entryTile(_ShoppingListBundle b, _ShoppingListEntry e) {
+    final parts = <String>[];
+    if (e.quantity.isNotEmpty) parts.add(e.quantity);
+    if (e.recipeSourceName != null && e.recipeSourceName!.trim().isNotEmpty) {
+      parts.add("«${e.recipeSourceName}»");
+    }
+    final sub = parts.join(" · ");
+
+    return Dismissible(
+      key: ValueKey<String>(e.id),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) {
+        setState(() => b.entries.removeWhere((x) => x.id == e.id));
+        _persist();
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 18),
+        color: Colors.red.withValues(alpha: 0.28),
+        child: const Icon(Icons.delete_outline),
+      ),
+      child: CheckboxListTile(
+        value: e.done,
+        onChanged: (v) {
+          setState(() => e.done = v ?? false);
+          _persist();
+        },
+        title: Text(
+          e.label,
+          style: TextStyle(
+            decoration: e.done ? TextDecoration.lineThrough : null,
+            color: e.done ? Colors.white38 : Colors.white,
+          ),
+        ),
+        subtitle: sub.isEmpty
+            ? null
+            : Text(sub, style: const TextStyle(fontSize: 11.5)),
+        secondary: IconButton(
+          tooltip: widget.t("shop_move_group"),
+          icon: const Icon(Icons.drive_file_move_outline, size: 20),
+          onPressed: () => _moveEntryDialog(b, e),
+        ),
+        controlAffinity: ListTileControlAffinity.leading,
+      ),
+    );
+  }
+
+  Widget _buildGroupSection(_ShoppingListBundle b, _ShoppingListGroup g) {
+    final items = b.entries.where((e) => e.groupId == g.id).toList();
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            title: Text(
+              b.resolveGroupLabel(g.id, widget.t),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            trailing: g.id != "_def"
+                ? IconButton(
+                    icon:
+                        const Icon(Icons.delete_outline, color: Colors.white54),
+                    tooltip: widget.t("delete"),
+                    onPressed: () {
+                      setState(() {
+                        for (final e in b.entries) {
+                          if (e.groupId == g.id) e.groupId = "_def";
+                        }
+                        b.groups.removeWhere((x) => x.id == g.id);
+                      });
+                      _persist();
+                    },
+                  )
+                : null,
+          ),
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: Text(
+                widget.t("shop_empty"),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.32),
+                ),
+              ),
+            )
+          else
+            ...items.map((e) => _entryTile(b, e)),
+        ],
+      ),
+    );
+  }
+
+  void _addGroupDialog() {
+    final c = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(widget.t("shop_new_group")),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: widget.t("shop_new_group_hint"),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(widget.t("shop_cancel")),
+          ),
+          TextButton(
+            onPressed: () {
+              final n = c.text.trim();
+              if (n.isEmpty) return;
+              setState(() {
+                _b.groups.add(_ShoppingListGroup(id: _newShoppingId(), name: n));
+              });
+              _persist();
+              Navigator.pop(ctx);
+            },
+            child: Text(widget.t("save")),
+          ),
+        ],
+      ),
+    ).then((_) => c.dispose());
+  }
+
+  void _addNoteDialog() {
+    final c = TextEditingController();
+    var gid = _b.groups.first.id;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text(widget.t("shop_add_note")),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: gid,
+                isExpanded: true,
+                decoration: InputDecoration(labelText: widget.t("shop_group_pick")),
+                items: _b.groups
+                    .map(
+                      (g) => DropdownMenuItem<String>(
+                        value: g.id,
+                        child: Text(
+                          _b.resolveGroupLabel(g.id, widget.t),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setL(() => gid = v ?? gid),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: c,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: widget.t("shop_add_note_hint"),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(widget.t("shop_cancel")),
+            ),
+            TextButton(
+              onPressed: () {
+                final text = c.text.trim();
+                if (text.isEmpty) return;
+                setState(() {
+                  _b.entries.add(
+                    _ShoppingListEntry(
+                      id: _newShoppingId(),
+                      groupId: gid,
+                      label: text,
+                      isNote: true,
+                    ),
+                  );
+                });
+                _persist();
+                Navigator.pop(ctx);
+              },
+              child: Text(widget.t("save")),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) => c.dispose());
+  }
+
+  Future<void> _pickFoodFromDb() async {
+    var needle = "";
+    final food = await showModalBottomSheet<Food>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setL) {
+            final filtered = widget.foods.where((f) {
+              if (needle.trim().isEmpty) return true;
+              return f.name.toLowerCase().contains(needle.trim().toLowerCase());
+            }).toList();
+            final h = MediaQuery.sizeOf(ctx).height * 0.72;
+            return SafeArea(
+              child: SizedBox(
+                height: h,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: widget.t("search_food"),
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onChanged: (v) => setL(() => needle = v),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final f = filtered[i];
+                          return ListTile(
+                            title: Text(f.name),
+                            onTap: () => Navigator.pop(ctx, f),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (food == null || !mounted) return;
+
+    var gid = _b.groups.first.id;
+    final qty = TextEditingController(text: "1");
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text(food.name),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: gid,
+                isExpanded: true,
+                decoration:
+                    InputDecoration(labelText: widget.t("shop_group_pick")),
+                items: _b.groups
+                    .map(
+                      (g) => DropdownMenuItem<String>(
+                        value: g.id,
+                        child: Text(
+                          _b.resolveGroupLabel(g.id, widget.t),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setL(() => gid = v ?? gid),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: qty,
+                decoration:
+                    InputDecoration(labelText: widget.t("shop_quantity")),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(widget.t("shop_cancel")),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _b.entries.add(
+                    _ShoppingListEntry(
+                      id: _newShoppingId(),
+                      groupId: gid,
+                      label: food.name,
+                      quantity: qty.text.trim(),
+                      linkedFoodName: food.name,
+                    ),
+                  );
+                });
+                _persist();
+                Navigator.pop(ctx);
+              },
+              child: Text(widget.t("shop_add_to_list")),
+            ),
+          ],
+        ),
+      ),
+    );
+    qty.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final b = _b;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t("shop_title")),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (v) {
+              if (v == "clear") {
+                setState(() => b.entries.removeWhere((e) => e.done));
+                _persist();
+              }
+            },
+            itemBuilder: (ctx) => [
+              PopupMenuItem(
+                value: "clear",
+                child: Text(t("shop_clear_done")),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: SegmentedButton<bool>(
+              segments: [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text(t("shop_tab_day")),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text(t("shop_tab_month")),
+                ),
+              ],
+              selected: {isMonthTab},
+              onSelectionChanged: (s) =>
+                  setState(() => isMonthTab = s.first),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.only(
+                bottom: 20 + MediaQuery.paddingOf(context).bottom,
+              ),
+              children: [
+                for (final g in b.groups) _buildGroupSection(b, g),
+              ],
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            heroTag: "shop_note",
+            tooltip: t("shop_add_note"),
+            onPressed: _addNoteDialog,
+            child: const Icon(Icons.sticky_note_2_outlined),
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton.small(
+            heroTag: "shop_grp",
+            tooltip: t("shop_new_group"),
+            onPressed: _addGroupDialog,
+            child: const Icon(Icons.create_new_folder_outlined),
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: "shop_db",
+            tooltip: t("shop_add_from_db"),
+            onPressed: _pickFoodFromDb,
+            child: const Icon(Icons.add_shopping_cart),
+          ),
+        ],
       ),
     );
   }
