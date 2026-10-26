@@ -6504,7 +6504,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                "${f.grams.toStringAsFixed(1)} g",
+                "${f.grams.toStringAsFixed(0)} g",
                 style: const TextStyle(fontSize: 12, color: Colors.white54),
               ),
               const SizedBox(height: 12),
@@ -6578,11 +6578,11 @@ class _MainScreenState extends State<MainScreen> {
     final c = food.carbs * g / 100.0;
     final f0 = food.fat * g / 100.0;
     return tFmt("track_recipe_result", {
-      "g": g.toStringAsFixed(1),
+      "g": g.toStringAsFixed(0),
       "kcal": kc.toStringAsFixed(0),
-      "p": p.toStringAsFixed(1),
-      "c": c.toStringAsFixed(1),
-      "f": f0.toStringAsFixed(1),
+      "p": p.toStringAsFixed(0),
+      "c": c.toStringAsFixed(0),
+      "f": f0.toStringAsFixed(0),
     });
   }
 
@@ -8696,9 +8696,7 @@ class _MainScreenState extends State<MainScreen> {
   /// Tracked Menge in g fürs UI (KPI) — ohne sinnlose Kommastellen.
   String _fmtGramsKpi(double g) {
     if (g.isNaN || g.isInfinite) return "0";
-    final r = (g * 10).round() / 10;
-    if (r == r.truncateToDouble()) return r.toStringAsFixed(0);
-    return r.toStringAsFixed(1);
+    return g.round().toString();
   }
 
   /// Advanced-Dialoge: 2 Nachkommastellen, Gleitkomma-Artefakte ausblenden.
@@ -8757,7 +8755,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  String _fmtCenterG(double centerG) => "${centerG.toStringAsFixed(1)} g";
+  String _fmtCenterG(double centerG) => "${centerG.toStringAsFixed(0)} g";
 
   String _fmtMacroTargetG(
     double minG,
@@ -8805,7 +8803,7 @@ class _MainScreenState extends State<MainScreen> {
             },
             behavior: HitTestBehavior.opaque,
             child: Text(
-              "${current.toStringAsFixed(1)} / $targetPart",
+              "${current.toStringAsFixed(0)} / $targetPart",
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: context.sol.onCard,
@@ -12738,7 +12736,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           Text(
-            "${value.toStringAsFixed(1)} $unit",
+            "${value.toStringAsFixed(0)} $unit",
             style: TextStyle(
               color: hintColor.withValues(alpha: 0.65),
               fontSize: 12,
@@ -12944,7 +12942,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
               SizedBox(height: compact ? 1 : 3),
               Text(
-                "${val.toStringAsFixed(1)} g",
+                "${val.toStringAsFixed(0)} g",
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -14401,7 +14399,7 @@ class _MainScreenState extends State<MainScreen> {
               ],
               _kpiLine(
                 t("of_which_sugar"),
-                "${totals['sugar']!.toStringAsFixed(1)} g",
+                "${totals['sugar']!.toStringAsFixed(0)} g",
               ),
             ],
           ),
@@ -14554,7 +14552,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
               _kpiLine(
                 t("of_which_sugar"),
-                "${totals['sugar']!.toStringAsFixed(1)} g",
+                "${totals['sugar']!.toStringAsFixed(0)} g",
               ),
             ],
           ),
@@ -14765,7 +14763,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 1),
             Text(
-              "${grams.toStringAsFixed(1)} g",
+              "${grams.toStringAsFixed(0)} g",
               style: TextStyle(
                 color: color,
                 fontSize: 12,
@@ -14824,7 +14822,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             children: [
               TextSpan(
-                text: "${f.grams.toStringAsFixed(1)} g",
+                text: "${f.grams.toStringAsFixed(0)} g",
                 style: TextStyle(
                   color: context.sol.onCard,
                   fontWeight: FontWeight.w600,
@@ -14850,7 +14848,7 @@ class _MainScreenState extends State<MainScreen> {
         if (f.sugar > 0.05 || f.fiber > 0.05) ...[
           const SizedBox(height: 4),
           Text(
-            "${t("of_which_sugar")} ${f.sugar.toStringAsFixed(1)} · ${t("of_which_fiber")} ${f.fiber.toStringAsFixed(1)} g",
+            "${t("of_which_sugar")} ${f.sugar.toStringAsFixed(0)} · ${t("of_which_fiber")} ${f.fiber.toStringAsFixed(0)} g",
             style: TextStyle(
               color: muted.withValues(alpha: 0.85),
               fontSize: 10,
@@ -14918,7 +14916,7 @@ class _MainScreenState extends State<MainScreen> {
             if (m['sugar']! > 0.05 || m['fiber']! > 0.05) ...[
               const SizedBox(height: 4),
               Text(
-                "${t("of_which_sugar")} ${m['sugar']!.toStringAsFixed(1)} · ${t("of_which_fiber")} ${m['fiber']!.toStringAsFixed(1)} g",
+                "${t("of_which_sugar")} ${m['sugar']!.toStringAsFixed(0)} · ${t("of_which_fiber")} ${m['fiber']!.toStringAsFixed(0)} g",
                 style: TextStyle(
                   color: muted.withValues(alpha: 0.85),
                   fontSize: 10,
@@ -17976,7 +17974,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
                 Text(
-                  "${current.toStringAsFixed(1)} / ${_fmtRangeKcal(range.minKcal, range.maxKcal)}",
+                  "${current.toStringAsFixed(0)} / ${_fmtRangeKcal(range.minKcal, range.maxKcal)}",
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: onCard,
@@ -18083,9 +18081,9 @@ class _MainScreenState extends State<MainScreen> {
               alignment: Alignment.centerRight,
               child: Text(
                 isSelectedDayCrashout
-                    ? "${t("cheatday_min_only")} · ${t("target_short")} ≥ ${goal.toStringAsFixed(1)}"
+                    ? "${t("cheatday_min_only")} · ${t("target_short")} ≥ ${goal.toStringAsFixed(0)}"
                     : (cap > 0
-                        ? "${(current / cap * 100).toStringAsFixed(1)}% · ${t("target_short")} ${goal.toStringAsFixed(1)}"
+                        ? "${(current / cap * 100).toStringAsFixed(0)}% · ${t("target_short")} ${goal.toStringAsFixed(0)}"
                         : ""),
                 style: TextStyle(
                   fontSize: 12,
@@ -18660,7 +18658,7 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
               Text(
-                "${current.toStringAsFixed(1)} / ${_fmtRangeKcal(minKcal, maxKcal)}",
+                "${current.toStringAsFixed(0)} / ${_fmtRangeKcal(minKcal, maxKcal)}",
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
@@ -19180,7 +19178,7 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             TextSpan(text: "$label "),
             TextSpan(
-              text: "${displayPct.toStringAsFixed(1)}%",
+              text: "${displayPct.toStringAsFixed(0)}%",
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
               ),
@@ -19198,7 +19196,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     return Text(
       scaleEnd > 0
-          ? "$label ${(current / scaleEnd * 100).toStringAsFixed(1)}%"
+          ? "$label ${(current / scaleEnd * 100).toStringAsFixed(0)}%"
           : label,
       style: TextStyle(fontSize: 12, color: mainTextColor),
     );
@@ -19362,8 +19360,8 @@ class _MainScreenState extends State<MainScreen> {
 
   // Formatierter Range-Text "min–max einheit" (verwendet "–" Gedankenstrich).
   String _fmtRangeG(double minVal, double maxVal) {
-    final lo = minVal.toStringAsFixed(1);
-    final hi = maxVal.toStringAsFixed(1);
+    final lo = minVal.toStringAsFixed(0);
+    final hi = maxVal.toStringAsFixed(0);
     if (isSelectedDayCrashout) {
       return "≥ $lo g · ${t("cheatday_no_max")}";
     }
@@ -19372,8 +19370,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   String _fmtRangeKcal(double minVal, double maxVal) {
-    final lo = minVal.toStringAsFixed(1);
-    final hi = maxVal.toStringAsFixed(1);
+    final lo = minVal.toStringAsFixed(0);
+    final hi = maxVal.toStringAsFixed(0);
     if (isSelectedDayCrashout) {
       return "≥ $lo kcal · ${t("cheatday_no_max")}";
     }
@@ -20077,11 +20075,11 @@ class _MainScreenState extends State<MainScreen> {
                                   remainingFat,
                                 );
                                 genPGram.text =
-                                    (s["pGrams"]! as double).toStringAsFixed(1);
+                                    (s["pGrams"]! as double).toStringAsFixed(0);
                                 genCGram.text =
-                                    (s["cGrams"]! as double).toStringAsFixed(1);
+                                    (s["cGrams"]! as double).toStringAsFixed(0);
                                 genFGram.text =
-                                    (s["fGrams"]! as double).toStringAsFixed(1);
+                                    (s["fGrams"]! as double).toStringAsFixed(0);
                                 wizardStep = 4;
                               });
                             },
@@ -20192,7 +20190,7 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      "${t("protein")} — ${t("free_suffix")}: ${pFreeM.toStringAsFixed(1)}% · ${t("carbs")} — ${t("free_suffix")}: ${cFreeM.toStringAsFixed(1)}% · ${t("fat")} — ${t("free_suffix")}: ${fFreeM.toStringAsFixed(1)}%",
+                      "${t("protein")} — ${t("free_suffix")}: ${pFreeM.toStringAsFixed(0)}% · ${t("carbs")} — ${t("free_suffix")}: ${cFreeM.toStringAsFixed(0)}% · ${t("fat")} — ${t("free_suffix")}: ${fFreeM.toStringAsFixed(0)}%",
                       style: TextStyle(
                         fontSize: 11.5,
                         color: pPct > pFreeM + 0.01 ||
@@ -20211,7 +20209,7 @@ class _MainScreenState extends State<MainScreen> {
                         decimal: true,
                       ),
                       decoration: _touchInputDecoration(
-                          "${t("protein")} % (≤ ${pFreeM.toStringAsFixed(1)})"),
+                          "${t("protein")} % (≤ ${pFreeM.toStringAsFixed(0)})"),
                     ),
                     const SizedBox(height: 6),
                     TextField(
@@ -20221,7 +20219,7 @@ class _MainScreenState extends State<MainScreen> {
                         decimal: true,
                       ),
                       decoration: _touchInputDecoration(
-                          "${t("carbs")} % (≤ ${cFreeM.toStringAsFixed(1)})"),
+                          "${t("carbs")} % (≤ ${cFreeM.toStringAsFixed(0)})"),
                     ),
                     const SizedBox(height: 6),
                     TextField(
@@ -20231,7 +20229,7 @@ class _MainScreenState extends State<MainScreen> {
                         decimal: true,
                       ),
                       decoration: _touchInputDecoration(
-                          "${t("fat")} % (≤ ${fFreeM.toStringAsFixed(1)})"),
+                          "${t("fat")} % (≤ ${fFreeM.toStringAsFixed(0)})"),
                     ),
                     const SizedBox(height: 6),
                     Wrap(
@@ -20281,21 +20279,21 @@ class _MainScreenState extends State<MainScreen> {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        "${t("missing_protein")}: ${remainingProtein.toStringAsFixed(1)}g",
+                        "${t("missing_protein")}: ${remainingProtein.toStringAsFixed(0)}g",
                         style: const TextStyle(color: _proteinColor, fontSize: 14),
                       ),
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        "${t("missing_carbs")}: ${remainingCarbs.toStringAsFixed(1)}g",
+                        "${t("missing_carbs")}: ${remainingCarbs.toStringAsFixed(0)}g",
                         style: const TextStyle(color: _carbColor, fontSize: 14),
                       ),
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        "${t("missing_fat")}: ${remainingFat.toStringAsFixed(1)}g",
+                        "${t("missing_fat")}: ${remainingFat.toStringAsFixed(0)}g",
                         style: const TextStyle(color: _fatColor, fontSize: 14),
                       ),
                     ),
@@ -20417,11 +20415,11 @@ class _MainScreenState extends State<MainScreen> {
                                         remainingFat,
                                       );
                                       genPGram.text =
-                                          (s["pGrams"]! as double).toStringAsFixed(1);
+                                          (s["pGrams"]! as double).toStringAsFixed(0);
                                       genCGram.text =
-                                          (s["cGrams"]! as double).toStringAsFixed(1);
+                                          (s["cGrams"]! as double).toStringAsFixed(0);
                                       genFGram.text =
-                                          (s["fGrams"]! as double).toStringAsFixed(1);
+                                          (s["fGrams"]! as double).toStringAsFixed(0);
                                       wizardStep = 4;
                                       if (genFoodListScroll.hasClients) {
                                         genFoodListScroll.jumpTo(0);
@@ -20481,11 +20479,11 @@ class _MainScreenState extends State<MainScreen> {
                                             remainingFat,
                                           );
                                           genPGram.text = (s["pGrams"]! as double)
-                                              .toStringAsFixed(1);
+                                              .toStringAsFixed(0);
                                           genCGram.text = (s["cGrams"]! as double)
-                                              .toStringAsFixed(1);
+                                              .toStringAsFixed(0);
                                           genFGram.text = (s["fGrams"]! as double)
-                                              .toStringAsFixed(1);
+                                              .toStringAsFixed(0);
                                           genSearchCtrl.clear();
                                           wizardStep = 4;
                                         }
@@ -20672,7 +20670,7 @@ class _MainScreenState extends State<MainScreen> {
                         const SizedBox(height: 6),
                       ],
                       Text(
-                        "${t("achieved")}: ${t("abbr_protein")} ${solvedProtein.toStringAsFixed(1)}g | ${t("abbr_carbs")} ${solvedCarbs.toStringAsFixed(1)}g | ${t("abbr_fat")} ${solvedFat.toStringAsFixed(1)}g",
+                        "${t("achieved")}: ${t("abbr_protein")} ${solvedProtein.toStringAsFixed(0)}g | ${t("abbr_carbs")} ${solvedCarbs.toStringAsFixed(0)}g | ${t("abbr_fat")} ${solvedFat.toStringAsFixed(0)}g",
                         style: const TextStyle(fontSize: 14),
                       ),
                       if (usedFallback)
@@ -22661,7 +22659,7 @@ class _MainScreenState extends State<MainScreen> {
                         isFirst: true),
                     _dayBalanceKpiRow(
                       t("calories"),
-                      "${totalCalories.toStringAsFixed(1)} / ${_fmtRangeKcal(rangeDay.minKcal, rangeDay.maxKcal)}",
+                      "${totalCalories.toStringAsFixed(0)} / ${_fmtRangeKcal(rangeDay.minKcal, rangeDay.maxKcal)}",
                     ),
                     _dayBalanceKpiRow(
                       t("volume_day_kpi"),
@@ -22669,15 +22667,15 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     _dayBalanceKpiRow(
                       t("protein"),
-                      "${totalProtein.toStringAsFixed(1)} g",
+                      "${totalProtein.toStringAsFixed(0)} g",
                     ),
                     _dayBalanceKpiRow(
                       t("carbs"),
-                      "${totalCarbs.toStringAsFixed(1)} g",
+                      "${totalCarbs.toStringAsFixed(0)} g",
                     ),
                     _dayBalanceKpiRow(
                       t("fat"),
-                      "${totalFat.toStringAsFixed(1)} g",
+                      "${totalFat.toStringAsFixed(0)} g",
                     ),
                     _dayBalanceSectionTitle(t("day_balance_sec_weight")),
                     if (dayWeight != null)
