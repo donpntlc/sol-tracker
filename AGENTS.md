@@ -90,6 +90,13 @@
 ### Backlog vom 17.10. – erledigt (live seit 19.10., APPV „19.10. 10:30“)
 Anstrengung Stufe 2 „Letzte unsauber“, Erinnerung im Anfängermodus, Gewichtsschritte pro Gerät, Timer-Ton (vorher/ersetzen, auch im Reiter Routinen), Supersatz, Wochenbericht mit Export, Dragon Flag, Split-Wechsel A/B im Wochentakt, kcal pro Training, Training nachträglich bearbeiten inkl. Endzeit, automatische Update-Prüfung. Offen sind nur noch die Bild-Wünsche (Reverse Fly Cable überkreuzt, Überkopf-Trizeps, Dragon Flag, Seitheben am Kabel in Deans Variante: Rolle leicht unter Hüfthöhe, Kabel hinter dem Rücken, ca. 30° schräg zum Turm).
 
+### Backlog vom 19.10. – erledigt (live seit 26.10., APPV „26.10. 12:45“)
+Anstrengung 1–4 neu (Zu leicht · Letzte unsauber · Nur halb geschafft · Alles gegeben), Zirkel mit 3+ Übungen („Zur Gruppe davor hinzufügen“), Pause nur nach der letzten Übung einer Gruppe (Ansicht bleibt stehen, bis Pause vorbei/„Weiter“), Aufwärm-Markierung (blau) im Training und Routinen-Editor, „Deficit Deadlift (Trap Bar)“ inkl. Umbenennung im Verlauf (Migration `tb1`), Check-in vor/nach Training (Schalter in Daten, Schlüssel `hantelbuch.checkin`, Felder `food`/`feel` am Training, Auswertung im Wochenbericht).
+
+### Noch offen (REPIT)
+- **Sprache Englisch** in den Einstellungen (alle Texte, Übungen, Einführung, Hinweise).
+- Bild „Deficit Deadlift (Trap Bar)“ (Trap Bar, erhöht auf Platte) – nutzt bis dahin das Kreuzheben-Bild.
+
 ## 5b. Strategie / Fahrplan (Deans Entscheidung)
 1. **Erst Web-App:** REPIT und SOL Tracker laufen vorerst als **Web-Apps** (GitHub Pages, aufs iPhone über „Zum Home-Bildschirm“). Kein App Store, solange die Funktionen noch wachsen. So geht jede Änderung sofort live.
 2. **Dann verknüpfen:** SOL Tracker (Ernährung) und REPIT (Training) werden zu **einer App „SOL“** zusammengeführt, mit den Bereichen PREPIT und REPIT, gemeinsamen Daten (z. B. Trainings-kcal → Tagesdefizit) und einem gemeinsamen Abo.
@@ -101,6 +108,10 @@ Anstrengung Stufe 2 „Letzte unsauber“, Erinnerung im Anfängermodus, Gewicht
 - Geplant: **eine App „SOL“** (Logo „SOL“) mit zwei Bereichen: **PREPIT** (Ernährung, links) und **REPIT** (Training). Ein gemeinsames Abo für beide (kostenlos / Monat / Jahr).
 - Design-Wunsch für SOL: **feine Trennlinien zwischen einzelnen Lebensmitteln und Rezepten** in Listen.
 - **Kalorien aus dem Training:** Standardmässig **nicht** zum Essensbudget dazurechnen. Nur das Gesamtdefizit des Tages zeigen, am Wochenende das Wochendefizit in Fett umgerechnet (7000 kcal ≈ 1 kg). Optionaler Schalter: Trainings-kcal zum Tagesbudget addieren (für den Alltag ohne Diät oder Aufbau).
+- **Erledigt 26.10.:** keine Nachkommastellen, Einkaufslisten + „Füllen“ (bis Zielmitte, in jeder Mahlzeit unter den Balken) zurückgeholt, Trennlinien in der Datenbank. Quellcode jetzt in **`donpntlc/sol-tracker`, Branch `source`**; jeder Push baut automatisch (GitHub Action) und veröffentlicht nach `main` (Pages). Fehlerlog bei Build-Fehlern im Branch `build-logs`.
+- **Noch offen SOL:** Trainings-kcal manuell eintragen + Schalter „zum Budget addieren“ (Wochen-Fettäquivalent 7000 kcal gibt es schon im Wochen-Recap), Mahlzeiten vorplanen und abhaken.
+- **Keine Nachkommastellen im Tracking:** Gramm, kcal und Prozent immer ganzzahlig gerundet anzeigen (z. B. „851 / 2234–2306 kcal“, „44 / 213 g“, „21 %“). Gilt für Tagesübersicht, Makros, Mahlzeiten, Zielmitte usw. Intern darf weiter genau gerechnet werden.
+- **Mahlzeiten vorplanen und abhaken:** Mahlzeiten für heute/die nächsten Tage im Voraus eintragen (Lebensmittel + Menge, auch „Plan kopieren“ von gestern/Vorlage). Geplante Einträge erscheinen ausgegraut mit Haken-Kästchen und zählen noch nicht. Abhaken = gegessen → zählt ins Tracking. Menge beim Abhaken noch änderbar. Vorschau „Wenn du alles isst: X kcal / P / K / F“. Optional: Einkaufsliste aus dem Plan füllen.
 - Es gibt außerdem die App „SOL Planer“ (`sol_day_planner`).
 - **Zwei verschwundene Funktionen in SOL Tracker wiederherstellen** (sehr wichtig für Dean). Ursache gefunden: das Repo wurde von `main` auf den älteren Branch `master` umgestellt. Der vollständige Stand (Stash vom 21.06.) ist als Branch **`restore-sol`** gesichert. Genaue Schritte stehen in **`CURSOR_RESTORE.md`** im Repo:
   1. **Einkaufsliste**
