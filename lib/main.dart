@@ -2538,9 +2538,9 @@ class _MainScreenState extends State<MainScreen> {
     final scaleEnd = math.max(maxK * 1.1, withPlan);
     final ratio = scaleEnd > 0 ? (withPlan / scaleEnd).clamp(0.0, 1.0) : 0.0;
     final midRatio = scaleEnd > 0 ? (mid / scaleEnd).clamp(0.0, 1.0) : 0.0;
-    final over = withPlan > maxK && maxK > 0;
-    const gold = Color(0xFFC9A24A);
-    final barColor = over ? const Color(0xFFE57373) : gold.withValues(alpha: 0.75);
+    // Alles grau: nur Vorschau, nicht mit dem echten Balken verwechseln.
+    final grey = muted.withValues(alpha: 0.75);
+    final barColor = muted.withValues(alpha: 0.45);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
@@ -2552,10 +2552,10 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 Text(
                   t("plan_with_plan"),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: gold,
+                    fontWeight: FontWeight.w600,
+                    color: grey,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2569,7 +2569,7 @@ class _MainScreenState extends State<MainScreen> {
                             value: ratio,
                             minHeight: 8,
                             color: barColor,
-                            backgroundColor: muted.withValues(alpha: 0.18),
+                            backgroundColor: muted.withValues(alpha: 0.12),
                           ),
                         ),
                         Positioned.fill(
@@ -2583,7 +2583,7 @@ class _MainScreenState extends State<MainScreen> {
                                     .toDouble(),
                                 top: 0,
                                 bottom: 0,
-                                child: Container(width: 2, color: gold),
+                                child: Container(width: 2, color: grey),
                               ),
                             ]);
                           }),
@@ -2599,9 +2599,9 @@ class _MainScreenState extends State<MainScreen> {
                     TextSpan(
                       text: withPlan.round().toString(),
                       style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13.5,
-                        color: over ? const Color(0xFFE57373) : context.sol.onCard,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: grey,
                       ),
                     ),
                     TextSpan(
@@ -2610,10 +2610,10 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     TextSpan(
                       text: mid.round().toString(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
                         fontSize: 12.5,
-                        color: gold,
+                        color: grey,
                       ),
                     ),
                   ]),
