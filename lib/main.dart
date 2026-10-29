@@ -19319,9 +19319,6 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(title: Text(t("settings"))),
       body: ListView(
         children: [
-          const SizedBox(height: 4),
-          _weightBodyCard(),
-          const SizedBox(height: 6),
           _sectionCard(
             title: t("intro"),
             child: ListTile(
@@ -19624,6 +19621,10 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
           ),
+          // Gewichts-Chart direkt beim Gewicht.
+          const SizedBox(height: 6),
+          _weightBodyCard(),
+          const SizedBox(height: 6),
           _sectionCard(
             title: t("settings_weight_block_title"),
             child: Column(
