@@ -3378,142 +3378,106 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_savePhaseGoal(m));
   }
 
-  // ───────────── Pre-Workout: komplexe / einfache KH (in % vom Tages-KH-Ziel) ─────────────
-  static const String _kPreCarbSplitKey = "pre_carb_split_v1";
-  double preCxMin = 15, preCxMax = 20, preSiMin = 10, preSiMax = 15;
+  // ───────────── Pre-Workout: Aufteilung komplex / einfach ─────────────
+  // preCxSplit = Anteil KOMPLEX an den Pre-Workout-KH (0–100 %), Rest = einfach.
+  // Bänder = Pre-Workout-KH-Anteil am Tag × Aufteilung, ±15 %.
+  static const String _kPreCarbSplitKey = "pre_carb_split_v2";
+  double preCxSplit = 58;
+
+  double get _preCarbSharePct =>
+      (mealMacros["Pre-Workout"]?["carbs"] ?? 30.0).toDouble();
+  double get preCxMin => _preCarbSharePct * preCxSplit / 100.0 * 0.85;
+  double get preCxMax => _preCarbSharePct * preCxSplit / 100.0 * 1.15;
+  double get preSiMin => _preCarbSharePct * (100 - preCxSplit) / 100.0 * 0.85;
+  double get preSiMax => _preCarbSharePct * (100 - preCxSplit) / 100.0 * 1.15;
 
   Future<void> _loadPreCarbSplit() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_kPreCarbSplitKey);
-      if (raw == null) return;
-      final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      if (!mounted) return;
-      setState(() {
-        preCxMin = (m["cxMin"] as num?)?.toDouble() ?? preCxMin;
-        preCxMax = (m["cxMax"] as num?)?.toDouble() ?? preCxMax;
-        preSiMin = (m["siMin"] as num?)?.toDouble() ?? preSiMin;
-        preSiMax = (m["siMax"] as num?)?.toDouble() ?? preSiMax;
-      });
+      final v = prefs.getDouble(_kPreCarbSplitKey);
+      if (v == null || !mounted) return;
+      setState(() => preCxSplit = v.clamp(0.0, 100.0).toDouble());
     } catch (_) {}
   }
 
   Future<void> _savePreCarbSplit() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kPreCarbSplitKey, jsonEncode({
-        "cxMin": preCxMin,
-        "cxMax": preCxMax,
-        "siMin": preSiMin,
-        "siMax": preSiMax,
-      }));
+      await prefs.setDouble(_kPreCarbSplitKey, preCxSplit);
     } catch (_) {}
   }
 
-  Widget _preCarbSplitSettingsCard() {
-    final dayCarb = effectiveMacroGoalsForDay(selectedDayKey).carbs;
-    Widget row(String label, double lo, double hi,
-        void Function(double lo, double hi) set) {
-      Future<void> edit() async {
-        final a = TextEditingController(text: lo.round().toString());
-        final b = TextEditingController(text: hi.round().toString());
-        final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(label),
-            content: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: a,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                        labelText: t("pre_split_from"), suffixText: "%"),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: b,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                        labelText: t("pre_split_to"), suffixText: "%"),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx), child: Text(t("cancel"))),
-              FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true), child: Text(t("save"))),
-            ],
-          ),
-        );
-        if (ok != true) return;
-        final x = double.tryParse(a.text.replaceAll(",", "."));
-        final y = double.tryParse(b.text.replaceAll(",", "."));
-        if (x == null || y == null) return;
-        final l = x.clamp(0.0, 100.0).toDouble();
-        final h = y.clamp(l, 100.0).toDouble();
-        setState(() => set(l, h));
-        _savePreCarbSplit();
-      }
-
-      return InkWell(
-        onTap: edit,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(label,
-                    style: TextStyle(color: context.sol.onCard, fontSize: 14.5)),
-              ),
-              Text("${lo.round()}–${hi.round()} %",
-                  style: const TextStyle(
-                      color: Color(0xFFC9A24A), fontWeight: FontWeight.w700)),
-              const SizedBox(width: 8),
-              Text(
-                  "≈ ${(dayCarb * lo / 100).round()}–${(dayCarb * hi / 100).round()} g",
-                  style: TextStyle(color: context.sol.muted, fontSize: 12)),
-              Icon(Icons.chevron_right, color: context.sol.muted, size: 20),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return _sectionCard(
-      title: t("pre_split_title"),
+  /// Unterzeile im KH-Verteilungs-Fenster bei Pre-Workout.
+  Widget _preSplitEditorRow({
+    required double split,
+    required double prePct,
+    required double goalG,
+    required ValueChanged<double> onChanged,
+  }) {
+    final preG = goalG * prePct / 100.0;
+    final cxG = preG * split / 100.0;
+    final siG = preG - cxG;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(36, 0, 0, 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFC9A24A).withValues(alpha: 0.35)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(t("pre_split_sub"),
-              style: TextStyle(fontSize: 12.5, color: context.sol.soft, height: 1.35)),
-          const SizedBox(height: 6),
-          row(t("pre_workout_carb_bar_complex"), preCxMin, preCxMax, (l, h) {
-            preCxMin = l;
-            preCxMax = h;
-          }),
-          row(t("pre_workout_carb_bar_simple"), preSiMin, preSiMax, (l, h) {
-            preSiMin = l;
-            preSiMax = h;
-          }),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: () {
-                setState(() {
-                  preCxMin = 15;
-                  preCxMax = 20;
-                  preSiMin = 10;
-                  preSiMax = 15;
-                });
-                _savePreCarbSplit();
-              },
-              child: Text(t("pre_split_reset")),
+          Text(t("pre_split_in_editor"),
+              style: const TextStyle(
+                  fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFFC9A24A))),
+          Slider(
+            value: split.clamp(0.0, 100.0),
+            min: 0,
+            max: 100,
+            divisions: 20,
+            onChanged: (v) => onChanged(v.roundToDouble()),
+          ),
+          InkWell(
+            onTap: () async {
+              final ctrl = TextEditingController(text: split.round().toString());
+              final v = await showDialog<double>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text(t("pre_split_in_editor")),
+                  content: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: t("pre_workout_carb_bar_complex"),
+                      suffixText: "%",
+                    ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t("cancel"))),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(
+                          ctx, double.tryParse(ctrl.text.replaceAll(",", "."))),
+                      child: Text(t("save")),
+                    ),
+                  ],
+                ),
+              );
+              if (v != null) onChanged(v.clamp(0.0, 100.0).toDouble());
+            },
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "${t("pre_split_complex_short")} ${split.round()} % · ${cxG.round()} g",
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Text(
+                  "${t("pre_split_simple_short")} ${(100 - split).round()} % · ${siG.round()} g",
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
           ),
         ],
@@ -6421,6 +6385,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "pre_split_in_editor": "Pre-Workout-KH aufteilen",
+      "pre_split_complex_short": "Komplex",
+      "pre_split_simple_short": "Einfach",
       "ring_range": "Tagesbereich: {a}–{b} kcal",
       "pre_split_title": "Pre-Workout: komplexe & einfache KH",
       "pre_split_sub": "Anteil am Tages-Kohlenhydrat-Ziel. Antippen zum Ändern.",
@@ -7560,6 +7527,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "pre_split_in_editor": "Split pre-workout carbs",
+      "pre_split_complex_short": "Complex",
+      "pre_split_simple_short": "Simple",
       "ring_range": "Daily range: {a}–{b} kcal",
       "pre_split_title": "Pre-workout: complex & simple carbs",
       "pre_split_sub": "Share of your daily carb target. Tap to change.",
@@ -19833,7 +19803,6 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
           ),
-          _preCarbSplitSettingsCard(),
           _sectionCard(
             title: t("settings_overview_title"),
             child: SwitchListTile(
@@ -21578,6 +21547,7 @@ class _MainScreenState extends State<MainScreen> {
     for (final m in meals) {
       pcts[m] = mealMacros[m]![macroKey]!;
     }
+    var preSplit = preCxSplit;
 
     showDialog<void>(
       context: context,
@@ -21623,7 +21593,7 @@ class _MainScreenState extends State<MainScreen> {
                     isOkTotal: isOkTotal,
                   ),
                   const SizedBox(height: 8),
-                  for (final m in meals)
+                  for (final m in meals) ...[
                     _mealShareSliderRow(
                       mealId: m,
                       value: pcts[m] ?? 0.0,
@@ -21632,6 +21602,15 @@ class _MainScreenState extends State<MainScreen> {
                       onChanged: (v) =>
                           setSt(() => pcts[m] = _round2(v)),
                     ),
+                    // KH · Pre-Workout: Aufteilung komplex / einfach direkt darunter
+                    if (macroKey == "carbs" && m == "Pre-Workout")
+                      _preSplitEditorRow(
+                        split: preSplit,
+                        prePct: pcts["Pre-Workout"] ?? 0.0,
+                        goalG: goalG,
+                        onChanged: (v) => setSt(() => preSplit = v),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -21669,8 +21648,10 @@ class _MainScreenState extends State<MainScreen> {
                     for (final m in meals) {
                       mealMacros[m]![macroKey] = vals[m]!;
                     }
+                    if (macroKey == "carbs") preCxSplit = preSplit;
                   });
                   _saveAppState();
+                  if (macroKey == "carbs") _savePreCarbSplit();
                   Navigator.pop(dCtx);
                 },
                 child: Text(t("save")),
