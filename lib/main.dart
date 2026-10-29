@@ -2369,6 +2369,515 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // ───────────── Mahlzeit-Vorlagen (SOL + eigene) ─────────────
+  // Rezepte = immer 1 Portion (fest). Andere Lebensmittel: Gramm werden so
+  // berechnet, dass Protein / KH / Fett der Mahlzeit möglichst genau passen.
+  static const String _kMealTplKey = "meal_templates_v1";
+  List<Map<String, dynamic>> userMealTemplates = [];
+
+  Future<void> _loadMealTemplates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kMealTplKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = (jsonDecode(raw) as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      if (!mounted) return;
+      setState(() => userMealTemplates = list);
+    } catch (_) {}
+  }
+
+  Future<void> _saveMealTemplates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kMealTplKey, jsonEncode(userMealTemplates));
+    } catch (_) {}
+  }
+
+  Food? _foodByName(String name) {
+    for (final f in foodDatabase) {
+      if (f.name == name) return f;
+    }
+    return null;
+  }
+
+  /// SOL-Mahlzeiten (nur die, deren Lebensmittel es gibt).
+  List<Map<String, dynamic>> get _solMealTemplates {
+    const raw = [
+      ["SOL · Magerquark-Shake + Haferflocken", "Magerquark Proteinshake", "Haferflocken"],
+      ["SOL · Hähnchen, Reis & Olivenöl", "Hähnchen Brust", "Reis", "Olivenöl"],
+      ["SOL · Skyr, Haferflocken & Erdnussbutter", "Skyr", "Haferflocken", "Erdnussbutter"],
+      ["SOL · Eier & Kartoffeln", "Eier", "Kartoffel", "Magerquark"],
+      ["SOL · Lachs & Süßkartoffel", "Lachs", "Süßkartoffel"],
+      ["SOL · Protein Shake + Banane", "Protein Shake", "Banane"],
+    ];
+    final out = <Map<String, dynamic>>[];
+    for (final r in raw) {
+      final foods = r.sublist(1);
+      if (foods.every((n) => _foodByName(n) != null)) {
+        out.add({"id": "sol_${r[0]}", "name": r[0], "items": foods, "sol": true});
+      }
+    }
+    return out;
+  }
+
+  double _fixedGramsFor(Food f) =>
+      f.isRecipe ? (f.basePortionGrams ?? 100.0) : 0.0;
+
+  /// Optimale Gramm je Lebensmittel (Rezepte fest = 1 Portion).
+  List<double> _solveMealTemplate(String meal, List<Food> foods) {
+    final macros = ["protein", "carbs", "fat"];
+    // Ziel = Zielmitte der Mahlzeit minus schon Gegessenes in dieser Mahlzeit.
+    final target = <double>[];
+    for (final m in macros) {
+      final r = dynamicMealMacroRangeG(meal, m);
+      final eaten = _mealTotals[meal]?[m] ?? 0.0;
+      target.add(((r.minG + r.maxG) / 2.0 - eaten));
+    }
+    double macroOf(Food f, int i) =>
+        i == 0 ? f.protein : (i == 1 ? f.carbs : f.fat);
+    final grams = List<double>.filled(foods.length, 0);
+    final free = <int>[];
+    for (var i = 0; i < foods.length; i++) {
+      if (foods[i].isRecipe) {
+        grams[i] = _fixedGramsFor(foods[i]);
+        for (var m = 0; m < 3; m++) {
+          target[m] -= macroOf(foods[i], m) * grams[i] / 100.0;
+        }
+      } else {
+        free.add(i);
+      }
+    }
+    for (var m = 0; m < 3; m++) {
+      if (target[m] < 0) target[m] = 0;
+    }
+    if (free.isEmpty) return grams;
+    // Gewichtet nach kcal: Fehler in P/KH/F zählt wie kcal-Abweichung.
+    const w = [4.1 * 4.1, 4.1 * 4.1, 9.3 * 9.3];
+    final x = List<double>.filled(free.length, 0); // in 100-g-Einheiten
+    for (var it = 0; it < 400; it++) {
+      for (var j = 0; j < free.length; j++) {
+        final f = foods[free[j]];
+        var num = 0.0, den = 0.0;
+        for (var m = 0; m < 3; m++) {
+          final a = macroOf(f, m);
+          var resid = target[m];
+          for (var k = 0; k < free.length; k++) {
+            if (k == j) continue;
+            resid -= macroOf(foods[free[k]], m) * x[k];
+          }
+          num += w[m] * a * resid;
+          den += w[m] * a * a;
+        }
+        x[j] = den > 1e-9 ? (num / den).clamp(0.0, 10.0) : 0.0;
+      }
+    }
+    for (var j = 0; j < free.length; j++) {
+      grams[free[j]] = ((x[j] * 100) / 5).round() * 5.0;
+    }
+    return grams;
+  }
+
+  Future<void> _openMealTemplatesSheet(String meal) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.sol.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          Widget tile(Map<String, dynamic> tpl) {
+            final items = (tpl["items"] as List).map((e) => e.toString()).toList();
+            final isSol = tpl["sol"] == true;
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+              title: Text(tpl["name"].toString(),
+                  style: TextStyle(color: context.sol.onCard, fontWeight: FontWeight.w600)),
+              subtitle: Text(items.join(" + "),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: context.sol.muted, fontSize: 12.5)),
+              trailing: isSol
+                  ? null
+                  : IconButton(
+                      icon: Icon(Icons.edit_outlined, color: context.sol.muted, size: 20),
+                      onPressed: () async {
+                        await _editMealTemplate(tpl);
+                        setL(() {});
+                      },
+                    ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _applyMealTemplate(meal, tpl);
+              },
+            );
+          }
+
+          final sol = _solMealTemplates;
+          return Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16,
+                16 + MediaQuery.viewPaddingOf(ctx).bottom),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(t("meal_tpl_title"),
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: context.sol.onCard)),
+                  const SizedBox(height: 4),
+                  Text(t("meal_tpl_sub"),
+                      style: TextStyle(fontSize: 12.5, color: context.sol.muted, height: 1.35)),
+                  const SizedBox(height: 14),
+                  Text(t("meal_tpl_mine"),
+                      style: const TextStyle(
+                          color: Color(0xFFC9A24A), fontWeight: FontWeight.w700, fontSize: 12.5)),
+                  if (userMealTemplates.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(t("meal_tpl_none"),
+                          style: TextStyle(color: context.sol.muted, fontSize: 12.5)),
+                    ),
+                  for (final tpl in userMealTemplates) tile(tpl),
+                  const SizedBox(height: 4),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: Text(t("meal_tpl_new")),
+                    onPressed: () async {
+                      await _editMealTemplate(null);
+                      setL(() {});
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  if (sol.isNotEmpty)
+                    Text(t("meal_tpl_sol"),
+                        style: const TextStyle(
+                            color: Color(0xFFC9A24A), fontWeight: FontWeight.w700, fontSize: 12.5)),
+                  for (final tpl in sol) tile(tpl),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<Food?> _pickFoodBySearch() async {
+    var q = "";
+    return showDialog<Food>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          String norm(String x) => x
+              .toLowerCase()
+              .replaceAll("ä", "a")
+              .replaceAll("ö", "o")
+              .replaceAll("ü", "u")
+              .replaceAll("ß", "ss");
+          final words = norm(q).split(RegExp(r"\s+")).where((w) => w.isNotEmpty).toList();
+          final hits = words.isEmpty
+              ? <Food>[]
+              : foodDatabase.where((f) => words.every(norm(f.name).contains)).take(12).toList();
+          return AlertDialog(
+            title: Text(t("meal_tpl_add_food")),
+            content: SizedBox(
+              width: 340,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      hintText: t("track_search_hint"),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => setL(() => q = v),
+                  ),
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 320),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final f in hits)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(f.name),
+                            subtitle: Text(f.isRecipe
+                                ? t("meal_tpl_recipe_fixed")
+                                : "${f.calories.round()} kcal / 100 g"),
+                            onTap: () => Navigator.pop(ctx, f),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _editMealTemplate(Map<String, dynamic>? existing) async {
+    final nameCtrl = TextEditingController(text: existing?["name"]?.toString() ?? "");
+    final items = <String>[
+      ...((existing?["items"] as List?) ?? const []).map((e) => e.toString())
+    ];
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text(existing == null ? t("meal_tpl_new") : t("meal_tpl_edit")),
+          content: SizedBox(
+            width: 340,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(labelText: t("meal_tpl_name")),
+                  ),
+                  const SizedBox(height: 14),
+                  for (var i = 0; i < items.length; i++)
+                    Row(
+                      children: [
+                        Icon(
+                          (_foodByName(items[i])?.isRecipe ?? false)
+                              ? Icons.lock_outline
+                              : Icons.tune,
+                          size: 18,
+                          color: const Color(0xFFC9A24A),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            (_foodByName(items[i])?.isRecipe ?? false)
+                                ? "${items[i]} · ${t("meal_tpl_recipe_fixed")}"
+                                : items[i],
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => setL(() => items.removeAt(i)),
+                        ),
+                      ],
+                    ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: Text(t("meal_tpl_add_food")),
+                    onPressed: () async {
+                      final f = await _pickFoodBySearch();
+                      if (f != null && !items.contains(f.name)) {
+                        setL(() => items.add(f.name));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            if (existing != null)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, "delete"),
+                child: Text(t("plan_remove"),
+                    style: const TextStyle(color: Color(0xFFE57373))),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t("cancel")),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, "save"),
+              child: Text(t("save")),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || res == null) return;
+    setState(() {
+      if (res == "delete" && existing != null) {
+        userMealTemplates.remove(existing);
+      } else if (res == "save" && items.isNotEmpty) {
+        final name = nameCtrl.text.trim().isEmpty ? items.join(" + ") : nameCtrl.text.trim();
+        if (existing != null) {
+          existing["name"] = name;
+          existing["items"] = items;
+        } else {
+          userMealTemplates.add({
+            "id": "u${DateTime.now().millisecondsSinceEpoch}",
+            "name": name,
+            "items": items,
+          });
+        }
+      }
+    });
+    _saveMealTemplates();
+  }
+
+  Future<void> _applyMealTemplate(String meal, Map<String, dynamic> tpl) async {
+    final foods = <Food>[];
+    for (final n in (tpl["items"] as List)) {
+      final f = _foodByName(n.toString());
+      if (f != null) foods.add(f);
+    }
+    if (foods.isEmpty) return;
+    final solved = _solveMealTemplate(meal, foods);
+    final ctrls = [
+      for (final g in solved) TextEditingController(text: g.round().toString())
+    ];
+    final macros = ["protein", "carbs", "fat"];
+    final targets = [
+      for (final m in macros)
+        () {
+          final r = dynamicMealMacroRangeG(meal, m);
+          return (r.minG + r.maxG) / 2.0 - (_mealTotals[meal]?[m] ?? 0.0);
+        }()
+    ];
+    if (!mounted) return;
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          double gOf(int i) =>
+              double.tryParse(ctrls[i].text.replaceAll(",", ".")) ?? 0;
+          double sum(double Function(Food) m) {
+            var s = 0.0;
+            for (var i = 0; i < foods.length; i++) {
+              s += m(foods[i]) * gOf(i) / 100.0;
+            }
+            return s;
+          }
+          final p = sum((f) => f.protein), c = sum((f) => f.carbs), fa = sum((f) => f.fat);
+          final kc = sum((f) => f.calories);
+          Widget macroLine(String label, double v, double target) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+                    Text("${v.round()} ",
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    Text("/ ${math.max(0, target).round()} g",
+                        style: const TextStyle(color: Color(0xFFC9A24A), fontSize: 12.5)),
+                  ],
+                ),
+              );
+          return AlertDialog(
+            title: Text(tpl["name"].toString()),
+            content: SizedBox(
+              width: 340,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(t("meal_tpl_apply_hint"),
+                        style: const TextStyle(fontSize: 12, color: Colors.white60, height: 1.35)),
+                    const SizedBox(height: 12),
+                    for (var i = 0; i < foods.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            Icon(foods[i].isRecipe ? Icons.lock_outline : Icons.tune,
+                                size: 18, color: const Color(0xFFC9A24A)),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(foods[i].name, style: const TextStyle(fontSize: 14))),
+                            SizedBox(
+                              width: 78,
+                              child: TextField(
+                                controller: ctrls[i],
+                                enabled: !foods[i].isRecipe,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.right,
+                                decoration: const InputDecoration(isDense: true, suffixText: "g"),
+                                onChanged: (_) => setL(() {}),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const Divider(height: 18),
+                    Text(t("meal_tpl_result"),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    macroLine(t("protein"), p, targets[0]),
+                    macroLine(t("carbs"), c, targets[1]),
+                    macroLine(t("fat"), fa, targets[2]),
+                    const SizedBox(height: 4),
+                    Text("= ${kc.round()} kcal",
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, "plan"),
+                child: Text(t("plan_add_button")),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, "add"),
+                child: Text(t("add")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted || res == null) return;
+    final grams = [
+      for (final c in ctrls) double.tryParse(c.text.replaceAll(",", ".")) ?? 0
+    ];
+    setState(() {
+      for (var i = 0; i < foods.length; i++) {
+        if (grams[i] <= 0) continue;
+        final e = TrackedFood(
+          food: foods[i],
+          grams: grams[i],
+          meal: meal,
+          dayKey: selectedDayKey,
+        );
+        (res == "plan" ? plannedFoods : trackedFoods).add(e);
+      }
+    });
+    if (res == "plan") {
+      _savePlannedFoods();
+    } else {
+      _updateMealTotals();
+      _saveAppState();
+      _showBlessing();
+      _applyDailyKcalOverSchedule();
+    }
+  }
+
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
   bool showHelpTexts = true;
@@ -4132,6 +4641,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadAppState());
     unawaited(_loadPhaseGoal());
     unawaited(_loadPlannedFoods());
+    unawaited(_loadMealTemplates());
     unawaited(_loadHelpTextsPref());
     unawaited(_loadOverviewRingPref());
   }
@@ -5077,6 +5587,19 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_tpl_menu": "Mahlzeit (Vorlage)",
+      "meal_tpl_title": "Mahlzeiten",
+      "meal_tpl_sub": "Vorgefertigte Kombinationen. SOL rechnet die Mengen so aus, dass Protein, KH und Fett dieser Mahlzeit möglichst genau passen. Rezepte zählen immer als 1 Portion.",
+      "meal_tpl_mine": "MEINE MAHLZEITEN",
+      "meal_tpl_sol": "SOL-MAHLZEITEN",
+      "meal_tpl_none": "Noch keine eigenen Mahlzeiten.",
+      "meal_tpl_new": "Neue Mahlzeit",
+      "meal_tpl_edit": "Mahlzeit bearbeiten",
+      "meal_tpl_name": "Name (z. B. Frühstück Shake)",
+      "meal_tpl_add_food": "Lebensmittel / Rezept hinzufügen",
+      "meal_tpl_recipe_fixed": "Rezept · 1 Portion (fest)",
+      "meal_tpl_apply_hint": "Mengen passend zu deiner Mahlzeit berechnet. 🔒 = Rezept, fest. Mengen kannst du noch anpassen.",
+      "meal_tpl_result": "ERGEBNIS / ZIEL DIESER MAHLZEIT",
       "plan_with_plan": "Mit Plan",
       "meal_range_line": "Bereich: {r}",
       "overview_details": "Details",
@@ -6163,6 +6686,19 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_tpl_menu": "Meal (template)",
+      "meal_tpl_title": "Meals",
+      "meal_tpl_sub": "Ready-made combos. SOL calculates amounts so protein, carbs and fat of this meal fit as closely as possible. Recipes always count as 1 portion.",
+      "meal_tpl_mine": "MY MEALS",
+      "meal_tpl_sol": "SOL MEALS",
+      "meal_tpl_none": "No meals of your own yet.",
+      "meal_tpl_new": "New meal",
+      "meal_tpl_edit": "Edit meal",
+      "meal_tpl_name": "Name (e.g. breakfast shake)",
+      "meal_tpl_add_food": "Add food / recipe",
+      "meal_tpl_recipe_fixed": "Recipe · 1 portion (fixed)",
+      "meal_tpl_apply_hint": "Amounts calculated for this meal. 🔒 = recipe, fixed. You can still adjust amounts.",
+      "meal_tpl_result": "RESULT / TARGET OF THIS MEAL",
       "plan_with_plan": "With plan",
       "meal_range_line": "Range: {r}",
       "overview_details": "Details",
@@ -17496,12 +18032,18 @@ class _MainScreenState extends State<MainScreen> {
                       openMealGenerator(meal: meal);
                     } else if (v == "ai_photo") {
                       unawaited(_openAiPhotoTrackFlow(meal));
+                    } else if (v == "tpl") {
+                      unawaited(_openMealTemplatesSheet(meal));
                     }
                   },
                   itemBuilder: (c) => [
                     PopupMenuItem(
                       value: "food",
                       child: Text(t("add_food")),
+                    ),
+                    PopupMenuItem(
+                      value: "tpl",
+                      child: Text(t("meal_tpl_menu")),
                     ),
                     PopupMenuItem(
                       value: "gen",
@@ -21174,10 +21716,13 @@ class _MainScreenState extends State<MainScreen> {
               openMealGenerator(meal: meal);
             } else if (v == "ai_photo") {
               unawaited(_openAiPhotoTrackFlow(meal));
+            } else if (v == "tpl") {
+              unawaited(_openMealTemplatesSheet(meal));
             }
           },
           itemBuilder: (c) => [
             PopupMenuItem(value: "food", child: Text(t("add_food"))),
+            PopupMenuItem(value: "tpl", child: Text(t("meal_tpl_menu"))),
             PopupMenuItem(value: "gen", child: Text(t("generator"))),
             PopupMenuItem(
               value: "ai_photo",
