@@ -4997,6 +4997,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_button": "Foto scannen",
       "barcode_photo_fail": "Kein Barcode erkannt. Nah ran, gerade halten, gutes Licht — nochmal versuchen oder Code eintippen.",
       "barcode_manual_button": "Code eintippen",
+      "barcode_manual_new": "Nicht gefunden — trag das Lebensmittel einfach selbst ein.",
       "barcode_web_hint": "Tippe auf „Foto scannen“ und fotografiere den Barcode nah und gerade.",
       "barcode_lib_fail": "Scanner konnte nicht geladen werden (Internet?). Bitte Code eintippen.",
       "barcode_manual_title": "Barcode eintippen",
@@ -6081,6 +6082,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_button": "Photo scan",
       "barcode_photo_fail": "No barcode found. Get close, hold straight, good light — try again or type the code.",
       "barcode_manual_button": "Type code",
+      "barcode_manual_new": "Not found — just enter the food yourself.",
       "barcode_web_hint": "Tap “Photo scan” and take a close, straight photo of the barcode.",
       "barcode_lib_fail": "Scanner could not be loaded (internet?). Please type the code.",
       "barcode_manual_title": "Type barcode",
@@ -13673,12 +13675,27 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
     if (code == null || !mounted) return null;
+    _OffFetchResult emptyFor(String bc) => _OffFetchResult(
+          barcode: bc,
+          name: "",
+          protein: 0,
+          carbs: 0,
+          sugar: 0,
+          fiber: 0,
+          fat: 0,
+        );
+    if (code == _kBarcodeManualEntry) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("barcode_manual_new"))),
+      );
+      return emptyFor("");
+    }
     final cleaned = code.replaceAll(RegExp(r'[^\d]'), '');
     if (cleaned.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t("db_barcode_short"))),
+        SnackBar(content: Text(t("barcode_manual_new"))),
       );
-      return null;
+      return emptyFor("");
     }
     try {
       final uri = Uri.parse(
@@ -13734,9 +13751,9 @@ class _MainScreenState extends State<MainScreen> {
     } catch (_) {
       if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t("db_off_error"))),
+        SnackBar(content: Text(t("barcode_manual_new"))),
       );
-      return null;
+      return emptyFor(cleaned);
     }
   }
 
@@ -13747,7 +13764,7 @@ class _MainScreenState extends State<MainScreen> {
     final code = fetch.barcode;
     Food? hit;
     for (final f in foodDatabase) {
-      if (f.offBarcode == code) {
+      if (code.isNotEmpty && f.offBarcode == code) {
         hit = f;
         break;
       }
@@ -14248,7 +14265,7 @@ class _MainScreenState extends State<MainScreen> {
                   isDefault: false,
                   carbKind: saveCat == "Carbs" ? saveCK : null,
                   recipeFlavor: saveFlavor,
-                  offBarcode: r.barcode,
+                  offBarcode: r.barcode.isEmpty ? null : r.barcode,
                   imagePath: img,
                 );
                 setState(() {
@@ -23784,7 +23801,7 @@ class _MainScreenState extends State<MainScreen> {
                             final code = fetch.barcode;
                             Food? hit;
                             for (final f in foodDatabase) {
-                              if (f.offBarcode == code) {
+                              if (code.isNotEmpty && f.offBarcode == code) {
                                 hit = f;
                                 break;
                               }
@@ -26640,6 +26657,8 @@ class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
   }
 }
 
+const String _kBarcodeManualEntry = "__manual__";
+
 class _BarcodeScanDialog extends StatefulWidget {
   const _BarcodeScanDialog({required this.t});
   final String Function(String) t;
@@ -26693,6 +26712,10 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
         _finish(code!);
         return;
       }
+      // Nicht lesbar: direkt „neues Lebensmittel“ zum selbst Eintragen.
+      _finish(_kBarcodeManualEntry);
+      return;
+      // ignore: dead_code
       if (mounted) {
         setState(() {
           _busy = false;
