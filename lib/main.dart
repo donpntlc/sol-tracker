@@ -1334,7 +1334,7 @@ class _MainScreenState extends State<MainScreen> {
     "Protein Shake",
   ];
 
-  int selectedIndex = 1;
+  int selectedIndex = 2; // Start immer im Tracking
 
   List<Food> foodDatabase = [];
   List<TrackedFood> trackedFoods = [];
@@ -4959,6 +4959,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "settings_open_intro": "Einleitung & Anleitung öffnen",
       "plan_rest": "Rest nach Plan: {kcal}",
       "plan_rest_over": "nach Plan {kcal} zu viel",
       "track_search_hint": "Lebensmittel suchen …",
@@ -6036,6 +6037,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "settings_open_intro": "Open intro & guide",
       "plan_rest": "left after plan: {kcal}",
       "plan_rest_over": "{kcal} over after plan",
       "track_search_hint": "Search food …",
@@ -8804,11 +8806,20 @@ class _MainScreenState extends State<MainScreen> {
         currentScreen = trackingScreen();
     }
 
+    // Unten nur 3 Punkte: Datenbank · Tracking (Mitte) · Einstellungen.
+    // Einleitung liegt jetzt in den Einstellungen.
+    const navToScreen = [1, 2, 3];
+    final navIndex = switch (effectiveIndex) {
+      1 => 0,
+      2 => 1,
+      _ => 2,
+    };
     return Scaffold(
       body: currentScreen,
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: effectiveIndex,
-        onTap: (i) {
+        currentIndex: navIndex,
+        onTap: (n) {
+          final i = navToScreen[n];
           if (!placementDone && i != 0) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -8824,8 +8835,6 @@ class _MainScreenState extends State<MainScreen> {
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
         items: [
-          BottomNavigationBarItem(
-              icon: const Icon(Icons.menu_book), label: t("intro")),
           BottomNavigationBarItem(
               icon: const Icon(Icons.storage), label: t("database")),
           BottomNavigationBarItem(
@@ -16622,13 +16631,17 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
             SizedBox(height: sectionOpen ? 6 : 2),
-            _buildMealKcalRowCompact(
+            // Hauptbalken etwas schmaler (nicht ganz von Rand zu Rand).
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: _buildMealKcalRowCompact(
               _kWorkoutBlockMealId,
               current: totals['calories']!,
               minKcal: kR.minKcal,
               maxKcal: kR.maxKcal,
               simple: mealKcalDisplayMode == "simple",
               showInlineAdd: false,
+            ),
             ),
             _plannedFoodsBlock("Pre-Workout"),
             _plannedFoodsBlock("Post-Workout"),
@@ -17298,13 +17311,17 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
             SizedBox(height: sectionOpen ? 6 : 2),
-            _buildMealKcalRowCompact(
+            // Hauptbalken etwas schmaler (nicht ganz von Rand zu Rand).
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: _buildMealKcalRowCompact(
               meal,
               current: totals['calories']!,
               minKcal: kR.minKcal,
               maxKcal: kR.maxKcal,
               simple: mealKcalDisplayMode == "simple",
               showInlineAdd: false,
+            ),
             ),
             _plannedFoodsBlock(meal),
             if (sectionOpen) ...[
@@ -17772,6 +17789,19 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(title: Text(t("settings"))),
       body: ListView(
         children: [
+          _sectionCard(
+            title: t("intro"),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.menu_book, color: Color(0xFFD4AF37)),
+              title: Text(
+                t("settings_open_intro"),
+                style: TextStyle(color: context.sol.onCard, fontSize: 15),
+              ),
+              trailing: Icon(Icons.chevron_right, color: context.sol.muted),
+              onTap: () => setState(() => selectedIndex = 0),
+            ),
+          ),
           _sectionCard(
             title: t("settings_appearance"),
             child: Column(
