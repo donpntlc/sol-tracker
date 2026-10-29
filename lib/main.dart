@@ -15776,7 +15776,7 @@ class _MainScreenState extends State<MainScreen> {
                     !_isMealMergedLocked("Snacks"))
                   _buildMealSectionCard(
                     "Snacks",
-                    sectionCardMargin: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                    sectionCardMargin: const EdgeInsets.fromLTRB(22, 0, 22, 10),
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
