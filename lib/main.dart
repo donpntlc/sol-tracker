@@ -175,7 +175,7 @@ class SolUi extends ThemeExtension<SolUi> {
   // fg F2EEE5, muted 8F8A7E, gold C9A24A. Vorheriger Stand: Branch backup-vor-kontrast-29-10.
   static const SolUi dark = SolUi(
     scaffold: Color(0xFF0B0B0C),
-    card: Color(0xFF151517),
+    card: Color(0xFF1A1A1D),
     appBar: Color(0xFF0B0B0C),
     onCard: Color(0xFFF2EEE5),
     muted: Color(0xFFA39E92),
@@ -183,7 +183,7 @@ class SolUi extends ThemeExtension<SolUi> {
     bottomNav: Color(0xFF0B0B0C),
     navSelected: Color(0xFFC9A24A),
     navUnselected: Color(0xFFA39E92),
-    dailyCard: Color(0xFF1D1D20),
+    dailyCard: Color(0xFF222226),
     dailyBorder: Color(0xFF2A2A2E),
   );
 
