@@ -13111,7 +13111,20 @@ class _MainScreenState extends State<MainScreen> {
                   if (foodsInCategory.isEmpty) {
                     return const SizedBox.shrink();
                   }
-                  return Padding(
+                  final firstVisible = visibleCategories.indexWhere(
+                      (c) => filteredFoods.any((f) => f.isInCategory(c)));
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (index > firstVisible)
+                        Divider(
+                          height: 1,
+                          thickness: 0.7,
+                          indent: 20,
+                          endIndent: 20,
+                          color: context.sol.soft.withValues(alpha: 0.35),
+                        ),
+                      Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8.0, vertical: 4.0),
                     child: ExpansionTile(
@@ -13121,6 +13134,8 @@ class _MainScreenState extends State<MainScreen> {
                       children: _withFoodDividers(
                           foodsInCategory.map(_buildFoodCard).toList()),
                     ),
+                      ),
+                    ],
                   );
                 },
                 childCount: visibleCategories.length,
