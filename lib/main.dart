@@ -2237,7 +2237,7 @@ class _MainScreenState extends State<MainScreen> {
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: r,
-                  minHeight: 6,
+                  minHeight: 7,
                   backgroundColor: muted.withValues(alpha: 0.25),
                   valueColor: AlwaysStoppedAnimation<Color>(
                       o ? _barOver : (inR ? _barIn : _barUnder)),
@@ -2310,8 +2310,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
                 SizedBox(
-                  width: 140,
-                  height: 140,
+                  width: 150,
+                  height: 124, // unten ist der Ring offen → weniger Leerraum
                   child: CustomPaint(
                     painter: _KcalRingPainter(
                       outline: Theme.of(context).brightness == Brightness.light
@@ -2321,14 +2321,15 @@ class _MainScreenState extends State<MainScreen> {
                       track: muted.withValues(alpha: 0.22),
                       color: isOverRange ? _barOver : (inRange ? _barIn : _barUnder),
                     ),
-                    child: Center(
+                    child: Align(
+                      alignment: const Alignment(0, 0.05),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             _fmtThousands(eaten),
                             style: TextStyle(
-                              fontSize: 28,
+                              fontSize: 30,
                               fontWeight: FontWeight.w900,
                               color: onCard,
                               height: 1.0,
@@ -2347,7 +2348,7 @@ class _MainScreenState extends State<MainScreen> {
                 Expanded(child: side(_fmtThousands(goal), t("ring_goal"))),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Row(
               children: [
                 macro(t("carbs"), "carbs", carbs, mg.carbs, gold),
@@ -29457,9 +29458,10 @@ class _KcalRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 10.0;
-    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke,
-        size.height - stroke);
+    const stroke = 11.0;
+    // Quadrat aus der Breite (Box darf niedriger sein, weil unten offen).
+    final d = size.width - stroke;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, d, d);
     const start = math.pi * 0.75;
     const sweep = math.pi * 1.5;
     final base = Paint()
