@@ -6,3 +6,5 @@ import 'barcode_photo_decode_stub.dart'
 /// Liest einen Barcode aus einem Foto (nur Web; sonst immer null).
 Future<String?> decodeBarcodeFromPhoto(Uint8List bytes, String mime) =>
     _impl.decodeBarcodeFromPhoto(bytes, mime);
+
+bool barcodeLibLoaded() => _impl.barcodeLibLoaded();

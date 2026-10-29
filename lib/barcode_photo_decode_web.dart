@@ -4,13 +4,23 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
-const _kZxingUrl = 'https://unpkg.com/@zxing/library@0.19.1';
+const _kZxingCdn = 'https://unpkg.com/@zxing/library@0.19.1';
+
+bool barcodeLibLoaded() => globalContext.has('ZXing');
 
 Future<bool> _ensureZxing() async {
   if (globalContext.has('ZXing')) return true;
+  if (await _loadScript(Uri.base.resolve('zxing.min.js').toString(), 'sol-zxing-local')) {
+    return true;
+  }
+  return _loadScript(_kZxingCdn, 'sol-zxing-cdn');
+}
+
+Future<bool> _loadScript(String src, String id) async {
+  if (globalContext.has('ZXing')) return true;
   final doc = globalContext['document'] as JSObject;
   final existing = doc.callMethod<JSAny?>(
-      'getElementById'.toJS, 'sol-zxing-photo'.toJS);
+      'getElementById'.toJS, id.toJS);
   final c = Completer<bool>();
   final script = existing as JSObject? ??
       doc.callMethod<JSObject>('createElement'.toJS, 'script'.toJS);
@@ -21,8 +31,8 @@ Future<bool> _ensureZxing() async {
     if (!c.isCompleted) c.complete(false);
   }).toJS;
   if (existing == null) {
-    script['id'] = 'sol-zxing-photo'.toJS;
-    script['src'] = _kZxingUrl.toJS;
+    script['id'] = id.toJS;
+    script['src'] = src.toJS;
     (doc['head'] as JSObject).callMethod<JSAny?>('appendChild'.toJS, script);
   }
   final ok = await c.future

@@ -418,6 +418,13 @@ typedef WeekBalanceListRow = ({
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
+  if (kIsWeb) {
+    // Scanner-Bibliothek von der eigenen Seite laden (nicht von unpkg.com).
+    try {
+      MobileScannerPlatform.instance.setBarcodeLibraryScriptUrl(
+          Uri.base.resolve('zxing.min.js').toString());
+    } catch (_) {}
+  }
   runApp(const MyApp());
   unawaited(_restoreThemePref());
 }
@@ -4656,6 +4663,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_button": "Foto scannen",
       "barcode_photo_fail": "Kein Barcode erkannt. Nah ran, gerade halten, gutes Licht — nochmal versuchen oder Code eintippen.",
       "barcode_manual_button": "Code eintippen",
+      "barcode_lib_fail": "Scanner konnte nicht geladen werden (Internet?). Bitte Code eintippen.",
       "barcode_manual_title": "Barcode eintippen",
       "barcode_manual_hint": "Zahlen unter dem Strichcode",
       "barcode_manual_ok": "Suchen",
@@ -5719,6 +5727,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_button": "Photo scan",
       "barcode_photo_fail": "No barcode found. Get close, hold straight, good light — try again or type the code.",
       "barcode_manual_button": "Type code",
+      "barcode_lib_fail": "Scanner could not be loaded (internet?). Please type the code.",
       "barcode_manual_title": "Type barcode",
       "barcode_manual_hint": "Digits under the barcode",
       "barcode_manual_ok": "Search",
@@ -26074,7 +26083,9 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _msg = widget.t("barcode_photo_fail");
+          _msg = barcodeLibLoaded()
+              ? widget.t("barcode_photo_fail")
+              : widget.t("barcode_lib_fail");
         });
       }
       try {

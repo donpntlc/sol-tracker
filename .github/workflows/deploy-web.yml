@@ -36,6 +36,11 @@ jobs:
           set -o pipefail
           flutter build web --release --no-tree-shake-icons --base-href "/sol-tracker/b/${VER}/" 2>&1 | tee build.log
 
+      - name: Barcode-Bibliothek lokal mitliefern
+        run: |
+          curl -fsSL https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js -o build/web/zxing.min.js
+          test -s build/web/zxing.min.js
+
       - name: Fehlerlog sichern (Branch build-logs)
         if: failure()
         shell: bash
