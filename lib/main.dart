@@ -15685,6 +15685,17 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
+          // Leichter Trennstrich zwischen Tages-kcal und Mahlzeiten-Block.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
+              child: Divider(
+                height: 1,
+                thickness: 0.8,
+                color: context.sol.soft.withValues(alpha: 0.35),
+              ),
+            ),
+          ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               0,
