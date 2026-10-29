@@ -17,6 +17,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:sol/ai_meal_photo.dart' as aiphoto;
 import 'package:sol/sol_recipe_hero_image.dart';
 import 'package:sol/barcode_photo_decode.dart';
+import 'package:sol/web_share.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -5207,6 +5208,8 @@ class _MainScreenState extends State<MainScreen> {
       "filter": "Filter",
       "search_food": "Lebensmittel suchen...",
       "shop_title": "Einkaufslisten",
+      "shop_share": "Liste teilen",
+      "shop_share_copied": "Liste kopiert — einfach in WhatsApp & Co. einfügen.",
       "shop_tab_day": "Tages-Einkauf",
       "shop_tab_month": "Monats-Einkauf",
       "shop_group_general": "Allgemein",
@@ -6273,6 +6276,8 @@ class _MainScreenState extends State<MainScreen> {
       "filter": "Filter",
       "search_food": "Search food...",
       "shop_title": "Shopping lists",
+      "shop_share": "Share list",
+      "shop_share_copied": "List copied — paste it into any chat.",
       "shop_tab_day": "Today",
       "shop_tab_month": "Monthly",
       "shop_group_general": "General",
@@ -26941,6 +26946,40 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
 
   void _persist() => widget.onSaved(day, month);
 
+  /// Liste als Text: offene Einträge, nach Gruppe/Laden.
+  String _listAsText(_ShoppingListBundle b) {
+    final t = widget.t;
+    final out = StringBuffer(
+        "🛒 ${t("shop_title")} · ${isMonthTab ? t("shop_tab_month") : t("shop_tab_day")}\n");
+    var any = false;
+    for (final g in b.groups) {
+      final items =
+          b.entries.where((e) => e.groupId == g.id && !e.done).toList();
+      if (items.isEmpty) continue;
+      any = true;
+      final name = g.name.trim().isEmpty ? t("shop_group_general") : g.name.trim();
+      if (b.groups.length > 1) out.write("\n$name\n");
+      for (final e in items) {
+        final q = e.quantity.trim();
+        out.write("• ${e.label.trim()}${q.isEmpty ? "" : " — $q"}\n");
+      }
+    }
+    if (!any) out.write("\n${t("shop_empty")}\n");
+    return out.toString().trimRight();
+  }
+
+  Future<void> _shareList(_ShoppingListBundle b) async {
+    final text = _listAsText(b);
+    // Teilen-Menü zuerst (ohne await davor), sonst blockt Safari.
+    final shared = await shareText(widget.t("shop_title"), text);
+    if (shared || !mounted) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(widget.t("shop_share_copied"))),
+    );
+  }
+
   _ShoppingListBundle get _b => isMonthTab ? month : day;
 
   Future<void> _moveEntryDialog(
@@ -27315,6 +27354,11 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
       appBar: AppBar(
         title: Text(t("shop_title")),
         actions: [
+          IconButton(
+            tooltip: t("shop_share"),
+            icon: const Icon(Icons.ios_share),
+            onPressed: () => _shareList(b),
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (v) {
