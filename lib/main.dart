@@ -1727,6 +1727,8 @@ class _MainScreenState extends State<MainScreen> {
   String? lastDeviationWarningKey;
   // Daily-overview macro details collapsed by default — only kcal bar visible.
   bool _macroDetailsExpanded = false;
+  /// Tagesübersicht standardmässig zu (nur Titel + „Details“).
+  bool _dayOverviewOpen = false;
   /// Tagesübersicht: „Lebensmittel je Mahlzeit“-Block unter dem Titel.
   bool _dailyOverviewMealsListExpanded = false;
   /// Mahlzeiten-Kcal: "advanced" (Range-Zahlen) | "simple" (Ziel + Band).
@@ -4975,6 +4977,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "overview_details": "Details",
+      "overview_less": "Weniger",
       "plan_meal_rest": "danach noch {kcal} kcal",
       "plan_meal_over": "danach {kcal} kcal drüber",
       "settings_open_intro": "Einleitung & Anleitung öffnen",
@@ -6055,6 +6059,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "overview_details": "Details",
+      "overview_less": "Less",
       "plan_meal_rest": "then {kcal} kcal left",
       "plan_meal_over": "then {kcal} kcal over",
       "settings_open_intro": "Open intro & guide",
@@ -15622,18 +15628,37 @@ class _MainScreenState extends State<MainScreen> {
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
               child: _sectionCard(
             title: t("daily_overview"),
-            titleTrailing: OutlinedButton.icon(
-              onPressed: _showKcalMergeOverviewDialog,
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              ),
-              icon: const Icon(Icons.layers_outlined, size: 16),
-              label: Text(
-                t("kcal_merge_button"),
-                style: const TextStyle(fontSize: 11.5),
-              ),
+            titleTrailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_dayOverviewOpen)
+                  OutlinedButton.icon(
+                    onPressed: _showKcalMergeOverviewDialog,
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                    ),
+                    icon: const Icon(Icons.layers_outlined, size: 16),
+                    label: Text(
+                      t("kcal_merge_button"),
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: const Color(0xFFC9A24A),
+                  ),
+                  onPressed: () =>
+                      setState(() => _dayOverviewOpen = !_dayOverviewOpen),
+                  child: Text(
+                    _dayOverviewOpen ? t("overview_less") : t("overview_details"),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
             ),
             color: _dailyOverviewCardColor,
             shape: RoundedRectangleBorder(
@@ -15644,16 +15669,15 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
             onTitleTap: () {
-              setState(
-                () => _dailyOverviewMealsListExpanded =
-                    !_dailyOverviewMealsListExpanded,
-              );
+              setState(() => _dayOverviewOpen = !_dayOverviewOpen);
             },
-            titleSectionExpanded: _dailyOverviewMealsListExpanded,
-            belowTitle: _dailyOverviewMealsListExpanded
+            titleSectionExpanded: _dayOverviewOpen,
+            belowTitle: _dayOverviewOpen
                 ? _buildDailyOverviewMealFoodExpansions()
                 : null,
-            child: Column(
+            child: !_dayOverviewOpen
+                ? const SizedBox.shrink()
+                : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Material(
@@ -15779,7 +15803,7 @@ class _MainScreenState extends State<MainScreen> {
           // Leichter Trennstrich zwischen Tages-kcal und Mahlzeiten-Block.
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 14),
               child: Divider(
                 height: 1,
                 thickness: 0.8,
