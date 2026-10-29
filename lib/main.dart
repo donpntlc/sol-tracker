@@ -10210,19 +10210,25 @@ class _MainScreenState extends State<MainScreen> {
     VoidCallback? onTitleTap,
     bool titleSectionExpanded = false,
     Widget? belowTitle,
+    /// Nur Titelzeile (schmal, Titel mittig), Inhalt ausgeblendet.
+    bool collapsed = false,
   }) {
     return Card(
       margin: margin,
       color: color,
       shape: shape,
       child: Padding(
-        padding: const EdgeInsets.all(10.0),
+        padding: collapsed
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 2)
+            : const EdgeInsets.all(10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (onTitleTap != null)
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: collapsed
+                    ? CrossAxisAlignment.center
+                    : CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: InkWell(
@@ -10279,8 +10285,10 @@ class _MainScreenState extends State<MainScreen> {
               const SizedBox(height: 4),
               belowTitle,
             ],
-            const SizedBox(height: 8),
-            child,
+            if (!collapsed) ...[
+              const SizedBox(height: 8),
+              child,
+            ],
           ],
         ),
       ),
@@ -15672,6 +15680,7 @@ class _MainScreenState extends State<MainScreen> {
               setState(() => _dayOverviewOpen = !_dayOverviewOpen);
             },
             titleSectionExpanded: _dayOverviewOpen,
+            collapsed: !_dayOverviewOpen,
             belowTitle: _dayOverviewOpen
                 ? _buildDailyOverviewMealFoodExpansions()
                 : null,
@@ -16697,7 +16706,7 @@ class _MainScreenState extends State<MainScreen> {
             SizedBox(height: sectionOpen ? 6 : 2),
             // Hauptbalken etwas schmaler (nicht ganz von Rand zu Rand).
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               child: _buildMealKcalRowCompact(
               _kWorkoutBlockMealId,
               current: totals['calories']!,
@@ -17377,7 +17386,7 @@ class _MainScreenState extends State<MainScreen> {
             SizedBox(height: sectionOpen ? 6 : 2),
             // Hauptbalken etwas schmaler (nicht ganz von Rand zu Rand).
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               child: _buildMealKcalRowCompact(
               meal,
               current: totals['calories']!,
@@ -20959,25 +20968,46 @@ class _MainScreenState extends State<MainScreen> {
       ],
     );
 
+    // Rechts neben dem Balken: aktuell (weiss) / Zielmitte (gold) | Bereich.
     final kcalAddTrailing = <Widget>[
-      const SizedBox(width: 8),
-      Text(
-        current.toStringAsFixed(0),
-        style: TextStyle(
-          fontWeight: FontWeight.w800,
-          fontSize: 16,
-          color: tx.kcal,
-          fontFeatures: const [FontFeature.tabularFigures()],
+      const SizedBox(width: 10),
+      Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: current.toStringAsFixed(0),
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: tx.kcal,
+              ),
+            ),
+            TextSpan(
+              text: " / ",
+              style: TextStyle(fontSize: 13, color: tx.range),
+            ),
+            TextSpan(
+              text: midK.toStringAsFixed(0),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13.5,
+                color: Color(0xFFC9A24A),
+              ),
+            ),
+          ],
+          style: const TextStyle(
+              fontFeatures: [FontFeature.tabularFigures()]),
         ),
       ),
-      const SizedBox(width: 4),
+      Container(
+        width: 1,
+        height: 16,
+        margin: const EdgeInsets.symmetric(horizontal: 7),
+        color: tx.range.withValues(alpha: 0.6),
+      ),
       Text(
-        t("kcal_shorthand"),
-        style: TextStyle(
-          fontSize: 11,
-          color: tx.kcalShorthand,
-          fontWeight: FontWeight.w500,
-        ),
+        rangeStr,
+        style: TextStyle(fontSize: 11, color: tx.range),
       ),
       if (showInlineAdd)
         PopupMenuButton<String>(
@@ -21021,8 +21051,6 @@ class _MainScreenState extends State<MainScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          zielmitteRow,
-          const SizedBox(height: 4),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -21037,8 +21065,6 @@ class _MainScreenState extends State<MainScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        zielmitteRow,
-        const SizedBox(height: 4),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
