@@ -15889,7 +15889,7 @@ class _MainScreenState extends State<MainScreen> {
                 if (meals.contains("Snacks") &&
                     !_isMealMergedLocked("Snacks"))
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                     // Snacks komplett kleiner skaliert (Schrift, Symbole, Abstände).
                     child: _UniformScale(
                       scale: 0.86,
@@ -15900,7 +15900,8 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 14, 4, 16),
+                  // Oben gleich viel Luft wie über den Snacks (Kartenrand 12).
+                  padding: const EdgeInsets.fromLTRB(4, 12, 4, 16),
                   child: Row(
                     children: [
                       const Icon(
@@ -15909,13 +15910,28 @@ class _MainScreenState extends State<MainScreen> {
                         color: Color(0xFFC9A24A),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        t("tracking_meals_block_title"),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          color: context.sol.onCard,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "${t("tracking_meals_block_title")}:",
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              color: context.sol.onCard,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Container(
+                            width: 34,
+                            height: 1.5,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFC9A24A),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
