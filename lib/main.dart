@@ -2058,6 +2058,95 @@ class _MainScreenState extends State<MainScreen> {
     return b.toString();
   }
 
+  /// Aufklappbare Tages-Makro-Balken (Zielbereiche).
+  Widget _dayMacroDetails({
+    required double recK,
+    required double totalProtein,
+    required double totalCarbs,
+    required double totalFat,
+  }) {
+    return AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 220),
+                  sizeCurve: Curves.easeOutCubic,
+                  crossFadeState: _macroDetailsExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  firstChild: const SizedBox(
+                      width: double.infinity, height: 0),
+                  secondChild: Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Builder(builder: (_) {
+                      final pR = dailyMacroRange("protein");
+                      final cR = dailyMacroRange("carbs");
+                      final fR = dailyMacroRange("fat");
+                      final bGoal = _dayBaseGoalKcalForDisplay(selectedDayKey);
+                      final mGoals = effectiveMacroGoalsForDay(selectedDayKey);
+                      final ratio =
+                          bGoal > 0 ? (recK / bGoal).clamp(0.5, 1.5) : 1.0;
+                      final recP = mGoals.protein * ratio;
+                      final recC = mGoals.carbs * ratio;
+                      final recF = mGoals.fat * ratio;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _macroTargetKpiLine(
+                            toggleKey: "day|protein",
+                            label: t("protein"),
+                            current: totalProtein,
+                            minG: pR.minG,
+                            maxG: pR.maxG,
+                            centerG: mGoals.protein,
+                          ),
+                          _buildRangeProgressBar(
+                            label: t("protein"),
+                            current: totalProtein,
+                            minVal: pR.minG,
+                            maxVal: pR.maxG,
+                            baseColor: _proteinColor,
+                            dayTotalGoalG: mGoals.protein,
+                            recommendVal: recP,
+                          ),
+                          _macroTargetKpiLine(
+                            toggleKey: "day|carbs",
+                            label: t("carbs"),
+                            current: totalCarbs,
+                            minG: cR.minG,
+                            maxG: cR.maxG,
+                            centerG: mGoals.carbs,
+                          ),
+                          _buildRangeProgressBar(
+                            label: t("carbs"),
+                            current: totalCarbs,
+                            minVal: cR.minG,
+                            maxVal: cR.maxG,
+                            baseColor: _carbColor,
+                            dayTotalGoalG: mGoals.carbs,
+                            recommendVal: recC,
+                          ),
+                          _macroTargetKpiLine(
+                            toggleKey: "day|fat",
+                            label: t("fat"),
+                            current: totalFat,
+                            minG: fR.minG,
+                            maxG: fR.maxG,
+                            centerG: mGoals.fat,
+                          ),
+                          _buildRangeProgressBar(
+                            label: t("fat"),
+                            current: totalFat,
+                            minVal: fR.minG,
+                            maxVal: fR.maxG,
+                            baseColor: _fatColor,
+                            dayTotalGoalG: mGoals.fat,
+                            recommendVal: recF,
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                );
+  }
+
   // ───────────── Übersicht im Ring-Stil (umschaltbar) ─────────────
   static const String _kOverviewRingKey = "overview_ring_v1";
   bool overviewRingStyle = true;
@@ -2101,13 +2190,13 @@ class _MainScreenState extends State<MainScreen> {
             Text(
               value,
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 17,
                 fontWeight: FontWeight.w800,
                 color: onCard,
               ),
             ),
             const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 12.5, color: muted)),
+            Text(label, style: TextStyle(fontSize: 11.5, color: muted)),
           ],
         );
 
@@ -2119,8 +2208,11 @@ class _MainScreenState extends State<MainScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Column(
             children: [
-              Text(label, style: TextStyle(fontSize: 12.5, color: muted)),
-              const SizedBox(height: 6),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: muted)),
+              const SizedBox(height: 5),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
@@ -2134,7 +2226,7 @@ class _MainScreenState extends State<MainScreen> {
               Text(
                 "${cur.round()} / ${target.round()} g",
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w700,
                   color: onCard,
                 ),
@@ -2149,7 +2241,7 @@ class _MainScreenState extends State<MainScreen> {
       borderRadius: BorderRadius.circular(12),
       onTap: () => setState(() => _macroDetailsExpanded = !_macroDetailsExpanded),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
         child: Column(
           children: [
             Row(
@@ -2157,8 +2249,8 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 Expanded(child: side(_fmtThousands(eaten), t("ring_eaten"))),
                 SizedBox(
-                  width: 150,
-                  height: 150,
+                  width: 124,
+                  height: 124,
                   child: CustomPaint(
                     painter: _KcalRingPainter(
                       ratio: ratio,
@@ -2172,7 +2264,7 @@ class _MainScreenState extends State<MainScreen> {
                           Text(
                             _fmtThousands(left.abs()),
                             style: TextStyle(
-                              fontSize: 30,
+                              fontSize: 25,
                               fontWeight: FontWeight.w900,
                               color: isOver ? over : onCard,
                               height: 1.0,
@@ -2191,7 +2283,7 @@ class _MainScreenState extends State<MainScreen> {
                 Expanded(child: side(_fmtThousands(goal), t("ring_goal"))),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             Row(
               children: [
                 macro(t("carbs"), carbs, mg.carbs, _carbColor),
@@ -15425,6 +15517,48 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _phaseGoalStrip()),
           if (nutritionMode == "Diät")
             SliverToBoxAdapter(child: _cutDayStepsCard()),
+          if (overviewRingStyle)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Card(
+                  margin: EdgeInsets.zero,
+                  color: context.sol.card,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                      color: context.sol.soft.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _ringOverview(
+                          eaten: totalCalories,
+                          goal: () {
+                            if (!isCheatDay(selectedDayKey)) return goalCalories;
+                            if (isSelectedDayCrashout) return goalCalories;
+                            final eff = effectiveGoalKcalForDay(selectedDayKey);
+                            return eff > 0 ? eff : goalCalories;
+                          }(),
+                          protein: totalProtein,
+                          carbs: totalCarbs,
+                          fat: totalFat,
+                        ),
+                        _dayMacroDetails(
+                          recK: recK,
+                          totalProtein: totalProtein,
+                          totalCarbs: totalCarbs,
+                          totalFat: totalFat,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
@@ -15510,6 +15644,7 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 ),
+                if (!overviewRingStyle)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: Divider(
@@ -15517,20 +15652,7 @@ class _MainScreenState extends State<MainScreen> {
                     color: context.sol.soft.withValues(alpha: 0.35),
                   ),
                 ),
-                if (overviewRingStyle)
-                  _ringOverview(
-                    eaten: totalCalories,
-                    goal: () {
-                      if (!isCheatDay(selectedDayKey)) return goalCalories;
-                      if (isSelectedDayCrashout) return goalCalories;
-                      final eff = effectiveGoalKcalForDay(selectedDayKey);
-                      return eff > 0 ? eff : goalCalories;
-                    }(),
-                    protein: totalProtein,
-                    carbs: totalCarbs,
-                    fat: totalFat,
-                  )
-                else
+                if (!overviewRingStyle)
                 _buildKcalHeader(
                   current: totalCalories,
                   goal: () {
@@ -15542,103 +15664,18 @@ class _MainScreenState extends State<MainScreen> {
                   recommendKcal: recK,
                 ),
                 _plannedDayPreview(),
-                AnimatedCrossFade(
-                  duration: const Duration(milliseconds: 220),
-                  sizeCurve: Curves.easeOutCubic,
-                  crossFadeState: _macroDetailsExpanded
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  firstChild: const SizedBox(
-                      width: double.infinity, height: 0),
-                  secondChild: Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Builder(builder: (_) {
-                      final pR = dailyMacroRange("protein");
-                      final cR = dailyMacroRange("carbs");
-                      final fR = dailyMacroRange("fat");
-                      final bGoal = _dayBaseGoalKcalForDisplay(selectedDayKey);
-                      final mGoals = effectiveMacroGoalsForDay(selectedDayKey);
-                      final ratio =
-                          bGoal > 0 ? (recK / bGoal).clamp(0.5, 1.5) : 1.0;
-                      final recP = mGoals.protein * ratio;
-                      final recC = mGoals.carbs * ratio;
-                      final recF = mGoals.fat * ratio;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _macroTargetKpiLine(
-                            toggleKey: "day|protein",
-                            label: t("protein"),
-                            current: totalProtein,
-                            minG: pR.minG,
-                            maxG: pR.maxG,
-                            centerG: mGoals.protein,
-                          ),
-                          _buildRangeProgressBar(
-                            label: t("protein"),
-                            current: totalProtein,
-                            minVal: pR.minG,
-                            maxVal: pR.maxG,
-                            baseColor: _proteinColor,
-                            dayTotalGoalG: mGoals.protein,
-                            recommendVal: recP,
-                          ),
-                          _macroTargetKpiLine(
-                            toggleKey: "day|carbs",
-                            label: t("carbs"),
-                            current: totalCarbs,
-                            minG: cR.minG,
-                            maxG: cR.maxG,
-                            centerG: mGoals.carbs,
-                          ),
-                          _buildRangeProgressBar(
-                            label: t("carbs"),
-                            current: totalCarbs,
-                            minVal: cR.minG,
-                            maxVal: cR.maxG,
-                            baseColor: _carbColor,
-                            dayTotalGoalG: mGoals.carbs,
-                            recommendVal: recC,
-                          ),
-                          _macroTargetKpiLine(
-                            toggleKey: "day|fat",
-                            label: t("fat"),
-                            current: totalFat,
-                            minG: fR.minG,
-                            maxG: fR.maxG,
-                            centerG: mGoals.fat,
-                          ),
-                          _buildRangeProgressBar(
-                            label: t("fat"),
-                            current: totalFat,
-                            minVal: fR.minG,
-                            maxVal: fR.maxG,
-                            baseColor: _fatColor,
-                            dayTotalGoalG: mGoals.fat,
-                            recommendVal: recF,
-                          ),
-                        ],
-                      );
-                    }),
+                if (!overviewRingStyle)
+                  _dayMacroDetails(
+                    recK: recK,
+                    totalProtein: totalProtein,
+                    totalCarbs: totalCarbs,
+                    totalFat: totalFat,
                   ),
-                ),
               ],
             ),
           ),
             ),
           ),
-          if (meals.contains("Snacks") &&
-              !_isMealMergedLocked("Snacks"))
-            SliverToBoxAdapter(
-              child: Padding(
-                // Gleiche Breite wie die Mahlzeiten im Block (6 + 8 + 2).
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                child: _buildMealSectionCard(
-                  "Snacks",
-                  sectionCardMargin: EdgeInsets.zero,
-                ),
-              ),
-            ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               0,
@@ -15682,6 +15719,13 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Snacks oben im selben Feld, darunter „Mahlzeiten“.
+                if (meals.contains("Snacks") &&
+                    !_isMealMergedLocked("Snacks"))
+                  _buildMealSectionCard(
+                    "Snacks",
+                    sectionCardMargin: const EdgeInsets.fromLTRB(2, 0, 2, 12),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
                   child: Row(
@@ -27246,7 +27290,7 @@ class _KcalRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 11.0;
+    const stroke = 9.0;
     final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke,
         size.height - stroke);
     const start = math.pi * 0.75;
