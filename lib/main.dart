@@ -2050,6 +2050,227 @@ class _MainScreenState extends State<MainScreen> {
     return b.toString();
   }
 
+  // ───────────── Vorgeplante Mahlzeiten ─────────────
+  // Eigene Liste, zählt NICHT ins Tracking. Abhaken = gegessen → wandert nach trackedFoods.
+  static const String _kPlannedFoodsKey = "planned_foods_v1";
+  List<TrackedFood> plannedFoods = [];
+
+  Future<void> _loadPlannedFoods() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPlannedFoodsKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = (jsonDecode(raw) as List)
+          .map((e) => TrackedFood.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (!mounted) return;
+      setState(() => plannedFoods = list);
+    } catch (_) {}
+  }
+
+  Future<void> _savePlannedFoods() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _kPlannedFoodsKey,
+        jsonEncode(plannedFoods.map((p) => p.toMap()).toList()),
+      );
+    } catch (_) {}
+  }
+
+  List<TrackedFood> _plannedFor(String meal) => plannedFoods
+      .where((p) => p.meal == meal && p.dayKey == selectedDayKey)
+      .toList();
+
+  void _confirmPlanned(TrackedFood p) {
+    setState(() {
+      plannedFoods.remove(p);
+      trackedFoods.add(TrackedFood(
+        food: p.food,
+        grams: p.grams,
+        meal: p.meal,
+        dayKey: p.dayKey,
+      ));
+    });
+    _updateMealTotals();
+    _saveAppState();
+    _savePlannedFoods();
+    _showBlessing();
+    _applyDailyKcalOverSchedule();
+  }
+
+  Future<void> _openPlannedEdit(TrackedFood p) async {
+    final ctrl = TextEditingController(text: p.grams.round().toString());
+    double grams() =>
+        double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: Text(p.food.name, style: const TextStyle(fontSize: 18)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("plan_edit_hint"),
+                  style: const TextStyle(
+                      fontSize: 12.5, color: Colors.white60, height: 1.3),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: ctrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: t("plan_amount_label"),
+                    suffixText: "g",
+                  ),
+                  onChanged: (_) => setL(() {}),
+                ),
+                if (grams() > 0) _trackPortionMacroPreview(p.food, grams()),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, "delete"),
+              child: Text(
+                t("plan_remove"),
+                style: const TextStyle(color: Color(0xFFE57373)),
+              ),
+            ),
+            TextButton(
+              onPressed: grams() > 0 ? () => Navigator.pop(ctx, "save") : null,
+              child: Text(t("save")),
+            ),
+            FilledButton(
+              onPressed: grams() > 0 ? () => Navigator.pop(ctx, "eaten") : null,
+              child: Text(t("plan_eaten_button")),
+            ),
+          ],
+        ),
+      ),
+    );
+    final g = grams();
+    if (!mounted || res == null) return;
+    if (res == "delete") {
+      setState(() => plannedFoods.remove(p));
+      _savePlannedFoods();
+      return;
+    }
+    if (g <= 0) return;
+    setState(() => p.grams = g);
+    if (res == "eaten") {
+      _confirmPlanned(p);
+    } else {
+      _savePlannedFoods();
+    }
+  }
+
+  /// In der Mahlzeit-Karte: geplante Einträge ausgegraut mit Haken-Kästchen.
+  Widget _plannedFoodsBlock(String meal) {
+    final items = _plannedFor(meal);
+    if (items.isEmpty) return const SizedBox.shrink();
+    final muted = context.sol.muted;
+    final kc = items.fold(0.0, (a, p) => a + p.calories);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            tFmt("plan_meal_header", {"kcal": kc.round()}),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFD4AF37),
+              letterSpacing: 0.3,
+            ),
+          ),
+          for (final p in items)
+            Row(
+              children: [
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 34),
+                  tooltip: t("plan_eaten_button"),
+                  icon: Icon(Icons.check_box_outline_blank,
+                      size: 22, color: muted),
+                  onPressed: () => _confirmPlanned(p),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _openPlannedEdit(p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        "${p.food.name} · ${p.grams.round()} g · ${p.calories.round()} kcal",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: muted.withValues(alpha: 0.8),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Tagesübersicht: „Wenn du alles isst: …“ (nur wenn etwas geplant ist).
+  Widget _plannedDayPreview() {
+    final items =
+        plannedFoods.where((p) => p.dayKey == selectedDayKey).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    final eaten =
+        trackedFoods.where((f) => f.dayKey == selectedDayKey).toList();
+    double sum(List<TrackedFood> l, double Function(TrackedFood) f) =>
+        l.fold(0.0, (a, e) => a + f(e));
+    final all = [...eaten, ...items];
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: const Color(0xFFD4AF37).withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tFmt("plan_day_preview", {
+                "kcal": sum(all, (e) => e.calories).round(),
+              }),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: context.sol.onCard,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              "${t("abbr_protein")} ${sum(all, (e) => e.protein).round()} · ${t("abbr_carbs")} ${sum(all, (e) => e.carbs).round()} · ${t("abbr_fat")} ${sum(all, (e) => e.fat).round()} g  ·  ${tFmt("plan_day_open", {"kcal": sum(items, (e) => e.calories).round()})}",
+              style: TextStyle(fontSize: 11.5, color: context.sol.muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ───────────── Phasen-Ziel (Countdown) ─────────────
   // Gespeichert als JSON: {kg, bulk, kcal, start}. 7000 kcal ≈ 1 kg.
   static const String _kPhaseGoalKey = "phase_goal_v1";
@@ -3465,6 +3686,7 @@ class _MainScreenState extends State<MainScreen> {
     } catch (_) {}
     unawaited(_loadAppState());
     unawaited(_loadPhaseGoal());
+    unawaited(_loadPlannedFoods());
   }
 
   @override
@@ -4405,6 +4627,15 @@ class _MainScreenState extends State<MainScreen> {
       "weekly_balance_kpi": "Wochen-Δ (kg)",
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
+      "plan_add_button": "Vormerken",
+      "plan_added_snack": "Vorgemerkt — abhaken, sobald du es gegessen hast.",
+      "plan_meal_header": "GEPLANT · +{kcal} kcal",
+      "plan_eaten_button": "Gegessen ✓",
+      "plan_remove": "Entfernen",
+      "plan_edit_hint": "Geplant, zählt noch nicht. Menge anpassen und als gegessen bestätigen.",
+      "plan_amount_label": "Menge",
+      "plan_day_preview": "Wenn du alles isst: {kcal} kcal",
+      "plan_day_open": "davon geplant {kcal} kcal",
       "phase_goal_set": "Ziel setzen",
       "phase_goal_title": "Phasen-Ziel",
       "phase_goal_lose": "Abnehmen",
@@ -5450,6 +5681,15 @@ class _MainScreenState extends State<MainScreen> {
       "weekly_balance_kpi": "Week Δ (kg)",
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
+      "plan_add_button": "Plan",
+      "plan_added_snack": "Planned — tick it off once you've eaten it.",
+      "plan_meal_header": "PLANNED · +{kcal} kcal",
+      "plan_eaten_button": "Eaten ✓",
+      "plan_remove": "Remove",
+      "plan_edit_hint": "Planned, not counted yet. Adjust the amount and confirm as eaten.",
+      "plan_amount_label": "Amount",
+      "plan_day_preview": "If you eat everything: {kcal} kcal",
+      "plan_day_open": "planned {kcal} kcal",
       "phase_goal_set": "Set goal",
       "phase_goal_title": "Phase goal",
       "phase_goal_lose": "Lose",
@@ -15061,6 +15301,7 @@ class _MainScreenState extends State<MainScreen> {
                   }(),
                   recommendKcal: recK,
                 ),
+                _plannedDayPreview(),
                 AnimatedCrossFade(
                   duration: const Duration(milliseconds: 220),
                   sizeCurve: Curves.easeOutCubic,
@@ -16007,6 +16248,8 @@ class _MainScreenState extends State<MainScreen> {
               simple: mealKcalDisplayMode == "simple",
               showInlineAdd: false,
             ),
+            _plannedFoodsBlock("Pre-Workout"),
+            _plannedFoodsBlock("Post-Workout"),
             if (sectionOpen) ...[
               _categoryExpandDivider(),
               _workoutBlockMacroTableBlock(),
@@ -16681,6 +16924,7 @@ class _MainScreenState extends State<MainScreen> {
               simple: mealKcalDisplayMode == "simple",
               showInlineAdd: false,
             ),
+            _plannedFoodsBlock(meal),
             if (sectionOpen) ...[
               _categoryExpandDivider(),
               _mealMacroTableBlock(meal),
@@ -22557,6 +22801,65 @@ class _MainScreenState extends State<MainScreen> {
             }
           }
 
+          void submitAdd(bool planned) {
+                  if (selectedFood == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(t("choose_food"))),
+                    );
+                    return;
+                  }
+                  final f = selectedFood!;
+                  double? g;
+                  if (f.isRecipe) {
+                    if (recipeAdvanced) {
+                      g = _gramsForTrackedAdd(f, advInputMode, advCtrl.text);
+                    } else {
+                      if (recipeSimpleMode == "portion" &&
+                          f.basePortionGrams != null) {
+                        final m = _tryParseUserNumber(recipePortionCtrl.text);
+                        if (m == null || m <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(t("track_error_bad"))),
+                          );
+                          return;
+                        }
+                        g = m * f.basePortionGrams!;
+                      } else {
+                        g = _tryParseUserNumber(recipeGramCtrl.text);
+                      }
+                    }
+                  } else {
+                    g = _gramsFromTrackInputDisplay(
+                        f, inputMode, trackScrollDisplayValue);
+                  }
+                  if (g == null || g <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(t("track_error_bad"))),
+                    );
+                    return;
+                  }
+                  setState(() {
+                    (planned ? plannedFoods : trackedFoods).add(TrackedFood(
+                      food: f,
+                      grams: g!,
+                      meal: meal,
+                      dayKey: selectedDayKey,
+                    ));
+                  });
+                  Navigator.pop(dialogCtx);
+                  if (planned) {
+                    _savePlannedFoods();
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      SnackBar(content: Text(t("plan_added_snack"))),
+                    );
+                    return;
+                  }
+                  _saveAppState();
+                  _showBlessing();
+                  _applyDailyKcalOverSchedule();
+          }
+
           return AlertDialog(
             title: Text(t("choose_food")),
             content: SingleChildScrollView(
@@ -23461,57 +23764,11 @@ class _MainScreenState extends State<MainScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () {
-                  if (selectedFood == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(t("choose_food"))),
-                    );
-                    return;
-                  }
-                  final f = selectedFood!;
-                  double? g;
-                  if (f.isRecipe) {
-                    if (recipeAdvanced) {
-                      g = _gramsForTrackedAdd(f, advInputMode, advCtrl.text);
-                    } else {
-                      if (recipeSimpleMode == "portion" &&
-                          f.basePortionGrams != null) {
-                        final m = _tryParseUserNumber(recipePortionCtrl.text);
-                        if (m == null || m <= 0) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(t("track_error_bad"))),
-                          );
-                          return;
-                        }
-                        g = m * f.basePortionGrams!;
-                      } else {
-                        g = _tryParseUserNumber(recipeGramCtrl.text);
-                      }
-                    }
-                  } else {
-                    g = _gramsFromTrackInputDisplay(
-                        f, inputMode, trackScrollDisplayValue);
-                  }
-                  if (g == null || g <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(t("track_error_bad"))),
-                    );
-                    return;
-                  }
-                  setState(() {
-                    trackedFoods.add(TrackedFood(
-                      food: f,
-                      grams: g!,
-                      meal: meal,
-                      dayKey: selectedDayKey,
-                    ));
-                  });
-                  _saveAppState();
-                  Navigator.pop(dialogCtx);
-                  _showBlessing();
-                  _applyDailyKcalOverSchedule();
-                },
+                onPressed: () => submitAdd(true),
+                child: Text(t("plan_add_button")),
+              ),
+              FilledButton(
+                onPressed: () => submitAdd(false),
                 child: Text(t("add")),
               ),
             ],
