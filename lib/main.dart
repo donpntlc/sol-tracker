@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:sol/ai_meal_photo.dart' as aiphoto;
 import 'package:sol/sol_recipe_hero_image.dart';
+import 'package:sol/barcode_photo_decode.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -4189,7 +4190,9 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
     if (nutritionMode == "Advanced") {
-      _applyAdvancedPreset();
+      // Gespeicherte (evtl. von Hand bearbeitete) Ziele beim Start NICHT
+      // überschreiben — nur beim allerersten Start aus dem Regler rechnen.
+      if (goalsRaw == null) _applyAdvancedPreset();
     } else {
       _applyAutoNutritionTargets();
     }
@@ -4650,6 +4653,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "barcode_photo_button": "Foto scannen",
+      "barcode_photo_fail": "Kein Barcode erkannt. Nah ran, gerade halten, gutes Licht — nochmal versuchen oder Code eintippen.",
+      "barcode_manual_button": "Code eintippen",
+      "barcode_manual_title": "Barcode eintippen",
+      "barcode_manual_hint": "Zahlen unter dem Strichcode",
+      "barcode_manual_ok": "Suchen",
       "settings_help_texts_title": "Hilfetexte",
       "settings_help_texts": "Hilfetexte anzeigen",
       "settings_help_texts_sub": "Tipps und Erklärungen im Tracking (z. B. komplexe/einfache Carbs, Zielhinweise). Aus = aufgeräumter.",
@@ -5707,6 +5716,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "barcode_photo_button": "Photo scan",
+      "barcode_photo_fail": "No barcode found. Get close, hold straight, good light — try again or type the code.",
+      "barcode_manual_button": "Type code",
+      "barcode_manual_title": "Type barcode",
+      "barcode_manual_hint": "Digits under the barcode",
+      "barcode_manual_ok": "Search",
       "settings_help_texts_title": "Help texts",
       "settings_help_texts": "Show help texts",
       "settings_help_texts_sub": "Tips and explanations in tracking (e.g. complex/simple carbs, target notes). Off = cleaner.",
@@ -26017,6 +26032,96 @@ class _BarcodeScanDialog extends StatefulWidget {
 class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
   final MobileScannerController _controller = MobileScannerController();
   bool _closed = false;
+  bool _busy = false;
+  String? _msg;
+
+  void _finish(String v) {
+    if (_closed) return;
+    _closed = true;
+    if (mounted) Navigator.of(context).pop<String>(v);
+  }
+
+  /// Web-App: Foto machen und Barcode daraus lesen (zuverlässiger als Live-Bild auf dem iPhone).
+  Future<void> _scanFromPhoto() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    try {
+      try {
+        await _controller.stop();
+      } catch (_) {}
+      final x = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1800,
+        imageQuality: 92,
+      );
+      if (x == null) {
+        if (mounted) setState(() => _busy = false);
+        try {
+          await _controller.start();
+        } catch (_) {}
+        return;
+      }
+      final bytes = await x.readAsBytes();
+      final code = await decodeBarcodeFromPhoto(bytes, x.mimeType ?? "image/jpeg");
+      final digits = (code ?? "").replaceAll(RegExp(r'[^\d]'), "");
+      if (digits.length >= 8) {
+        _finish(code!);
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _msg = widget.t("barcode_photo_fail");
+        });
+      }
+      try {
+        await _controller.start();
+      } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _msg = widget.t("barcode_photo_fail");
+        });
+      }
+    }
+  }
+
+  Future<void> _enterManually() async {
+    final ctrl = TextEditingController();
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(widget.t("barcode_manual_title")),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(hintText: widget.t("barcode_manual_hint")),
+          onSubmitted: (t) => Navigator.pop(ctx, t),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(widget.t("cancel")),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: Text(widget.t("barcode_manual_ok")),
+          ),
+        ],
+      ),
+    );
+    final digits = (v ?? "").replaceAll(RegExp(r'[^\d]'), "");
+    if (digits.length >= 8) {
+      _finish(digits);
+    } else if (v != null && mounted) {
+      setState(() => _msg = widget.t("db_barcode_short"));
+    }
+  }
 
   @override
   void dispose() {
@@ -26045,10 +26150,7 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
                     if (v.replaceAll(RegExp(r'[^\d]'), "").length < 8) {
                       continue;
                     }
-                    _closed = true;
-                    if (context.mounted) {
-                      Navigator.of(context).pop<String>(v);
-                    }
+                    _finish(v);
                     return;
                   }
                 },
@@ -26069,10 +26171,38 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
                   ),
                 ),
               ),
+              if (_busy)
+                const Positioned.fill(
+                  child: ColoredBox(
+                    color: Colors.black54,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ),
             ],
           ),
         ),
       ),
+      actionsAlignment: MainAxisAlignment.spaceBetween,
+      actions: [
+        if (_msg != null)
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              _msg!,
+              style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 12.5),
+            ),
+          ),
+        TextButton(
+          onPressed: _busy ? null : _enterManually,
+          child: Text(widget.t("barcode_manual_button")),
+        ),
+        if (kIsWeb)
+          FilledButton.icon(
+            onPressed: _busy ? null : _scanFromPhoto,
+            icon: const Icon(Icons.photo_camera, size: 18),
+            label: Text(widget.t("barcode_photo_button")),
+          ),
+      ],
     );
   }
 }
