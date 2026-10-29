@@ -23119,7 +23119,8 @@ class _MainScreenState extends State<MainScreen> {
                             color: _barMidTick,
                           ),
                         ),
-                      if (nudgeRec)
+                      // 4. Strich (Wochen-Empfehlung) ausgeblendet — nur min · Mitte · max.
+                      if (nudgeRec && false)
                         Positioned(
                           left: (w0 * recR - 0.75)
                               .clamp(0.0, w0 - 1.5)
