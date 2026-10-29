@@ -2190,7 +2190,7 @@ class _MainScreenState extends State<MainScreen> {
     required double fat,
   }) {
     const gold = Color(0xFFC9A24A);
-    const over = Color(0xFFE57373);
+    const over = Color(0xFFA84A4A);
     final onCard = context.sol.onCard;
     final muted = context.sol.muted;
     final left = goal - eaten;
@@ -3494,7 +3494,7 @@ class _MainScreenState extends State<MainScreen> {
   Color get _barUnder =>
       _isLightUi ? const Color(0xFF6B665E) : const Color(0xFFE8E4DC);
   static const Color _barIn = Color(0xFFC9A24A);
-  static const Color _barOver = Color(0xFFE57373); // helles Rot (wie „Zu viel“)
+  static const Color _barOver = Color(0xFFA84A4A); // Bordeaux / Weinrot
   Color get _barMidTick =>
       _isLightUi ? const Color(0xFF1E1A16) : const Color(0xFFFFFFFF);
 
