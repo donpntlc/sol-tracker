@@ -2261,39 +2261,6 @@ class _MainScreenState extends State<MainScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Expanded(child: side(_fmtThousands(eaten), t("ring_eaten"))),
-                SizedBox(
-                  width: 140,
-                  height: 140,
-                  child: CustomPaint(
-                    painter: _KcalRingPainter(
-                      ratio: ratio,
-                      track: muted.withValues(alpha: 0.22),
-                      color: isOver ? over : gold,
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _fmtThousands(goal),
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                              color: onCard,
-                              height: 1.0,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            t("ring_goal"),
-                            style: TextStyle(fontSize: 13, color: muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -2335,6 +2302,39 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                 ),
+                SizedBox(
+                  width: 140,
+                  height: 140,
+                  child: CustomPaint(
+                    painter: _KcalRingPainter(
+                      ratio: ratio,
+                      track: muted.withValues(alpha: 0.22),
+                      color: isOver ? over : gold,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _fmtThousands(eaten),
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              color: onCard,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            t("ring_eaten"),
+                            style: TextStyle(fontSize: 13, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(child: side(_fmtThousands(goal), t("ring_goal"))),
               ],
             ),
             const SizedBox(height: 12),
