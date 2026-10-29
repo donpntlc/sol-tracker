@@ -12758,27 +12758,27 @@ class _MainScreenState extends State<MainScreen> {
                     controller: name,
                     decoration: _touchInputDecoration(t("name")),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: protein,
                     decoration: _touchInputDecoration(t("protein")),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: carbs,
                     decoration: _touchInputDecoration(t("carbs_total")),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: sugar,
                     decoration: _touchInputDecoration(t("of_which_sugar")),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: fiber,
                     decoration: _touchInputDecoration(t("of_which_fiber")),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: fat,
                     decoration: _touchInputDecoration(t("fat")),
@@ -12796,7 +12796,7 @@ class _MainScreenState extends State<MainScreen> {
                     style: const TextStyle(
                         fontSize: 12, color: Colors.white60),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 14),
                   DropdownButton<String>(
                     isExpanded: true,
                     value: category,
@@ -12840,7 +12840,7 @@ class _MainScreenState extends State<MainScreen> {
                         if (p != null) setD(() => carbK = p);
                       },
                     ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 14),
                   Text(
                     t("db_also_in"),
                     style: const TextStyle(
@@ -12848,7 +12848,7 @@ class _MainScreenState extends State<MainScreen> {
                       color: Colors.white60,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 14),
                   Wrap(
                     spacing: 6,
                     runSpacing: 4,
@@ -12867,13 +12867,13 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 14),
                   Text(
                     t("recipe_flavor_filter_label"),
                     style: const TextStyle(
                         fontSize: 12, color: Colors.white60),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 14),
                   DropdownButton<String?>(
                     isExpanded: true,
                     value: flavor,
@@ -12899,7 +12899,7 @@ class _MainScreenState extends State<MainScreen> {
                     style: const TextStyle(
                         fontSize: 12, color: Colors.white60),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 14),
                   DropdownButton<String>(
                     isExpanded: true,
                     value: type,
@@ -14051,12 +14051,12 @@ class _MainScreenState extends State<MainScreen> {
                   r.barcode,
                   style: const TextStyle(fontSize: 11, color: Colors.white38),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 TextField(
                   controller: nCtrl,
                   decoration: _touchInputDecoration(t("name")),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
                   value: saveCat,
                   decoration: _touchInputDecoration(t("db_off_category")),
@@ -14101,7 +14101,7 @@ class _MainScreenState extends State<MainScreen> {
                       if (p != null) setL(() => saveCK = p);
                     },
                   ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
                   value: saveType,
                   decoration: _touchInputDecoration(t("type")),
@@ -14121,7 +14121,7 @@ class _MainScreenState extends State<MainScreen> {
                     setL(() => saveType = v);
                   },
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 14),
                 DropdownButtonFormField<String?>(
                   value: saveFlavor,
                   decoration: _touchInputDecoration(
@@ -14144,36 +14144,36 @@ class _MainScreenState extends State<MainScreen> {
                     setL(() => saveFlavor = v);
                   },
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 14),
                 Text(
                   t("values_per_100g"),
                   style: const TextStyle(fontSize: 12),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 14),
                 TextField(
                     controller: p,
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
                     decoration: _touchInputDecoration(t("protein"))),
-                const SizedBox(height: 4),
+                const SizedBox(height: 14),
                 TextField(
                     controller: c,
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
                     decoration: _touchInputDecoration(t("carbs_total"))),
-                const SizedBox(height: 4),
+                const SizedBox(height: 14),
                 TextField(
                     controller: s,
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
                     decoration: _touchInputDecoration(t("of_which_sugar"))),
-                const SizedBox(height: 4),
+                const SizedBox(height: 14),
                 TextField(
                     controller: fi,
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
                     decoration: _touchInputDecoration(t("of_which_fiber"))),
-                const SizedBox(height: 4),
+                const SizedBox(height: 14),
                 TextField(
                     controller: f,
                     keyboardType: const TextInputType.numberWithOptions(
