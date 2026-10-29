@@ -636,6 +636,13 @@ class TrackedFood {
   }
 }
 
+/// Eingabefelder: 1 Nachkommastelle nur wenn nötig („12“ statt „12.0“).
+String _fmtEdit1(double v) {
+  final r = (v * 10).round() / 10;
+  if (r == r.roundToDouble()) return r.toStringAsFixed(0);
+  return r.toStringAsFixed(1);
+}
+
 double? foodGramsFromTrackInput(Food food, String inputMode, double v) {
   if (v <= 0) return null;
   switch (inputMode) {
@@ -993,7 +1000,7 @@ class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
       case "kcal":
         return v.clamp(10.0, 3000.0);
       default:
-        return v.clamp(0.5, 100.0);
+        return v.clamp(1.0, 100.0);
     }
   }
 
@@ -1072,7 +1079,7 @@ class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
       case "kcal":
         return List.generate(300, (i) => (i + 1) * 10.0);
       default:
-        return List.generate(200, (i) => (i + 1) * 0.5);
+        return List.generate(100, (i) => (i + 1).toDouble());
     }
   }
 
@@ -1092,12 +1099,8 @@ class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
 
   String _formatValue(String mode, double v) {
     switch (mode) {
-      case "grams":
-        return v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
-      case "kcal":
-        return v.toStringAsFixed(0);
       default:
-        return v.toStringAsFixed(1);
+        return v.round().toString();
     }
   }
 
@@ -6943,7 +6946,7 @@ class _MainScreenState extends State<MainScreen> {
         const SizedBox(height: 4),
         Center(
           child: Text(
-            "∑ ${food.calories.toStringAsFixed(1)} kcal / 100 g",
+            "∑ ${food.calories.toStringAsFixed(0)} kcal / 100 g",
             style: TextStyle(
               fontSize: 12.5,
               color: Colors.white.withValues(alpha: 0.45),
@@ -9367,7 +9370,11 @@ class _MainScreenState extends State<MainScreen> {
     return (x * 100).round() / 100.0;
   }
 
-  String _fmtAdv2(double x) => _round2(x).toStringAsFixed(2);
+  String _fmtAdv2(double x) {
+    final r = _round2(x);
+    if (r == r.roundToDouble()) return r.toStringAsFixed(0);
+    return r.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
+  }
 
   Widget _kpiLine(String label, String value) {
     return Padding(
@@ -11606,11 +11613,11 @@ class _MainScreenState extends State<MainScreen> {
     final oldName = food.name;
     final name = TextEditingController(text: food.name);
     final protein = TextEditingController(
-        text: food.protein.toStringAsFixed(1));
-    final carbs = TextEditingController(text: food.carbs.toStringAsFixed(1));
-    final sugar = TextEditingController(text: food.sugar.toStringAsFixed(1));
-    final fiber = TextEditingController(text: food.fiber.toStringAsFixed(1));
-    final fat = TextEditingController(text: food.fat.toStringAsFixed(1));
+        text: _fmtEdit1(food.protein));
+    final carbs = TextEditingController(text: _fmtEdit1(food.carbs));
+    final sugar = TextEditingController(text: _fmtEdit1(food.sugar));
+    final fiber = TextEditingController(text: _fmtEdit1(food.fiber));
+    final fat = TextEditingController(text: _fmtEdit1(food.fat));
     var category = food.category;
     var type = food.type;
     var alsoFruit = food.extraCategories.contains("Obst");
@@ -12723,7 +12730,7 @@ class _MainScreenState extends State<MainScreen> {
             setL(() {
               inputMode = mode;
               final d = _trackDisplayValueForGrams(food, mode, gFill);
-              g.text = (d ?? gFill).toStringAsFixed(1);
+              g.text = (d ?? gFill).round().toString();
             });
           }
           return AlertDialog(
@@ -12928,11 +12935,11 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Nährwerte prüfen, in [foodDatabase] speichern; Rückgabe des neuen [Food] für z. B. Tracking.
   Future<Food?> _showOffPreviewFromOff(_OffFetchResult r) async {
-    final p = TextEditingController(text: r.protein.toStringAsFixed(1));
-    final c = TextEditingController(text: r.carbs.toStringAsFixed(1));
-    final s = TextEditingController(text: r.sugar.toStringAsFixed(1));
-    final fi = TextEditingController(text: r.fiber.toStringAsFixed(1));
-    final f = TextEditingController(text: r.fat.toStringAsFixed(1));
+    final p = TextEditingController(text: _fmtEdit1(r.protein));
+    final c = TextEditingController(text: _fmtEdit1(r.carbs));
+    final s = TextEditingController(text: _fmtEdit1(r.sugar));
+    final fi = TextEditingController(text: _fmtEdit1(r.fiber));
+    final f = TextEditingController(text: _fmtEdit1(r.fat));
     final nCtrl = TextEditingController(text: r.name);
     if (!mounted) return null;
     String saveCat = "Carbs";
@@ -13805,12 +13812,12 @@ class _MainScreenState extends State<MainScreen> {
     final af = t("abbr_fat");
     final per = t("gen_food_per_100_short");
     if (forCategory == "Protein" || forCategory == "Rezepte") {
-      return "$per · $ap: ${p.toStringAsFixed(1)}  $ak: ${k.toStringAsFixed(1)}  $af: ${fa.toStringAsFixed(1)}  |  ${kc.toStringAsFixed(0)} kcal";
+      return "$per · $ap: ${p.toStringAsFixed(0)}  $ak: ${k.toStringAsFixed(0)}  $af: ${fa.toStringAsFixed(0)}  |  ${kc.toStringAsFixed(0)} kcal";
     }
     if (forCategory == "Carbs") {
-      return "$per · $ak: ${k.toStringAsFixed(1)}  $ap: ${p.toStringAsFixed(1)}  $af: ${fa.toStringAsFixed(1)}  |  ${kc.toStringAsFixed(0)} kcal";
+      return "$per · $ak: ${k.toStringAsFixed(0)}  $ap: ${p.toStringAsFixed(0)}  $af: ${fa.toStringAsFixed(0)}  |  ${kc.toStringAsFixed(0)} kcal";
     }
-    return "$per · $af: ${fa.toStringAsFixed(1)}  $ap: ${p.toStringAsFixed(1)}  $ak: ${k.toStringAsFixed(1)}  |  ${kc.toStringAsFixed(0)} kcal";
+    return "$per · $af: ${fa.toStringAsFixed(0)}  $ap: ${p.toStringAsFixed(0)}  $ak: ${k.toStringAsFixed(0)}  |  ${kc.toStringAsFixed(0)} kcal";
   }
 
   Widget _mealGenRecipeDropdownItem(Food f) {
@@ -17709,21 +17716,19 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 _kpiLine(
                   t("goal_protein"),
-                  "${nutritionMode == "Advanced" ? _fmtAdv2(goalProtein) : goalProtein.toStringAsFixed(0)} g",
+                  "${goalProtein.toStringAsFixed(0)} g",
                 ),
                 _kpiLine(
                   t("goal_carbs"),
-                  "${nutritionMode == "Advanced" ? _fmtAdv2(goalCarbs) : goalCarbs.toStringAsFixed(0)} g",
+                  "${goalCarbs.toStringAsFixed(0)} g",
                 ),
                 _kpiLine(
                   t("goal_fat"),
-                  "${nutritionMode == "Advanced" ? _fmtAdv2(goalFat) : goalFat.toStringAsFixed(0)} g",
+                  "${goalFat.toStringAsFixed(0)} g",
                 ),
                 _kpiLine(
                   t("goal_kcal_label"),
-                  nutritionMode == "Advanced"
-                      ? _fmtAdv2(goalCalories)
-                      : goalCalories.toStringAsFixed(0),
+                  goalCalories.toStringAsFixed(0),
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -24858,7 +24863,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
                       setState(() {
                         _inputMode[i] = mode;
                         final d = widget.displayValueForGrams(f, mode, gFill);
-                        _gramCtrls[i].text = (d ?? gFill).toStringAsFixed(1);
+                        _gramCtrls[i].text = (d ?? gFill).round().toString();
                       });
                     }
 
