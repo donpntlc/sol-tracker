@@ -2058,6 +2058,153 @@ class _MainScreenState extends State<MainScreen> {
     return b.toString();
   }
 
+  // ───────────── Übersicht im Ring-Stil (umschaltbar) ─────────────
+  static const String _kOverviewRingKey = "overview_ring_v1";
+  bool overviewRingStyle = true;
+
+  Future<void> _loadOverviewRingPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getBool(_kOverviewRingKey);
+      if (v == null || !mounted) return;
+      setState(() => overviewRingStyle = v);
+    } catch (_) {}
+  }
+
+  Future<void> _setOverviewRing(bool v) async {
+    setState(() => overviewRingStyle = v);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kOverviewRingKey, v);
+    } catch (_) {}
+  }
+
+  Widget _ringOverview({
+    required double eaten,
+    required double goal,
+    required double protein,
+    required double carbs,
+    required double fat,
+  }) {
+    const gold = Color(0xFFD4AF37);
+    const over = Color(0xFFE57373);
+    final onCard = context.sol.onCard;
+    final muted = context.sol.muted;
+    final left = goal - eaten;
+    final isOver = left < 0;
+    final ratio = goal > 0 ? (eaten / goal) : 0.0;
+    final mg = effectiveMacroGoalsForDay(selectedDayKey);
+
+    Widget side(String value, String label) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: onCard,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 12.5, color: muted)),
+          ],
+        );
+
+    Widget macro(String label, double cur, double target, Color color) {
+      final r = target > 0 ? (cur / target).clamp(0.0, 1.0) : 0.0;
+      final o = target > 0 && cur > target * 1.05;
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Column(
+            children: [
+              Text(label, style: TextStyle(fontSize: 12.5, color: muted)),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: r,
+                  minHeight: 6,
+                  backgroundColor: muted.withValues(alpha: 0.25),
+                  valueColor: AlwaysStoppedAnimation<Color>(o ? over : color),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                "${cur.round()} / ${target.round()} g",
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: onCard,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => _macroDetailsExpanded = !_macroDetailsExpanded),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: side(_fmtThousands(eaten), t("ring_eaten"))),
+                SizedBox(
+                  width: 150,
+                  height: 150,
+                  child: CustomPaint(
+                    painter: _KcalRingPainter(
+                      ratio: ratio,
+                      track: muted.withValues(alpha: 0.22),
+                      color: isOver ? over : gold,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _fmtThousands(left.abs()),
+                            style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900,
+                              color: isOver ? over : onCard,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isOver ? t("ring_over") : t("ring_left"),
+                            style: TextStyle(fontSize: 13, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(child: side(_fmtThousands(goal), t("ring_goal"))),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                macro(t("carbs"), carbs, mg.carbs, _carbColor),
+                macro(t("protein"), protein, mg.protein, gold),
+                macro(t("fat"), fat, mg.fat, _proteinColor),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
   bool showHelpTexts = true;
@@ -3717,6 +3864,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadPhaseGoal());
     unawaited(_loadPlannedFoods());
     unawaited(_loadHelpTextsPref());
+    unawaited(_loadOverviewRingPref());
   }
 
   @override
@@ -4660,6 +4808,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "ring_eaten": "Gegessen",
+      "ring_left": "Übrig",
+      "ring_over": "Zu viel",
+      "ring_goal": "Ziel",
+      "settings_overview_title": "Darstellung",
+      "settings_overview_ring": "Übersicht als Ring",
+      "settings_overview_ring_sub": "Gegessen · Übrig · Ziel mit Ring und Makro-Balken. Aus = alte Balken-Ansicht.",
       "barcode_photo_button": "Foto scannen",
       "barcode_photo_fail": "Kein Barcode erkannt. Nah ran, gerade halten, gutes Licht — nochmal versuchen oder Code eintippen.",
       "barcode_manual_button": "Code eintippen",
@@ -5724,6 +5879,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "ring_eaten": "Eaten",
+      "ring_left": "Left",
+      "ring_over": "Over",
+      "ring_goal": "Goal",
+      "settings_overview_title": "Display",
+      "settings_overview_ring": "Overview as ring",
+      "settings_overview_ring_sub": "Eaten · Left · Goal with ring and macro bars. Off = classic bar view.",
       "barcode_photo_button": "Photo scan",
       "barcode_photo_fail": "No barcode found. Get close, hold straight, good light — try again or type the code.",
       "barcode_manual_button": "Type code",
@@ -15355,6 +15517,20 @@ class _MainScreenState extends State<MainScreen> {
                     color: context.sol.soft.withValues(alpha: 0.35),
                   ),
                 ),
+                if (overviewRingStyle)
+                  _ringOverview(
+                    eaten: totalCalories,
+                    goal: () {
+                      if (!isCheatDay(selectedDayKey)) return goalCalories;
+                      if (isSelectedDayCrashout) return goalCalories;
+                      final eff = effectiveGoalKcalForDay(selectedDayKey);
+                      return eff > 0 ? eff : goalCalories;
+                    }(),
+                    protein: totalProtein,
+                    carbs: totalCarbs,
+                    fat: totalFat,
+                  )
+                else
                 _buildKcalHeader(
                   current: totalCalories,
                   goal: () {
@@ -17772,6 +17948,22 @@ class _MainScreenState extends State<MainScreen> {
                   },
                 ),
               ],
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_overview_title"),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                t("settings_overview_ring"),
+                style: TextStyle(color: context.sol.onCard, fontSize: 15),
+              ),
+              subtitle: Text(
+                t("settings_overview_ring_sub"),
+                style: TextStyle(fontSize: 12, color: context.sol.soft),
+              ),
+              value: overviewRingStyle,
+              onChanged: (v) => _setOverviewRing(v),
             ),
           ),
           _sectionCard(
@@ -27042,4 +27234,40 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
       ),
     );
   }
+}
+
+/// Halbrund-Ring (270°, Lücke unten) für die kcal-Übersicht.
+class _KcalRingPainter extends CustomPainter {
+  _KcalRingPainter({required this.ratio, required this.track, required this.color});
+  final double ratio;
+  final Color track;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 11.0;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke,
+        size.height - stroke);
+    const start = math.pi * 0.75;
+    const sweep = math.pi * 1.5;
+    final base = Paint()
+      ..color = track
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(rect, start, sweep, false, base);
+    final r = ratio.clamp(0.0, 1.0);
+    if (r > 0.001) {
+      final fg = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(rect, start, sweep * r, false, fg);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _KcalRingPainter old) =>
+      old.ratio != ratio || old.color != color || old.track != track;
 }
