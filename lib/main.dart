@@ -293,6 +293,10 @@ ThemeData _buildSolAppThemeData(bool light) {
       backgroundColor: s.appBar,
       foregroundColor: s.onCard,
       elevation: 0,
+      // Leichter goldener Strich unter jeder Kopfzeile.
+      shape: const Border(
+        bottom: BorderSide(color: Color(0x80D4AF37), width: 1),
+      ),
       centerTitle: false,
       titleTextStyle: TextStyle(
         color: s.onCard,
@@ -2263,17 +2267,17 @@ class _MainScreenState extends State<MainScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            _fmtThousands(left.abs()),
+                            _fmtThousands(goal),
                             style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.w900,
-                              color: isOver ? over : onCard,
+                              color: onCard,
                               height: 1.0,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            isOver ? t("ring_over") : t("ring_left"),
+                            t("ring_goal"),
                             style: TextStyle(fontSize: 13, color: muted),
                           ),
                         ],
@@ -2281,7 +2285,29 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 ),
-                Expanded(child: side(_fmtThousands(goal), t("ring_goal"))),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _fmtThousands(left.abs()),
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                          color: isOver ? over : onCard,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isOver ? t("ring_over") : t("ring_left"),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: isOver ? over : muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
