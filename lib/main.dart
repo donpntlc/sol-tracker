@@ -4900,6 +4900,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "track_search_hint": "Lebensmittel suchen …",
+      "track_search_none": "Nichts gefunden.",
       "ring_eaten": "Gegessen",
       "ring_left": "Übrig",
       "ring_over": "Zu viel",
@@ -5971,6 +5973,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "track_search_hint": "Search food …",
+      "track_search_none": "Nothing found.",
       "ring_eaten": "Eaten",
       "ring_left": "Left",
       "ring_over": "Over",
@@ -22957,6 +22961,31 @@ class _MainScreenState extends State<MainScreen> {
     String recipeSimpleMode = "portion";
     bool recipeAdvanced = false;
     String advInputMode = "kcal";
+    final foodSearchCtrl = TextEditingController();
+    String foodSearch = "";
+
+    /// Suche über die ganze Datenbank (alle Wörter müssen vorkommen).
+    List<Food> searchFoods(String q) {
+      String norm(String x) => x
+          .toLowerCase()
+          .replaceAll("ä", "a")
+          .replaceAll("ö", "o")
+          .replaceAll("ü", "u")
+          .replaceAll("ß", "ss");
+      final words = norm(q).split(RegExp(r"\s+")).where((w) => w.isNotEmpty).toList();
+      if (words.isEmpty) return const [];
+      final hits = foodDatabase.where((f) {
+        final n = norm(f.name);
+        return words.every(n.contains);
+      }).toList()
+        ..sort((a, b) {
+          final an = norm(a.name).startsWith(words.first) ? 0 : 1;
+          final bn = norm(b.name).startsWith(words.first) ? 0 : 1;
+          if (an != bn) return an - bn;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+      return hits.take(8).toList();
+    }
 
     List<Food> filteredFoods(String category) {
       List<Food> list;
@@ -23349,6 +23378,82 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ],
                   const SizedBox(height: 10),
+                  TextField(
+                    controller: foodSearchCtrl,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      hintText: t("track_search_hint"),
+                      suffixIcon: foodSearch.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () => setDialogState(() {
+                                foodSearchCtrl.clear();
+                                foodSearch = "";
+                              }),
+                            ),
+                    ),
+                    onChanged: (v) => setDialogState(() => foodSearch = v),
+                  ),
+                  if (foodSearch.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Builder(builder: (_) {
+                      final hits = searchFoods(foodSearch);
+                      if (hits.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            t("track_search_none"),
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 12.5),
+                          ),
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final f in hits)
+                            InkWell(
+                              onTap: () => setDialogState(() {
+                                selectedCategory = "Alle";
+                                trackTypeFilter = "Alle";
+                                trackCarbSubFilter = "all";
+                                trackRecipeFlavorFilter = "all";
+                                selectedFood = f;
+                                foodSearchCtrl.clear();
+                                foodSearch = "";
+                                syncRecipeFields(f);
+                                tryApplyPendingFill(f);
+                              }),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 9, horizontal: 4),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        f.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 14.5),
+                                      ),
+                                    ),
+                                    Text(
+                                      "${f.calories.round()} kcal",
+                                      style: const TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    }),
+                  ],
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Expanded(
@@ -24098,6 +24203,7 @@ class _MainScreenState extends State<MainScreen> {
       recipePortionCtrl.dispose();
       recipeGramCtrl.dispose();
       advCtrl.dispose();
+      foodSearchCtrl.dispose();
     });
   }
 
