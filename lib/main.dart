@@ -2198,6 +2198,7 @@ class _MainScreenState extends State<MainScreen> {
     final isOver = left < 0;
     final kRange = dailyKcalRange();
     final isOverRange = kRange.maxKcal > 0 && eaten > kRange.maxKcal;
+    final inRange = eaten >= kRange.minKcal && !isOverRange;
     final ratio = goal > 0 ? (eaten / goal) : 0.0;
     final mg = effectiveMacroGoalsForDay(selectedDayKey);
 
@@ -2221,6 +2222,7 @@ class _MainScreenState extends State<MainScreen> {
       final r = target > 0 ? (cur / target).clamp(0.0, 1.0) : 0.0;
       final mr = dailyMacroRange(key);
       final o = mr.maxG > 0 && cur > mr.maxG;
+      final inR = cur >= mr.minG && !o;
       return Expanded(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -2237,7 +2239,8 @@ class _MainScreenState extends State<MainScreen> {
                   value: r,
                   minHeight: 6,
                   backgroundColor: muted.withValues(alpha: 0.25),
-                  valueColor: AlwaysStoppedAnimation<Color>(o ? over : color),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      o ? _barOver : (inR ? _barIn : _barUnder)),
                 ),
               )),
               const SizedBox(height: 5),
@@ -2316,7 +2319,7 @@ class _MainScreenState extends State<MainScreen> {
                           : null,
                       ratio: ratio,
                       track: muted.withValues(alpha: 0.22),
-                      color: isOverRange ? over : gold,
+                      color: isOverRange ? _barOver : (inRange ? _barIn : _barUnder),
                     ),
                     child: Center(
                       child: Column(
@@ -3484,6 +3487,15 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
+
+  // ───────────── Balkenfarben: Weiß (drunter) · Gold (im Bereich) · Rot (drüber) ─────────────
+  bool get _isLightUi => Theme.of(context).brightness == Brightness.light;
+  Color get _barUnder =>
+      _isLightUi ? const Color(0xFF6B665E) : const Color(0xFFE8E4DC);
+  static const Color _barIn = Color(0xFFC9A24A);
+  static const Color _barOver = Color(0xFFE53935);
+  Color get _barMidTick =>
+      _isLightUi ? const Color(0xFF1E1A16) : const Color(0xFFFFFFFF);
 
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
@@ -21693,11 +21705,11 @@ class _MainScreenState extends State<MainScreen> {
 
     Color statusColor;
     if (current < range.minKcal) {
-      statusColor = const Color(0xFFC9A24A);
+      statusColor = _barUnder;
     } else if (current <= range.maxKcal) {
-      statusColor = const Color(0xFF4CAF50);
+      statusColor = _barIn;
     } else {
-      statusColor = const Color(0xFFE53935);
+      statusColor = _barOver;
     }
 
     final onCard = context.sol.onCard;
@@ -21795,7 +21807,7 @@ class _MainScreenState extends State<MainScreen> {
                             bottom: 0,
                             child: Container(
                               width: 2.5,
-                              color: const Color(0xFFC9A24A),
+                              color: _barMidTick,
                             ),
                           ),
                         if (showRecKcalLine)
@@ -21980,9 +21992,9 @@ class _MainScreenState extends State<MainScreen> {
 
     Color fillColor;
     if (over) {
-      fillColor = const Color(0xFFE53935);
+      fillColor = _barOver;
     } else if (ratio >= 0.98) {
-      fillColor = const Color(0xFF4CAF50);
+      fillColor = _barIn;
     } else {
       fillColor = baseColor;
     }
@@ -22387,11 +22399,11 @@ class _MainScreenState extends State<MainScreen> {
 
     Color statusColor;
     if (current < minKcal) {
-      statusColor = const Color(0xFFC9A24A);
+      statusColor = _barUnder;
     } else if (current <= maxKcal) {
-      statusColor = const Color(0xFF4CAF50);
+      statusColor = _barIn;
     } else {
-      statusColor = const Color(0xFFE53935);
+      statusColor = _barOver;
     }
 
     final inner = Padding(
@@ -22548,7 +22560,7 @@ class _MainScreenState extends State<MainScreen> {
                       bottom: 0,
                       child: Container(
                         width: 2.5,
-                        color: const Color(0xFFC9A24A),
+                        color: _barMidTick,
                       ),
                     ),
                 ],
@@ -22616,11 +22628,11 @@ class _MainScreenState extends State<MainScreen> {
 
     Color statusColor;
     if (current < minKcal) {
-      statusColor = const Color(0xFFC9A24A);
+      statusColor = _barUnder;
     } else if (current <= maxKcal) {
-      statusColor = const Color(0xFF4CAF50);
+      statusColor = _barIn;
     } else {
-      statusColor = const Color(0xFFE53935);
+      statusColor = _barOver;
     }
 
     final bar = _barOutline(Stack(
@@ -22673,7 +22685,7 @@ class _MainScreenState extends State<MainScreen> {
                     bottom: 0,
                     child: Container(
                       width: 2.5,
-                      color: const Color(0xFFC9A24A),
+                      color: _barMidTick,
                     ),
                   ),
               ],
@@ -23036,11 +23048,11 @@ class _MainScreenState extends State<MainScreen> {
 
     Color statusColor;
     if (current < minVal) {
-      statusColor = baseColor;
+      statusColor = _barUnder;
     } else if (current <= maxVal) {
-      statusColor = const Color(0xFF4CAF50);
+      statusColor = _barIn;
     } else {
-      statusColor = const Color(0xFFE53935);
+      statusColor = _barOver;
     }
 
     return Padding(
@@ -23103,7 +23115,7 @@ class _MainScreenState extends State<MainScreen> {
                           bottom: 0,
                           child: Container(
                             width: 2.5,
-                            color: const Color(0xFFC9A24A),
+                            color: _barMidTick,
                           ),
                         ),
                       if (nudgeRec)
