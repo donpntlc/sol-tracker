@@ -3228,7 +3228,7 @@ class _MainScreenState extends State<MainScreen> {
 
     final d = today;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
       child: Card(
         margin: EdgeInsets.zero,
         color: context.sol.card,
@@ -3862,7 +3862,7 @@ class _MainScreenState extends State<MainScreen> {
         ? "${st.bulk ? "+" : "−"}${_fmtKgGoal(st.kg)} kg"
         : "${st.bulk ? "+" : "−"}${_fmtKgGoal(st.kg)} kg · ${t("phase_goal_eta")} ${_phaseGoalEtaLabel(st.eta)}";
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
       child: Material(
         color: context.sol.dailyCard,
         borderRadius: BorderRadius.circular(12),
@@ -17043,7 +17043,7 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _cutDayStepsCard()),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
               child: _sectionCard(
             title: t("daily_overview"),
             titleTrailing: Row(
@@ -17180,7 +17180,7 @@ class _MainScreenState extends State<MainScreen> {
           if (overviewRingStyle)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
                 child: Card(
                   margin: EdgeInsets.zero,
                   color: context.sol.card,
@@ -17273,7 +17273,7 @@ class _MainScreenState extends State<MainScreen> {
     final hasPost = meals.contains("Post-Workout");
     final core = _trackingMainEveningInOrder();
     final mergedMeals = _activeMergedMealsForDay();
-    const nest = EdgeInsets.symmetric(vertical: 5, horizontal: 8);
+    const nest = EdgeInsets.symmetric(vertical: 5, horizontal: 4);
 
     // Mahlzeiten-Karten etwas kompakter (Schrift ~92 %).
     return MediaQuery(
@@ -17285,7 +17285,7 @@ class _MainScreenState extends State<MainScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Card(
-          margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           clipBehavior: Clip.antiAlias,
           color: context.sol.card,
           shape: RoundedRectangleBorder(
@@ -17295,7 +17295,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+            padding: const EdgeInsets.fromLTRB(6, 12, 6, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -17303,7 +17303,7 @@ class _MainScreenState extends State<MainScreen> {
                 if (meals.contains("Snacks") &&
                     !_isMealMergedLocked("Snacks"))
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                     // Snacks komplett kleiner skaliert (Schrift, Symbole, Abstände).
                     child: _UniformScale(
                       scale: 0.86,
@@ -17360,7 +17360,7 @@ class _MainScreenState extends State<MainScreen> {
                   _UniformScale(
                     scale: _kMealCardScale,
                     child: _buildWorkoutSectionCard(
-                      sectionCardMargin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                      sectionCardMargin: const EdgeInsets.fromLTRB(4, 0, 4, 8),
                     ),
                   ),
                 ] else ...[
