@@ -3361,6 +3361,149 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_savePhaseGoal(m));
   }
 
+  // ───────────── Pre-Workout: komplexe / einfache KH (in % vom Tages-KH-Ziel) ─────────────
+  static const String _kPreCarbSplitKey = "pre_carb_split_v1";
+  double preCxMin = 15, preCxMax = 20, preSiMin = 10, preSiMax = 15;
+
+  Future<void> _loadPreCarbSplit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPreCarbSplitKey);
+      if (raw == null) return;
+      final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      if (!mounted) return;
+      setState(() {
+        preCxMin = (m["cxMin"] as num?)?.toDouble() ?? preCxMin;
+        preCxMax = (m["cxMax"] as num?)?.toDouble() ?? preCxMax;
+        preSiMin = (m["siMin"] as num?)?.toDouble() ?? preSiMin;
+        preSiMax = (m["siMax"] as num?)?.toDouble() ?? preSiMax;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _savePreCarbSplit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kPreCarbSplitKey, jsonEncode({
+        "cxMin": preCxMin,
+        "cxMax": preCxMax,
+        "siMin": preSiMin,
+        "siMax": preSiMax,
+      }));
+    } catch (_) {}
+  }
+
+  Widget _preCarbSplitSettingsCard() {
+    final dayCarb = effectiveMacroGoalsForDay(selectedDayKey).carbs;
+    Widget row(String label, double lo, double hi,
+        void Function(double lo, double hi) set) {
+      Future<void> edit() async {
+        final a = TextEditingController(text: lo.round().toString());
+        final b = TextEditingController(text: hi.round().toString());
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(label),
+            content: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: a,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                        labelText: t("pre_split_from"), suffixText: "%"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: b,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                        labelText: t("pre_split_to"), suffixText: "%"),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx), child: Text(t("cancel"))),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true), child: Text(t("save"))),
+            ],
+          ),
+        );
+        if (ok != true) return;
+        final x = double.tryParse(a.text.replaceAll(",", "."));
+        final y = double.tryParse(b.text.replaceAll(",", "."));
+        if (x == null || y == null) return;
+        final l = x.clamp(0.0, 100.0).toDouble();
+        final h = y.clamp(l, 100.0).toDouble();
+        setState(() => set(l, h));
+        _savePreCarbSplit();
+      }
+
+      return InkWell(
+        onTap: edit,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: TextStyle(color: context.sol.onCard, fontSize: 14.5)),
+              ),
+              Text("${lo.round()}–${hi.round()} %",
+                  style: const TextStyle(
+                      color: Color(0xFFC9A24A), fontWeight: FontWeight.w700)),
+              const SizedBox(width: 8),
+              Text(
+                  "≈ ${(dayCarb * lo / 100).round()}–${(dayCarb * hi / 100).round()} g",
+                  style: TextStyle(color: context.sol.muted, fontSize: 12)),
+              Icon(Icons.chevron_right, color: context.sol.muted, size: 20),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: t("pre_split_title"),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(t("pre_split_sub"),
+              style: TextStyle(fontSize: 12.5, color: context.sol.soft, height: 1.35)),
+          const SizedBox(height: 6),
+          row(t("pre_workout_carb_bar_complex"), preCxMin, preCxMax, (l, h) {
+            preCxMin = l;
+            preCxMax = h;
+          }),
+          row(t("pre_workout_carb_bar_simple"), preSiMin, preSiMax, (l, h) {
+            preSiMin = l;
+            preSiMax = h;
+          }),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () {
+                setState(() {
+                  preCxMin = 15;
+                  preCxMax = 20;
+                  preSiMin = 10;
+                  preSiMax = 15;
+                });
+                _savePreCarbSplit();
+              },
+              child: Text(t("pre_split_reset")),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
   bool showHelpTexts = true;
@@ -5314,6 +5457,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadPhaseGoal());
     unawaited(_loadPlannedFoods());
     unawaited(_loadMealTemplates());
+    unawaited(_loadPreCarbSplit());
     unawaited(_loadWeekAvgEntries());
     unawaited(_loadHelpTextsPref());
     unawaited(_loadOverviewRingPref());
@@ -6260,6 +6404,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "pre_split_title": "Pre-Workout: komplexe & einfache KH",
+      "pre_split_sub": "Anteil am Tages-Kohlenhydrat-Ziel. Antippen zum Ändern.",
+      "pre_split_from": "von",
+      "pre_split_to": "bis",
+      "pre_split_reset": "Zurücksetzen (15–20 % / 10–15 %)",
       "settings_share_max": "Maximal möglich: {p} % = {g} g (Rest der 100 %)",
       "weight_week_avg_button": "Wochenschnitt eintragen (statt täglich)",
       "weight_week_avg_title": "Wochenschnitt eintragen",
@@ -6492,7 +6641,7 @@ class _MainScreenState extends State<MainScreen> {
       "workout_block_tap_split_hint":
           "Antippen → Pre- und Post-Workout getrennt anzeigen.",
       "pre_workout_carb_tip":
-          "Tipp: 30–90 min vor dem Training eher komplexe Carbs (ca. 15–20 % deines Tages-Kohlenhydrat-Ziels), direkt davor eher einfache (ca. 10–15 %).",
+          "Tipp: 30–90 min vor dem Training eher komplexe Carbs (ca. {cx} % deines Tages-Kohlenhydrat-Ziels), direkt davor eher einfache (ca. {si} %).",
       "pre_workout_carb_bar_complex": "Kohlenhydrate · komplex",
       "pre_workout_carb_bar_simple": "Kohlenhydrate · einfach",
       "pre_workout_carb_hint_complex_timing": "Ziel: früher (ca. 30–90 min)",
@@ -7393,6 +7542,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "pre_split_title": "Pre-workout: complex & simple carbs",
+      "pre_split_sub": "Share of your daily carb target. Tap to change.",
+      "pre_split_from": "from",
+      "pre_split_to": "to",
+      "pre_split_reset": "Reset (15–20 % / 10–15 %)",
       "settings_share_max": "Max possible: {p} % = {g} g (rest of 100 %)",
       "weight_week_avg_button": "Enter weekly average (instead of daily)",
       "weight_week_avg_title": "Enter weekly average",
@@ -7622,7 +7776,7 @@ class _MainScreenState extends State<MainScreen> {
       "workout_block_tap_split_hint":
           "Tap the title to see pre- and post-workout split below.",
       "pre_workout_carb_tip":
-          "Tip: 30–90 min before training favor complex carbs (about 15–20 % of your daily carb target), right before training favor simple (about 10–15 %).",
+          "Tip: 30–90 min before training favor complex carbs (about {cx} % of your daily carb target), right before training favor simple (about {si} %).",
       "pre_workout_carb_bar_complex": "Carbs · complex",
       "pre_workout_carb_bar_simple": "Carbs · simple",
       "pre_workout_carb_hint_complex_timing": "Aim: earlier (~30–90 min)",
@@ -10132,8 +10286,8 @@ class _MainScreenState extends State<MainScreen> {
       final dayCarbG = gDayM.carbs;
       if (dayCarbG <= 0.01) return null;
       final maxG = preWorkoutCarbKind == "komplex"
-          ? dayCarbG * 0.20
-          : dayCarbG * 0.15;
+          ? dayCarbG * preCxMax / 100.0
+          : dayCarbG * preSiMax / 100.0;
       final split = _mealCarbKindSplitG("Pre-Workout");
       final current =
           preWorkoutCarbKind == "komplex" ? split.komplex : split.einfach;
@@ -17596,7 +17750,10 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              t("pre_workout_carb_tip"),
+              tFmt("pre_workout_carb_tip", {
+                "cx": "${preCxMin.round()}–${preCxMax.round()}",
+                "si": "${preSiMin.round()}–${preSiMax.round()}",
+              }),
               style: const TextStyle(
                 fontSize: 11.5,
                 height: 1.35,
@@ -17658,10 +17815,10 @@ class _MainScreenState extends State<MainScreen> {
     final dayCarbG = gDayM.carbs;
     final showPreCarbSplit = meal == "Pre-Workout" && dayCarbG > 0.01;
     final preCarbSplit = showPreCarbSplit ? _mealCarbKindSplitG("Pre-Workout") : null;
-    final cCxMin = dayCarbG * 0.15;
-    final cCxMax = dayCarbG * 0.20;
-    final cSiMin = dayCarbG * 0.10;
-    final cSiMax = dayCarbG * 0.15;
+    final cCxMin = dayCarbG * preCxMin / 100.0;
+    final cCxMax = dayCarbG * preCxMax / 100.0;
+    final cSiMin = dayCarbG * preSiMin / 100.0;
+    final cSiMax = dayCarbG * preSiMax / 100.0;
     final totalPAll = _mealTotals.values.fold(0.0, (s, m) => s + m['protein']!);
     final showProteinNudge = meal == _lastNonSnackMealId &&
         (gDayM.protein - totalPAll) >= 20.0;
@@ -19657,6 +19814,7 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
           ),
+          _preCarbSplitSettingsCard(),
           _sectionCard(
             title: t("settings_overview_title"),
             child: SwitchListTile(
