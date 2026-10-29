@@ -6260,6 +6260,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "settings_share_max": "Maximal möglich: {p} % = {g} g (Rest der 100 %)",
       "weight_week_avg_button": "Wochenschnitt eintragen (statt täglich)",
       "weight_week_avg_title": "Wochenschnitt eintragen",
       "weight_week_avg_hint": "Für den Fall, dass du deinen Schnitt woanders berechnest. Er gilt für diese Woche und zählt statt der Tageswerte.",
@@ -6702,7 +6703,7 @@ class _MainScreenState extends State<MainScreen> {
       "settings_meal_macro_remainder_all": "Noch verfügbar: {r}% = {g} g",
       "settings_meal_macro_excess_all": "Ziel 100 % überschritten um {o}%.",
       "settings_meal_macro_editor_hint":
-          "Schieberegler pro Mahlzeit — Summe maximal 100 %.",
+          "Schieberegler pro Mahlzeit — oder auf die % tippen und Zahl eingeben. Summe maximal 100 %.",
       "settings_input_invalid": "Bitte pro Feld eine Zahl 0–100 eintragen.",
 
       // Meal Generator
@@ -7392,6 +7393,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "settings_share_max": "Max possible: {p} % = {g} g (rest of 100 %)",
       "weight_week_avg_button": "Enter weekly average (instead of daily)",
       "weight_week_avg_title": "Enter weekly average",
       "weight_week_avg_hint": "If you calculate your average elsewhere. It applies to this week and is used instead of daily values.",
@@ -21199,6 +21201,77 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Future<double?> _askMealSharePct({
+    required String mealId,
+    required double current,
+    required double maxPct,
+    required double goalG,
+  }) async {
+    final ctrl = TextEditingController(text: current.round().toString());
+    var inGrams = false;
+    final res = await showDialog<double>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => AlertDialog(
+          title: Text(_displayMealName(mealId)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text("%")),
+                  ButtonSegment(value: true, label: Text("g")),
+                ],
+                selected: {inGrams},
+                onSelectionChanged: (sel) => setL(() {
+                  final v = double.tryParse(ctrl.text.replaceAll(",", ".")) ?? 0;
+                  inGrams = sel.first;
+                  ctrl.text = (inGrams
+                          ? goalG * v / 100.0
+                          : (goalG > 0 ? v * 100.0 / goalG : 0))
+                      .round()
+                      .toString();
+                }),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  suffixText: inGrams ? "g" : "%",
+                  helperText: tFmt("settings_share_max", {
+                    "p": maxPct.round(),
+                    "g": (goalG * maxPct / 100.0).round(),
+                  }),
+                ),
+                onSubmitted: (_) {
+                  final v = double.tryParse(ctrl.text.replaceAll(",", "."));
+                  if (v == null) return;
+                  Navigator.pop(ctx, inGrams && goalG > 0 ? v * 100.0 / goalG : v);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t("cancel"))),
+            FilledButton(
+              onPressed: () {
+                final v = double.tryParse(ctrl.text.replaceAll(",", "."));
+                if (v == null) return;
+                Navigator.pop(ctx, inGrams && goalG > 0 ? v * 100.0 / goalG : v);
+              },
+              child: Text(t("save")),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (res == null) return null;
+    return res.clamp(0.0, maxPct).toDouble();
+  }
+
   Widget _mealShareSliderRow({
     required String mealId,
     required double value,
@@ -21259,13 +21332,34 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
-                  "${_fmtAdv2(value)}%",
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFC9A24A),
-                    fontFeatures: [FontFeature.tabularFigures()],
+                // Antippen = Zahl direkt eingeben (Prozent oder Gramm).
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () async {
+                    final v = await _askMealSharePct(
+                      mealId: mealId,
+                      current: value,
+                      maxPct: maxPct,
+                      goalG: goalG,
+                    );
+                    if (v != null) onChanged(v);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                          color: const Color(0xFFC9A24A).withValues(alpha: 0.5)),
+                    ),
+                    child: Text(
+                      "${_fmtAdv2(value)}%",
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFC9A24A),
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ),
                 ),
                 Text(
