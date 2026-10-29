@@ -9988,11 +9988,8 @@ class _MainScreenState extends State<MainScreen> {
     return (x * 100).round() / 100.0;
   }
 
-  String _fmtAdv2(double x) {
-    final r = _round2(x);
-    if (r == r.roundToDouble()) return r.toStringAsFixed(0);
-    return r.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
-  }
+  /// Anzeige & Eingabefelder (Advanced): immer ganze Zahlen.
+  String _fmtAdv2(double x) => x.round().toString();
 
   Widget _kpiLine(String label, String value) {
     return Padding(
