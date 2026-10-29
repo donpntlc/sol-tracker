@@ -15703,9 +15703,15 @@ class _MainScreenState extends State<MainScreen> {
     final hasPost = meals.contains("Post-Workout");
     final core = _trackingMainEveningInOrder();
     final mergedMeals = _activeMergedMealsForDay();
-    const nest = EdgeInsets.symmetric(vertical: 8, horizontal: 8);
+    const nest = EdgeInsets.symmetric(vertical: 5, horizontal: 8);
 
-    return Column(
+    // Mahlzeiten-Karten etwas kompakter (Schrift ~92 %).
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(
+            MediaQuery.of(context).textScaler.scale(1.0) * 0.92),
+      ),
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Card(
@@ -15771,6 +15777,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
       ],
+    ),
     );
   }
 
@@ -16430,7 +16437,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+        padding: const EdgeInsets.fromLTRB(10, 4, 6, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -16458,7 +16465,7 @@ class _MainScreenState extends State<MainScreen> {
                             children: [
                               const Icon(
                                 Icons.fitness_center,
-                                size: 22,
+                                size: 20,
                                 color: Color(0xFFD4AF37),
                               ),
                               const SizedBox(width: 10),
@@ -16467,7 +16474,7 @@ class _MainScreenState extends State<MainScreen> {
                                   t("tracking_workout_block_title"),
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     color: wtx.title,
                                   ),
                                 ),
@@ -16492,7 +16499,7 @@ class _MainScreenState extends State<MainScreen> {
                             ? Icons.note_alt
                             : Icons.task_alt)
                         : Icons.note_alt_outlined,
-                    size: 22,
+                    size: 20,
                     color: mealNoteContent
                         ? (mealNoteOpen
                             ? const Color(0xFFD4AF37)
@@ -16522,14 +16529,14 @@ class _MainScreenState extends State<MainScreen> {
                     curve: Curves.easeOutCubic,
                     child: Icon(
                       Icons.expand_more,
-                      size: 24,
+                      size: 22,
                       color: wtx.expandIcon,
                     ),
                   ),
                 ),
               ],
             ),
-            SizedBox(height: sectionOpen ? 8 : 4),
+            SizedBox(height: sectionOpen ? 6 : 2),
             _buildMealKcalRowCompact(
               _kWorkoutBlockMealId,
               current: totals['calories']!,
@@ -17087,7 +17094,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 12),
+        padding: const EdgeInsets.fromLTRB(10, 4, 6, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -17104,7 +17111,7 @@ class _MainScreenState extends State<MainScreen> {
                         borderRadius: BorderRadius.circular(8),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 2, vertical: 10),
+                              horizontal: 2, vertical: 6),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -17115,7 +17122,7 @@ class _MainScreenState extends State<MainScreen> {
                                   _displayMealName(meal),
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     color: mtx.title,
                                   ),
                                 ),
@@ -17138,7 +17145,7 @@ class _MainScreenState extends State<MainScreen> {
                             ? Icons.note_alt
                             : Icons.task_alt)
                         : Icons.note_alt_outlined,
-                    size: 22,
+                    size: 20,
                     color: mealNoteContent
                         ? (mealNoteOpen
                             ? const Color(0xFFD4AF37)
@@ -17153,7 +17160,7 @@ class _MainScreenState extends State<MainScreen> {
                   tooltip: t("meal_add_menu"),
                   icon: const Icon(
                     Icons.add_circle_outline,
-                    size: 26,
+                    size: 23,
                     color: Color(0xFFD4AF37),
                   ),
                   onSelected: (v) {
@@ -17198,14 +17205,14 @@ class _MainScreenState extends State<MainScreen> {
                     curve: Curves.easeOutCubic,
                     child: Icon(
                       Icons.expand_more,
-                      size: 24,
+                      size: 22,
                       color: mtx.expandIcon,
                     ),
                   ),
                 ),
               ],
             ),
-            SizedBox(height: sectionOpen ? 8 : 4),
+            SizedBox(height: sectionOpen ? 6 : 2),
             _buildMealKcalRowCompact(
               meal,
               current: totals['calories']!,
