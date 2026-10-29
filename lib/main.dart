@@ -5276,7 +5276,7 @@ class _MainScreenState extends State<MainScreen> {
       "db_off_preview_title": "Nährwerte prüfen & speichern",
       "db_off_category": "Kategorie in SOL",
       "db_off_error": "Netzwerk oder Dienst — erneut versuchen.",
-      "db_off_not_found": "Produkt in Open Food Facts nicht gefunden.",
+      "db_off_not_found": "Produkt noch nicht in der Datenbank — trag die Werte einmal von der Packung ein, danach wird es beim Scannen erkannt.",
       "db_barcode_short": "Code zu kurz — vollständigen Barcode scannen.",
       "db_quick_title": "Faul & schnell",
       "db_quick_body":
@@ -6353,7 +6353,7 @@ class _MainScreenState extends State<MainScreen> {
       "db_off_preview_title": "Review & save (per 100 g)",
       "db_off_category": "Category in SOL",
       "db_off_error": "Network or service error — try again.",
-      "db_off_not_found": "Product not found in Open Food Facts.",
+      "db_off_not_found": "Product not in the database yet — enter the values from the pack once, then scans will find it.",
       "db_barcode_short": "Code too short — scan full barcode.",
       "db_quick_title": "Quick & lazy",
       "db_quick_body":
@@ -13688,11 +13688,21 @@ class _MainScreenState extends State<MainScreen> {
       if (res.statusCode != 200) throw Exception("HTTP");
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (data["status"] != 1) {
+        // Nicht in Open Food Facts: trotzdem Formular öffnen (Barcode schon drin),
+        // Werte von der Packung eintragen → beim nächsten Scan direkt gefunden.
         if (!mounted) return null;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t("db_off_not_found"))),
         );
-        return null;
+        return _OffFetchResult(
+          barcode: cleaned,
+          name: "",
+          protein: 0,
+          carbs: 0,
+          sugar: 0,
+          fiber: 0,
+          fat: 0,
+        );
       }
       final p = data["product"] as Map<String, dynamic>?;
       if (p == null) return null;
