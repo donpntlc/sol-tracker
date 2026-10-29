@@ -2050,6 +2050,351 @@ class _MainScreenState extends State<MainScreen> {
     return b.toString();
   }
 
+  // ───────────── Phasen-Ziel (Countdown) ─────────────
+  // Gespeichert als JSON: {kg, bulk, kcal, start}. 7000 kcal ≈ 1 kg.
+  static const String _kPhaseGoalKey = "phase_goal_v1";
+  Map<String, dynamic>? phaseGoal;
+
+  Future<void> _loadPhaseGoal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPhaseGoalKey);
+      if (raw == null || raw.isEmpty) return;
+      final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      if (!mounted) return;
+      setState(() => phaseGoal = m);
+    } catch (_) {}
+  }
+
+  Future<void> _savePhaseGoal(Map<String, dynamic>? g) async {
+    setState(() => phaseGoal = g);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (g == null) {
+        await prefs.remove(_kPhaseGoalKey);
+      } else {
+        await prefs.setString(_kPhaseGoalKey, jsonEncode(g));
+      }
+    } catch (_) {}
+  }
+
+  /// Vorschlag kcal/Tag aus dem aktuellen Plan (Bedarf ↔ Tagesziel).
+  double _phaseGoalSuggestedDailyKcal() {
+    final d = (_maintenanceKcalFromBody() - goalCalories).abs();
+    if (d < 100) return 500;
+    return (d / 10).round() * 10.0;
+  }
+
+  String _fmtThousands(num v) {
+    final s = v.round().abs().toString();
+    final b = StringBuffer(v < 0 ? "-" : "");
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write("'");
+      b.write(s[i]);
+    }
+    return b.toString();
+  }
+
+  String _fmtKgGoal(double kg) {
+    final r = (kg * 10).round() / 10;
+    return r == r.roundToDouble() ? r.toStringAsFixed(0) : r.toStringAsFixed(1);
+  }
+
+  /// Status: geschafft (aus getrackten, abgeschlossenen Tagen seit Start),
+  /// Rest, verbleibende Tage und ungefähres Zieldatum.
+  ({
+    bool bulk,
+    double kg,
+    double totalKcal,
+    double doneKcal,
+    double dailyKcal,
+    int daysLeft,
+    DateTime eta,
+    double progress,
+  })? _phaseGoalStatus() {
+    final g = phaseGoal;
+    if (g == null) return null;
+    final kg = ((g["kg"] ?? 0) as num).toDouble();
+    final daily = ((g["kcal"] ?? 0) as num).toDouble();
+    final bulk = g["bulk"] == true;
+    if (kg <= 0 || daily <= 0) return null;
+    final total = kg * 7000.0;
+    final today = _dateOnlyLocal(DateTime.now());
+    var start = today;
+    try {
+      start = _dateOnlyLocal(dateFromKey((g["start"] ?? "").toString()));
+    } catch (_) {}
+    final maint = _maintenanceKcalFromBody();
+    var done = 0.0;
+    var day = start;
+    var guard = 0;
+    while (day.isBefore(today) && guard < 1000) {
+      final key = dateKeyFromDate(day);
+      if (trackedFoods.any((t) => t.dayKey == key)) {
+        final eat = _kcalEatenOnDay(key);
+        done += bulk ? (eat - maint) : (maint - eat);
+      }
+      day = day.add(const Duration(days: 1));
+      guard++;
+    }
+    done = done.clamp(0.0, total);
+    final rest = total - done;
+    final daysLeft = rest <= 0 ? 0 : (rest / daily).ceil();
+    return (
+      bulk: bulk,
+      kg: kg,
+      totalKcal: total,
+      doneKcal: done,
+      dailyKcal: daily,
+      daysLeft: daysLeft,
+      eta: today.add(Duration(days: daysLeft)),
+      progress: total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0,
+    );
+  }
+
+  String _phaseGoalEtaLabel(DateTime d) =>
+      "${t("weekday_${d.weekday}")} ${d.day}.${d.month}.";
+
+  /// Kompakte Karte auf dem Tracking-Screen (nur wenn ein Ziel gesetzt ist).
+  Widget _phaseGoalStrip() {
+    final st = _phaseGoalStatus();
+    if (st == null) return const SizedBox.shrink();
+    const gold = Color(0xFFD4AF37);
+    final title = st.daysLeft == 0
+        ? t("phase_goal_reached")
+        : tFmt("phase_goal_days_left", {"n": st.daysLeft});
+    final sub = st.daysLeft == 0
+        ? "${st.bulk ? "+" : "−"}${_fmtKgGoal(st.kg)} kg"
+        : "${st.bulk ? "+" : "−"}${_fmtKgGoal(st.kg)} kg · ${t("phase_goal_eta")} ${_phaseGoalEtaLabel(st.eta)}";
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
+      child: Material(
+        color: context.sol.dailyCard,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _openPhaseGoalDialog,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: gold.withValues(alpha: 0.45), width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Text("🎯", style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14.5,
+                              color: context.sol.onCard,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            sub,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: context.sol.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      "${(st.progress * 100).round()} %",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: gold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: st.progress,
+                    minHeight: 5,
+                    backgroundColor: Colors.white12,
+                    valueColor: const AlwaysStoppedAnimation<Color>(gold),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  "${_fmtThousands(st.doneKcal)} / ${_fmtThousands(st.totalKcal)} kcal · ${st.bulk ? "+" : "−"}${_fmtThousands(st.dailyKcal)} kcal/${t("phase_goal_per_day")}",
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: context.sol.muted.withValues(alpha: 0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPhaseGoalDialog() async {
+    final g = phaseGoal;
+    var bulk = g != null ? g["bulk"] == true : nutritionMode == "Aufbau";
+    final kgCtrl = TextEditingController(
+      text: g != null ? _fmtKgGoal(((g["kg"] ?? 0) as num).toDouble()) : "",
+    );
+    final kcalCtrl = TextEditingController(
+      text: (g != null
+              ? ((g["kcal"] ?? 0) as num).toDouble()
+              : _phaseGoalSuggestedDailyKcal())
+          .round()
+          .toString(),
+    );
+    double? parse(String v) =>
+        double.tryParse(v.trim().replaceAll(",", ".").replaceAll("'", ""));
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          final kg = parse(kgCtrl.text) ?? 0;
+          final kc = parse(kcalCtrl.text) ?? 0;
+          String preview = "";
+          if (kg > 0 && kc > 0) {
+            final total = kg * 7000;
+            final days = (total / kc).ceil();
+            final eta = _dateOnlyLocal(DateTime.now()).add(Duration(days: days));
+            preview = tFmt("phase_goal_preview", {
+              "kg": _fmtKgGoal(kg),
+              "total": _fmtThousands(total),
+              "kcal": _fmtThousands(kc),
+              "days": days,
+              "date": _phaseGoalEtaLabel(eta),
+            });
+          }
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E1E1E),
+            title: Text(t("phase_goal_title")),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: Text(t("phase_goal_lose")),
+                        selected: !bulk,
+                        onSelected: (_) => setL(() => bulk = false),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: Text(t("phase_goal_gain")),
+                        selected: bulk,
+                        onSelected: (_) => setL(() => bulk = true),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: kgCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: t("phase_goal_kg_label"),
+                      suffixText: "kg",
+                    ),
+                    onChanged: (_) => setL(() {}),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: kcalCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: bulk
+                          ? t("phase_goal_surplus_label")
+                          : t("phase_goal_deficit_label"),
+                      suffixText: "kcal",
+                      helperText: tFmt("phase_goal_plan_hint", {
+                        "kcal": _fmtThousands(_phaseGoalSuggestedDailyKcal()),
+                      }),
+                      helperMaxLines: 2,
+                    ),
+                    onChanged: (_) => setL(() {}),
+                  ),
+                  if (preview.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      preview,
+                      style: const TextStyle(
+                        color: Color(0xFFD4AF37),
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    t("phase_goal_info"),
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 11, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              if (g != null)
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, "delete"),
+                  child: Text(
+                    t("phase_goal_remove"),
+                    style: const TextStyle(color: Color(0xFFE57373)),
+                  ),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+              FilledButton(
+                onPressed: (kg > 0 && kc > 0)
+                    ? () => Navigator.pop(ctx, "save")
+                    : null,
+                child: Text(t("save")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted) return;
+    if (result == "delete") {
+      await _savePhaseGoal(null);
+    } else if (result == "save") {
+      final kg = parse(kgCtrl.text) ?? 0;
+      final kc = parse(kcalCtrl.text) ?? 0;
+      final sameKind = g != null && (g["bulk"] == true) == bulk;
+      await _savePhaseGoal({
+        "kg": kg,
+        "bulk": bulk,
+        "kcal": kc,
+        "start": sameKind
+            ? (g?["start"] ?? selectedDayKeyToday())
+            : selectedDayKeyToday(),
+      });
+    }
+  }
+
+  String selectedDayKeyToday() =>
+      dateKeyFromDate(_dateOnlyLocal(DateTime.now()));
+
   /// Tagesziel-kcal inkl. Cheat (null bei Crashout = keine Defizit-Rechnung).
   double? _goalKcalForStatsDay(String dayKey) {
     if (isCheatDay(dayKey) && cheatDays[dayKey]!.isCrashout) {
@@ -3119,6 +3464,7 @@ class _MainScreenState extends State<MainScreen> {
       _updateMealTotals();
     } catch (_) {}
     unawaited(_loadAppState());
+    unawaited(_loadPhaseGoal());
   }
 
   @override
@@ -4058,6 +4404,22 @@ class _MainScreenState extends State<MainScreen> {
       "day_week_details": "7-Tage-Statistik (Details)",
       "weekly_balance_kpi": "Wochen-Δ (kg)",
       "tracking_streak_label": "Serie",
+      "phase_goal_label": "Ziel",
+      "phase_goal_set": "Ziel setzen",
+      "phase_goal_title": "Phasen-Ziel",
+      "phase_goal_lose": "Abnehmen",
+      "phase_goal_gain": "Zunehmen",
+      "phase_goal_kg_label": "Wie viel?",
+      "phase_goal_deficit_label": "Defizit pro Tag",
+      "phase_goal_surplus_label": "Überschuss pro Tag",
+      "phase_goal_plan_hint": "Dein aktueller Plan: ca. {kcal} kcal/Tag",
+      "phase_goal_preview": "{kg} kg ≈ {total} kcal\nbei {kcal} kcal/Tag → ca. {days} Tage\nZiel ca. {date}",
+      "phase_goal_info": "Grob gerechnet: 7000 kcal ≈ 1 kg. Der Countdown passt sich an: Er zählt, was du an getrackten Tagen wirklich eingespart hast.",
+      "phase_goal_days_left": "Noch {n} Tage bis zum Ziel",
+      "phase_goal_reached": "Ziel erreicht 🎉",
+      "phase_goal_eta": "ca.",
+      "phase_goal_per_day": "Tag",
+      "phase_goal_remove": "Entfernen",
       "tracking_streak_hint":
           "Aufeinanderfolgende Tage mit mindestens einem Log — gezählt ab heute rückwärts. Heute noch nichts erfasst = Serie 0.",
       "day_context_tap": "Tag, Serie, Gewicht …",
@@ -5087,6 +5449,22 @@ class _MainScreenState extends State<MainScreen> {
       "day_week_details": "7-day stats (details)",
       "weekly_balance_kpi": "Week Δ (kg)",
       "tracking_streak_label": "Streak",
+      "phase_goal_label": "Goal",
+      "phase_goal_set": "Set goal",
+      "phase_goal_title": "Phase goal",
+      "phase_goal_lose": "Lose",
+      "phase_goal_gain": "Gain",
+      "phase_goal_kg_label": "How much?",
+      "phase_goal_deficit_label": "Deficit per day",
+      "phase_goal_surplus_label": "Surplus per day",
+      "phase_goal_plan_hint": "Your current plan: approx. {kcal} kcal/day",
+      "phase_goal_preview": "{kg} kg ≈ {total} kcal\nat {kcal} kcal/day → approx. {days} days\nGoal approx. {date}",
+      "phase_goal_info": "Rough math: 7000 kcal ≈ 1 kg. The countdown adapts: it counts what you actually saved on tracked days.",
+      "phase_goal_days_left": "{n} days to goal",
+      "phase_goal_reached": "Goal reached 🎉",
+      "phase_goal_eta": "approx.",
+      "phase_goal_per_day": "day",
+      "phase_goal_remove": "Remove",
       "tracking_streak_hint":
           "Consecutive days with at least one log, counting back from today. Nothing logged today = 0.",
       "day_context_tap": "Day, streak, weight …",
@@ -9619,6 +9997,42 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                 ),
+                Builder(builder: (_) {
+                  final st = _phaseGoalStatus();
+                  final txt = st == null
+                      ? t("phase_goal_set")
+                      : st.daysLeft == 0
+                          ? t("phase_goal_reached")
+                          : tFmt("phase_goal_days_left", {"n": st.daysLeft});
+                  return InkWell(
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openPhaseGoalDialog();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            t("phase_goal_label"),
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                          Text(
+                            "🎯 $txt",
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                              color: st == null
+                                  ? Colors.white54
+                                  : const Color(0xFFD4AF37),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
                 _kpiLine(
                   t("weight"),
                   weightHistory[dayKey] != null
@@ -14541,6 +14955,8 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _cheatDayBanner(selectedDayKey)),
           if (_isAggressiveMode)
             SliverToBoxAdapter(child: _aggressiveModeStrip()),
+          if (phaseGoal != null)
+            SliverToBoxAdapter(child: _phaseGoalStrip()),
           if (nutritionMode == "Diät")
             SliverToBoxAdapter(child: _cutDayStepsCard()),
           SliverToBoxAdapter(
