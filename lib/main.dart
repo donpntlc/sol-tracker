@@ -2190,13 +2190,13 @@ class _MainScreenState extends State<MainScreen> {
             Text(
               value,
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 19,
                 fontWeight: FontWeight.w800,
                 color: onCard,
               ),
             ),
             const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 11.5, color: muted)),
+            Text(label, style: TextStyle(fontSize: 12.5, color: muted)),
           ],
         );
 
@@ -2211,8 +2211,8 @@ class _MainScreenState extends State<MainScreen> {
               Text(label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: muted)),
-              const SizedBox(height: 5),
+                  style: TextStyle(fontSize: 12.5, color: muted)),
+              const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
@@ -2226,7 +2226,7 @@ class _MainScreenState extends State<MainScreen> {
               Text(
                 "${cur.round()} / ${target.round()} g",
                 style: TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: onCard,
                 ),
@@ -2241,7 +2241,7 @@ class _MainScreenState extends State<MainScreen> {
       borderRadius: BorderRadius.circular(12),
       onTap: () => setState(() => _macroDetailsExpanded = !_macroDetailsExpanded),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
         child: Column(
           children: [
             Row(
@@ -2249,8 +2249,8 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 Expanded(child: side(_fmtThousands(eaten), t("ring_eaten"))),
                 SizedBox(
-                  width: 124,
-                  height: 124,
+                  width: 140,
+                  height: 140,
                   child: CustomPaint(
                     painter: _KcalRingPainter(
                       ratio: ratio,
@@ -2264,7 +2264,7 @@ class _MainScreenState extends State<MainScreen> {
                           Text(
                             _fmtThousands(left.abs()),
                             style: TextStyle(
-                              fontSize: 25,
+                              fontSize: 28,
                               fontWeight: FontWeight.w900,
                               color: isOver ? over : onCard,
                               height: 1.0,
@@ -2283,7 +2283,7 @@ class _MainScreenState extends State<MainScreen> {
                 Expanded(child: side(_fmtThousands(goal), t("ring_goal"))),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Row(
               children: [
                 macro(t("carbs"), carbs, mg.carbs, _carbColor),
@@ -15517,48 +15517,6 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _phaseGoalStrip()),
           if (nutritionMode == "Diät")
             SliverToBoxAdapter(child: _cutDayStepsCard()),
-          if (overviewRingStyle)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Card(
-                  margin: EdgeInsets.zero,
-                  color: context.sol.card,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: context.sol.soft.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _ringOverview(
-                          eaten: totalCalories,
-                          goal: () {
-                            if (!isCheatDay(selectedDayKey)) return goalCalories;
-                            if (isSelectedDayCrashout) return goalCalories;
-                            final eff = effectiveGoalKcalForDay(selectedDayKey);
-                            return eff > 0 ? eff : goalCalories;
-                          }(),
-                          protein: totalProtein,
-                          carbs: totalCarbs,
-                          fat: totalFat,
-                        ),
-                        _dayMacroDetails(
-                          recK: recK,
-                          totalProtein: totalProtein,
-                          totalCarbs: totalCarbs,
-                          totalFat: totalFat,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
@@ -15676,6 +15634,48 @@ class _MainScreenState extends State<MainScreen> {
           ),
             ),
           ),
+          if (overviewRingStyle)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                child: Card(
+                  margin: EdgeInsets.zero,
+                  color: context.sol.card,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                      color: context.sol.soft.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _ringOverview(
+                          eaten: totalCalories,
+                          goal: () {
+                            if (!isCheatDay(selectedDayKey)) return goalCalories;
+                            if (isSelectedDayCrashout) return goalCalories;
+                            final eff = effectiveGoalKcalForDay(selectedDayKey);
+                            return eff > 0 ? eff : goalCalories;
+                          }(),
+                          protein: totalProtein,
+                          carbs: totalCarbs,
+                          fat: totalFat,
+                        ),
+                        _dayMacroDetails(
+                          recK: recK,
+                          totalProtein: totalProtein,
+                          totalCarbs: totalCarbs,
+                          totalFat: totalFat,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               0,
@@ -15699,7 +15699,7 @@ class _MainScreenState extends State<MainScreen> {
     final hasPost = meals.contains("Post-Workout");
     final core = _trackingMainEveningInOrder();
     final mergedMeals = _activeMergedMealsForDay();
-    const nest = EdgeInsets.symmetric(vertical: 8, horizontal: 2);
+    const nest = EdgeInsets.symmetric(vertical: 8, horizontal: 8);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -15724,7 +15724,7 @@ class _MainScreenState extends State<MainScreen> {
                     !_isMealMergedLocked("Snacks"))
                   _buildMealSectionCard(
                     "Snacks",
-                    sectionCardMargin: const EdgeInsets.fromLTRB(2, 0, 2, 12),
+                    sectionCardMargin: const EdgeInsets.fromLTRB(8, 0, 8, 12),
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
@@ -15751,7 +15751,7 @@ class _MainScreenState extends State<MainScreen> {
                   _buildMergedMealSectionCard(mergedMeals),
                 if (hasPre && hasPost && !_workoutBlockHiddenByMerge()) ...[
                   _buildWorkoutSectionCard(
-                    sectionCardMargin: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+                    sectionCardMargin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                   ),
                 ] else ...[
                   if (hasPre && !_isMealMergedLocked("Pre-Workout"))
@@ -27290,7 +27290,7 @@ class _KcalRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 9.0;
+    const stroke = 10.0;
     final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke,
         size.height - stroke);
     const start = math.pi * 0.75;
