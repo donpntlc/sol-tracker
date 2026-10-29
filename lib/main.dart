@@ -15900,7 +15900,7 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                  padding: const EdgeInsets.fromLTRB(4, 14, 4, 16),
                   child: Row(
                     children: [
                       const Icon(
