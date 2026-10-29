@@ -2891,7 +2891,43 @@ class _MainScreenState extends State<MainScreen> {
   final TextEditingController _weightTodayCtrl = TextEditingController();
   String? _weightTodayPrefilledFor;
 
+  // Manuell eingetragene Wochenschnitte (falls woanders berechnet): [{at, kg}]
+  static const String _kWeekAvgKey = "weight_week_avg_v1";
+  List<Map<String, dynamic>> weekAvgEntries = [];
+
+  Future<void> _loadWeekAvgEntries() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kWeekAvgKey);
+      if (raw == null || raw.isEmpty) return;
+      final l = (jsonDecode(raw) as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      if (mounted) setState(() => weekAvgEntries = l);
+    } catch (_) {}
+  }
+
+  Future<void> _saveWeekAvgEntries() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kWeekAvgKey, jsonEncode(weekAvgEntries));
+    } catch (_) {}
+  }
+
   double? _avgWeight(DateTime from, DateTime to) {
+    // Manueller Wochenschnitt in diesem Zeitraum hat Vorrang (neuester zählt).
+    Map<String, dynamic>? manual;
+    for (final e in weekAvgEntries) {
+      try {
+        final d = dateFromKey(e["at"].toString());
+        if (!d.isBefore(from) && !d.isAfter(to)) {
+          if (manual == null || e["at"].toString().compareTo(manual["at"].toString()) > 0) {
+            manual = e;
+          }
+        }
+      } catch (_) {}
+    }
+    if (manual != null) return (manual["kg"] as num).toDouble();
     final vals = <double>[];
     weightHistory.forEach((k, v) {
       try {
@@ -2932,7 +2968,91 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _weightBodyCard() {
+  Future<void> _enterWeekAverage({VoidCallback? onChanged}) async {
+    final ctrl = TextEditingController();
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t("weight_week_avg_title")),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(t("weight_week_avg_hint"),
+                style: const TextStyle(fontSize: 12.5, color: Colors.white60, height: 1.35)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(suffixText: "kg"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t("cancel"))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: Text(t("save"))),
+        ],
+      ),
+    );
+    final w = double.tryParse((v ?? "").trim().replaceAll(",", "."));
+    if (w == null || w < 25 || w > 400 || !mounted) return;
+    final key = dateKeyFromDate(_dateOnlyLocal(DateTime.now()));
+    setState(() {
+      weekAvgEntries.removeWhere((e) => e["at"] == key);
+      weekAvgEntries.add({"at": key, "kg": w});
+      currentWeightKg = w;
+      if (nutritionMode != "Advanced") _applyAutoNutritionTargets();
+    });
+    await _saveWeekAvgEntries();
+    await _saveAppState();
+    _maybeWeeklyGoalRecalc();
+    onChanged?.call();
+  }
+
+  /// Waage oben: Gewicht heute / Wochenschnitt / Verlauf.
+  Future<void> _openWeightSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) => Padding(
+          padding: EdgeInsets.only(
+            top: 12,
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom +
+                MediaQuery.viewPaddingOf(ctx).bottom +
+                12,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _weightBodyCard(onChanged: () => setL(() {})),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                    label: Text(t("weight_more_details")),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _openWeightDialog();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _weightBodyCard({VoidCallback? onChanged}) {
     const gold = Color(0xFFC9A24A);
     final onCard = context.sol.onCard;
     final muted = context.sol.muted;
@@ -2960,6 +3080,14 @@ class _MainScreenState extends State<MainScreen> {
         if (!d.isBefore(from) && !d.isAfter(today)) pts.add(MapEntry(d, v.kg));
       } catch (_) {}
     });
+    for (final e in weekAvgEntries) {
+      try {
+        final d = dateFromKey(e["at"].toString());
+        if (d.isBefore(from) || d.isAfter(today)) continue;
+        if (pts.any((p) => p.key == d)) continue;
+        pts.add(MapEntry(d, (e["kg"] as num).toDouble()));
+      } catch (_) {}
+    }
     pts.sort((a, b) => a.key.compareTo(b.key));
 
     Widget stat(String value, String label, {Color? color}) => Expanded(
@@ -3139,7 +3267,10 @@ class _MainScreenState extends State<MainScreen> {
                       style: TextStyle(
                           fontSize: 22, fontWeight: FontWeight.w800, color: onCard),
                       decoration: const InputDecoration(isDense: true),
-                      onSubmitted: (_) => _saveWeightToday(),
+                      onSubmitted: (_) async {
+                        await _saveWeightToday();
+                        onChanged?.call();
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3151,7 +3282,10 @@ class _MainScreenState extends State<MainScreen> {
                       foregroundColor: const Color(0xFF17130A),
                       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                     ),
-                    onPressed: _saveWeightToday,
+                    onPressed: () async {
+                      await _saveWeightToday();
+                      onChanged?.call();
+                    },
                     child: Text(t("save"),
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   ),
@@ -3170,7 +3304,20 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: gold,
+                    padding: EdgeInsets.zero,
+                  ),
+                  onPressed: () => _enterWeekAverage(onChanged: onChanged),
+                  child: Text(t("weight_week_avg_button"),
+                      style: const TextStyle(fontSize: 12.5)),
+                ),
+              ),
+              const SizedBox(height: 6),
               chart(),
             ],
           ),
@@ -5167,6 +5314,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadPhaseGoal());
     unawaited(_loadPlannedFoods());
     unawaited(_loadMealTemplates());
+    unawaited(_loadWeekAvgEntries());
     unawaited(_loadHelpTextsPref());
     unawaited(_loadOverviewRingPref());
   }
@@ -6112,6 +6260,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "weight_week_avg_button": "Wochenschnitt eintragen (statt täglich)",
+      "weight_week_avg_title": "Wochenschnitt eintragen",
+      "weight_week_avg_hint": "Für den Fall, dass du deinen Schnitt woanders berechnest. Er gilt für diese Woche und zählt statt der Tageswerte.",
+      "weight_more_details": "Mit Foto / Uhrzeit eintragen",
       "weight_today_title": "GEWICHT HEUTE",
       "weight_avg7": "Schnitt letzte 7 Tage (kg)",
       "weight_vs_prev": "gegenüber Vorwoche (kg)",
@@ -7240,6 +7392,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "weight_week_avg_button": "Enter weekly average (instead of daily)",
+      "weight_week_avg_title": "Enter weekly average",
+      "weight_week_avg_hint": "If you calculate your average elsewhere. It applies to this week and is used instead of daily values.",
+      "weight_more_details": "Log with photo / time",
       "weight_today_title": "WEIGHT TODAY",
       "weight_avg7": "Average last 7 days (kg)",
       "weight_vs_prev": "vs. previous week (kg)",
@@ -16850,7 +17006,7 @@ class _MainScreenState extends State<MainScreen> {
             icon: const Icon(Icons.calendar_month),
           ),
           IconButton(
-            onPressed: _openWeightDialog,
+            onPressed: _openWeightSheet,
             icon: const Icon(Icons.monitor_weight),
           ),
           IconButton(
@@ -17099,8 +17255,6 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildTrackingMealsLayout(),
-                  const SizedBox(height: 6),
-                  _weightBodyCard(),
                 ],
               ),
             ),
@@ -19165,6 +19319,9 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(title: Text(t("settings"))),
       body: ListView(
         children: [
+          const SizedBox(height: 4),
+          _weightBodyCard(),
+          const SizedBox(height: 6),
           _sectionCard(
             title: t("intro"),
             child: ListTile(
