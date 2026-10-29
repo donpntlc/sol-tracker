@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import 'dart:convert';
@@ -15774,9 +15775,16 @@ class _MainScreenState extends State<MainScreen> {
                 // Snacks oben im selben Feld, darunter „Mahlzeiten“.
                 if (meals.contains("Snacks") &&
                     !_isMealMergedLocked("Snacks"))
-                  _buildMealSectionCard(
-                    "Snacks",
-                    sectionCardMargin: const EdgeInsets.fromLTRB(22, 0, 22, 10),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    // Snacks komplett kleiner skaliert (Schrift, Symbole, Abstände).
+                    child: _UniformScale(
+                      scale: 0.86,
+                      child: _buildMealSectionCard(
+                        "Snacks",
+                        sectionCardMargin: EdgeInsets.zero,
+                      ),
+                    ),
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
@@ -27509,4 +27517,75 @@ class _KcalRingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _KcalRingPainter old) =>
       old.ratio != ratio || old.color != color || old.track != track;
+}
+
+
+/// Skaliert ein Kind komplett (Layout + Zeichnung + Antippen), z. B. 0.86 = 86 %.
+class _UniformScale extends SingleChildRenderObjectWidget {
+  const _UniformScale({required this.scale, super.child});
+  final double scale;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderUniformScale(scale);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderUniformScale renderObject) {
+    renderObject.scale = scale;
+  }
+}
+
+class _RenderUniformScale extends RenderProxyBox {
+  _RenderUniformScale(this._scale);
+  double _scale;
+
+  set scale(double v) {
+    if (v == _scale) return;
+    _scale = v;
+    markNeedsLayout();
+  }
+
+  Matrix4 get _m => Matrix4.diagonal3Values(_scale, _scale, 1);
+
+  @override
+  void performLayout() {
+    final c = constraints;
+    final ch = child;
+    if (ch == null) {
+      size = c.smallest;
+      return;
+    }
+    ch.layout(
+      BoxConstraints(
+        minWidth: c.minWidth / _scale,
+        maxWidth: c.maxWidth / _scale,
+        minHeight: c.minHeight / _scale,
+        maxHeight: c.maxHeight / _scale,
+      ),
+      parentUsesSize: true,
+    );
+    size = c.constrain(ch.size * _scale);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null) return;
+    context.pushTransform(needsCompositing, offset, _m, super.paint);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final ch = child;
+    if (ch == null) return false;
+    return result.addWithPaintTransform(
+      transform: _m,
+      position: position,
+      hitTest: (r, p) => ch.hitTest(r, position: p),
+    );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    transform.multiply(_m);
+  }
 }
