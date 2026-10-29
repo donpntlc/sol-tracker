@@ -4977,6 +4977,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_range_line": "Bereich: {r}",
       "overview_details": "Details",
       "overview_less": "Weniger",
       "plan_meal_rest": "danach noch {kcal} kcal",
@@ -6060,6 +6061,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_range_line": "Range: {r}",
       "overview_details": "Details",
       "overview_less": "Less",
       "plan_meal_rest": "then {kcal} kcal left",
@@ -16711,6 +16713,7 @@ class _MainScreenState extends State<MainScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: _buildMealKcalRowCompact(
               _kWorkoutBlockMealId,
+              showRange: sectionOpen,
               current: totals['calories']!,
               minKcal: kR.minKcal,
               maxKcal: kR.maxKcal,
@@ -17391,6 +17394,7 @@ class _MainScreenState extends State<MainScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: _buildMealKcalRowCompact(
               meal,
+              showRange: sectionOpen,
               current: totals['calories']!,
               minKcal: kR.minKcal,
               maxKcal: kR.maxKcal,
@@ -20859,6 +20863,8 @@ class _MainScreenState extends State<MainScreen> {
     required double maxKcal,
     bool simple = false,
     bool showInlineAdd = true,
+    /// Bereich (min–max) nur anzeigen, wenn die Mahlzeit aufgeklappt ist.
+    bool showRange = false,
   }) {
     final mc = _mealCardColors(meal);
     final barChrome = _kcalBarChromeForSurface(mc.surface);
@@ -21001,16 +21007,7 @@ class _MainScreenState extends State<MainScreen> {
               fontFeatures: [FontFeature.tabularFigures()]),
         ),
       ),
-      Container(
-        width: 1,
-        height: 16,
-        margin: const EdgeInsets.symmetric(horizontal: 7),
-        color: tx.range.withValues(alpha: 0.6),
-      ),
-      Text(
-        rangeStr,
-        style: TextStyle(fontSize: 11, color: tx.range),
-      ),
+      const SizedBox(width: 4),
       if (showInlineAdd)
         PopupMenuButton<String>(
           padding: EdgeInsets.zero,
@@ -21040,6 +21037,18 @@ class _MainScreenState extends State<MainScreen> {
         ),
     ];
 
+
+    final rangeLine = showRange
+        ? Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              tFmt("meal_range_line", {"r": rangeStr}),
+              textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 11.5, color: tx.range),
+            ),
+          )
+        : const SizedBox.shrink();
+
     if (simple) {
       final simpleBar = _mealKcalSimpleCorridorBar(
         current: current,
@@ -21060,6 +21069,7 @@ class _MainScreenState extends State<MainScreen> {
               ...kcalAddTrailing,
             ],
           ),
+          rangeLine,
         ],
       );
     }
@@ -21074,6 +21084,7 @@ class _MainScreenState extends State<MainScreen> {
             ...kcalAddTrailing,
           ],
         ),
+          rangeLine,
       ],
     );
   }
