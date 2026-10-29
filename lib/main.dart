@@ -15631,7 +15631,8 @@ class _MainScreenState extends State<MainScreen> {
               !_isMealMergedLocked("Snacks"))
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
+                // Gleiche Breite wie die Mahlzeiten im Block (6 + 8 + 2).
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
                 child: _buildMealSectionCard(
                   "Snacks",
                   sectionCardMargin: EdgeInsets.zero,
