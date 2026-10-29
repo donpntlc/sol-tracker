@@ -1856,6 +1856,17 @@ class _MainScreenState extends State<MainScreen> {
 
   ({double minPct, double maxPct}) _mealDayMacroBandPct(
       String meal, String macro) {
+    // Die Zielmitte (eigene Verteilung) muss immer im Bereich liegen —
+    // sonst wäre „7 / 7 g“ rot (z. B. Pre/Post-Workout-Fett-Obergrenze 15 %).
+    ({double minPct, double maxPct}) fit(double lo, double hi) {
+      final c = mealMacros[meal]?[macro];
+      if (c != null) {
+        if (c > hi) hi = c + 2.0;
+        if (c < lo) lo = math.max(0.0, c - 2.0);
+      }
+      return (minPct: lo, maxPct: hi);
+    }
+
     final row = mealDayMacroBands[meal];
     if (row != null) {
       final a = row[macro];
@@ -1867,11 +1878,11 @@ class _MainScreenState extends State<MainScreen> {
           lo = hi;
           hi = t;
         }
-        return (minPct: lo, maxPct: hi);
+        return fit(lo, hi);
       }
     }
     final d = _defaultBandListFor(meal, macro);
-    return (minPct: d[0], maxPct: d[1]);
+    return fit(d[0], d[1]);
   }
 
   // Gramm-Range: Anteil (min–max %) an der Tagesmenge P/KH/F, cheat-/crashout-skaliert.
