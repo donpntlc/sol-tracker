@@ -16269,7 +16269,13 @@ class _MainScreenState extends State<MainScreen> {
     var e = 0.0;
     for (final f in trackedFoods) {
       if (f.meal != meal || f.dayKey != selectedDayKey) continue;
-      if (_inferredCarbKind(f.food) == "einfach") {
+      // Zucker = einfache KH. Rest der KH = komplex.
+      // Ohne Zucker-Angabe: wie bisher nach Lebensmittel-Art.
+      final sugar = f.sugar.clamp(0.0, f.carbs).toDouble();
+      if (sugar > 0.01) {
+        e += sugar;
+        k += f.carbs - sugar;
+      } else if (_inferredCarbKind(f.food) == "einfach") {
         e += f.carbs;
       } else {
         k += f.carbs;
