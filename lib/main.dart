@@ -4996,6 +4996,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_button": "Foto scannen",
       "barcode_photo_fail": "Kein Barcode erkannt. Nah ran, gerade halten, gutes Licht — nochmal versuchen oder Code eintippen.",
       "barcode_manual_button": "Code eintippen",
+      "barcode_web_hint": "Tippe auf „Foto scannen“ und fotografiere den Barcode nah und gerade.",
       "barcode_lib_fail": "Scanner konnte nicht geladen werden (Internet?). Bitte Code eintippen.",
       "barcode_manual_title": "Barcode eintippen",
       "barcode_manual_hint": "Zahlen unter dem Strichcode",
@@ -6078,6 +6079,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_button": "Photo scan",
       "barcode_photo_fail": "No barcode found. Get close, hold straight, good light — try again or type the code.",
       "barcode_manual_button": "Type code",
+      "barcode_web_hint": "Tap “Photo scan” and take a close, straight photo of the barcode.",
       "barcode_lib_fail": "Scanner could not be loaded (internet?). Please type the code.",
       "barcode_manual_title": "Type barcode",
       "barcode_manual_hint": "Digits under the barcode",
@@ -26628,9 +26630,11 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
       _msg = null;
     });
     try {
-      try {
-        await _controller.stop();
-      } catch (_) {}
+      if (!kIsWeb) {
+        try {
+          await _controller.stop();
+        } catch (_) {}
+      }
       final x = await ImagePicker().pickImage(
         source: ImageSource.camera,
         maxWidth: 2400,
@@ -26638,9 +26642,11 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
       );
       if (x == null) {
         if (mounted) setState(() => _busy = false);
-        try {
-          await _controller.start();
-        } catch (_) {}
+        if (!kIsWeb) {
+          try {
+            await _controller.start();
+          } catch (_) {}
+        }
         return;
       }
       final bytes = await x.readAsBytes();
@@ -26658,9 +26664,11 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
               : widget.t("barcode_lib_fail");
         });
       }
-      try {
-        await _controller.start();
-      } catch (_) {}
+      if (!kIsWeb) {
+        try {
+          await _controller.start();
+        } catch (_) {}
+      }
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -26721,6 +26729,32 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
           borderRadius: BorderRadius.circular(8),
           child: Stack(
             children: [
+              if (kIsWeb)
+                // Web-App: Live-Kamera erkennt auf dem iPhone nicht zuverlässig
+                // (zeigte nur „!“). Stattdessen direkt Foto scannen.
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: Colors.black,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.qr_code_scanner,
+                              size: 56, color: Color(0xFFC9A24A)),
+                          const SizedBox(height: 14),
+                          Text(
+                            widget.t("barcode_web_hint"),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 13.5, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
               MobileScanner(
                 controller: _controller,
                 onDetect: (cap) {
