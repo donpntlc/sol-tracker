@@ -2050,6 +2050,27 @@ class _MainScreenState extends State<MainScreen> {
     return b.toString();
   }
 
+  // ───────────── Hilfetexte ein/aus ─────────────
+  static const String _kShowHelpTextsKey = "show_help_texts_v1";
+  bool showHelpTexts = true;
+
+  Future<void> _loadHelpTextsPref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getBool(_kShowHelpTextsKey);
+      if (v == null || !mounted) return;
+      setState(() => showHelpTexts = v);
+    } catch (_) {}
+  }
+
+  Future<void> _setHelpTexts(bool v) async {
+    setState(() => showHelpTexts = v);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kShowHelpTextsKey, v);
+    } catch (_) {}
+  }
+
   // ───────────── Vorgeplante Mahlzeiten ─────────────
   // Eigene Liste, zählt NICHT ins Tracking. Abhaken = gegessen → wandert nach trackedFoods.
   static const String _kPlannedFoodsKey = "planned_foods_v1";
@@ -3687,6 +3708,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadAppState());
     unawaited(_loadPhaseGoal());
     unawaited(_loadPlannedFoods());
+    unawaited(_loadHelpTextsPref());
   }
 
   @override
@@ -4628,6 +4650,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "settings_help_texts_title": "Hilfetexte",
+      "settings_help_texts": "Hilfetexte anzeigen",
+      "settings_help_texts_sub": "Tipps und Erklärungen im Tracking (z. B. komplexe/einfache Carbs, Zielhinweise). Aus = aufgeräumter.",
       "plan_added_snack": "Vorgemerkt — abhaken, sobald du es gegessen hast.",
       "plan_meal_header": "GEPLANT · +{kcal} kcal",
       "plan_eaten_button": "Gegessen ✓",
@@ -5682,6 +5707,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "settings_help_texts_title": "Help texts",
+      "settings_help_texts": "Show help texts",
+      "settings_help_texts_sub": "Tips and explanations in tracking (e.g. complex/simple carbs, target notes). Off = cleaner.",
       "plan_added_snack": "Planned — tick it off once you've eaten it.",
       "plan_meal_header": "PLANNED · +{kcal} kcal",
       "plan_eaten_button": "Eaten ✓",
@@ -15664,6 +15692,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _preWorkoutCarbTimingTipBanner() {
+    if (!showHelpTexts) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 6),
       child: Row(
@@ -15848,7 +15877,7 @@ class _MainScreenState extends State<MainScreen> {
                   rangeBarSurface: mSurf,
                 ),
                 _trackFillButton(meal, "cP"),
-                Padding(
+                if (showHelpTexts) Padding(
                   padding: const EdgeInsets.only(left: 2, right: 2, bottom: 2),
                   child: Align(
                     alignment: Alignment.centerLeft,
@@ -15881,7 +15910,7 @@ class _MainScreenState extends State<MainScreen> {
                   rangeBarSurface: mSurf,
                 ),
                 _trackFillButton(meal, "cE"),
-                Padding(
+                if (showHelpTexts) Padding(
                   padding: const EdgeInsets.only(left: 2, right: 2, bottom: 2),
                   child: Align(
                     alignment: Alignment.centerLeft,
@@ -17704,6 +17733,22 @@ class _MainScreenState extends State<MainScreen> {
                   },
                 ),
               ],
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_help_texts_title"),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                t("settings_help_texts"),
+                style: TextStyle(color: context.sol.onCard, fontSize: 15),
+              ),
+              subtitle: Text(
+                t("settings_help_texts_sub"),
+                style: TextStyle(fontSize: 12, color: context.sol.soft),
+              ),
+              value: showHelpTexts,
+              onChanged: (v) => _setHelpTexts(v),
             ),
           ),
           _sectionCard(
@@ -20692,6 +20737,7 @@ class _MainScreenState extends State<MainScreen> {
       displayPct = 100.0 * current / dayTotalGoalG;
       foot = t("macro_bar_footnote_of_day");
     }
+    if (!showHelpTexts) foot = "";
     if (displayPct != null) {
       return Text.rich(
         TextSpan(
