@@ -168,16 +168,19 @@ class SolUi extends ThemeExtension<SolUi> {
   final Color dailyCard;
   final Color dailyBorder;
 
+  // Kontrast 29.10.: Karten heben sich mehr vom Hintergrund ab,
+  // Nebentexte besser lesbar. Vorher: scaffold 111111, card 1F1F1F,
+  // muted B3FFFFFF, soft 8AFFFFFF, nav 7A7A7A (Branch backup-vor-kontrast-29-10).
   static const SolUi dark = SolUi(
-    scaffold: Color(0xFF111111),
-    card: Color(0xFF1F1F1F),
-    appBar: Color(0xFF111111),
-    onCard: Color(0xFFFFFFFF),
-    muted: Color(0xB3FFFFFF),
-    soft: Color(0x8AFFFFFF),
-    bottomNav: Color(0xFF121212),
-    navSelected: Color(0xFFE7D9C3),
-    navUnselected: Color(0xFF7A7A7A),
+    scaffold: Color(0xFF0C0C0C),
+    card: Color(0xFF232325),
+    appBar: Color(0xFF0C0C0C),
+    onCard: Color(0xFFF5F2EC),
+    muted: Color(0xC9FFFFFF),
+    soft: Color(0xA6FFFFFF),
+    bottomNav: Color(0xFF0F0F0F),
+    navSelected: Color(0xFFE9C46A),
+    navUnselected: Color(0xFF8F8F8F),
     dailyCard: Color(0xFF2D2B28),
     dailyBorder: Color(0x5ED4AF37),
   );
@@ -1216,7 +1219,7 @@ class _TrackPortionScrollPanelState extends State<_TrackPortionScrollPanel> {
                       style: TextStyle(
                         color: selected
                             ? const Color(0xFFD4AF37)
-                            : Colors.white54,
+                            : Colors.white60,
                         fontSize: selected ? 17 : 14,
                         fontWeight:
                             selected ? FontWeight.w700 : FontWeight.w400,
@@ -1325,7 +1328,7 @@ enum _DbPcfFrameKind { gray, solGold, userSoft }
 class _MainScreenState extends State<MainScreen> {
   static const Color _proteinColor = Color(0xFFD2C2A7);
   static const Color _carbColor = Color(0xFFC7C7C7);
-  static const Color _fatColor = Color(0xFF8E8E8E);
+  static const Color _fatColor = Color(0xFFAAAAAA);
   static const Color _fiberColor = Color(0xFFAFAFAF);
   static const Color _kChartGold = Color(0xFFD4AF37);
   /// Schnellvorschlag + DB-Protein-Highlights
@@ -2903,7 +2906,7 @@ class _MainScreenState extends State<MainScreen> {
                   Text(
                     t("phase_goal_info"),
                     style: const TextStyle(
-                        color: Colors.white54, fontSize: 11, height: 1.3),
+                        color: Colors.white60, fontSize: 11, height: 1.3),
                   ),
                 ],
               ),
@@ -3993,7 +3996,7 @@ class _MainScreenState extends State<MainScreen> {
                                   "mid": r.meanGoalKcal.toStringAsFixed(0),
                                 })}",
                                 style: const TextStyle(
-                                  color: Colors.white54,
+                                  color: Colors.white60,
                                   fontSize: 11.5,
                                 ),
                               ),
@@ -7785,7 +7788,7 @@ class _MainScreenState extends State<MainScreen> {
               const SizedBox(height: 4),
               Text(
                 "${f.grams.toStringAsFixed(0)} g",
-                style: const TextStyle(fontSize: 12, color: Colors.white54),
+                style: const TextStyle(fontSize: 12, color: Colors.white60),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
@@ -8367,7 +8370,7 @@ class _MainScreenState extends State<MainScreen> {
                         t("shop_add_to_list"),
                         style: const TextStyle(
                           fontSize: 12,
-                          color: Colors.white54,
+                          color: Colors.white60,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -8973,7 +8976,7 @@ class _MainScreenState extends State<MainScreen> {
           tilePadding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           iconColor: const Color(0xFFD4AF37),
-          collapsedIconColor: Colors.white54,
+          collapsedIconColor: Colors.white60,
           title: Row(
             children: [
               const Icon(
@@ -9265,7 +9268,7 @@ class _MainScreenState extends State<MainScreen> {
           tilePadding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           iconColor: const Color(0xFFD4AF37),
-          collapsedIconColor: Colors.white54,
+          collapsedIconColor: Colors.white60,
           title: Text(
             t("intro_outro_title"),
             style: const TextStyle(
@@ -9505,7 +9508,7 @@ class _MainScreenState extends State<MainScreen> {
           style: const TextStyle(
             fontSize: 12.5,
             height: 1.5,
-            color: Colors.white54,
+            color: Colors.white60,
           ),
         ),
       ],
@@ -9688,7 +9691,7 @@ class _MainScreenState extends State<MainScreen> {
           style: const TextStyle(
             fontSize: 12.8,
             height: 1.45,
-            color: Colors.white54,
+            color: Colors.white60,
           ),
         ),
       ],
@@ -9753,7 +9756,7 @@ class _MainScreenState extends State<MainScreen> {
               tilePadding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
               childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               iconColor: const Color(0xFFD4AF37),
-              collapsedIconColor: Colors.white54,
+              collapsedIconColor: Colors.white60,
               title: Text(
                 t("intro_infographic_title"),
                 style: const TextStyle(
@@ -9814,7 +9817,7 @@ class _MainScreenState extends State<MainScreen> {
               tilePadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
               childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               iconColor: const Color(0xFFD4AF37),
-              collapsedIconColor: Colors.white54,
+              collapsedIconColor: Colors.white60,
               title: Text(
                 t("intro_infographic_split_title"),
                 style: const TextStyle(
@@ -9843,7 +9846,7 @@ class _MainScreenState extends State<MainScreen> {
           tilePadding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           iconColor: const Color(0xFFD4AF37),
-          collapsedIconColor: Colors.white54,
+          collapsedIconColor: Colors.white60,
           title: Text(
             t("intro_edu_title"),
             style: const TextStyle(
@@ -9930,7 +9933,7 @@ class _MainScreenState extends State<MainScreen> {
           tilePadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           iconColor: const Color(0xFFD4AF37),
-          collapsedIconColor: Colors.white54,
+          collapsedIconColor: Colors.white60,
           title: Row(
             children: [
               const Icon(
@@ -10152,7 +10155,7 @@ class _MainScreenState extends State<MainScreen> {
           tilePadding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           iconColor: const Color(0xFFD4AF37),
-          collapsedIconColor: Colors.white54,
+          collapsedIconColor: Colors.white60,
           title: Text(
             title,
             style: const TextStyle(
@@ -10661,7 +10664,7 @@ class _MainScreenState extends State<MainScreen> {
                               fontWeight: FontWeight.w800,
                               fontSize: 15,
                               color: st == null
-                                  ? Colors.white54
+                                  ? Colors.white60
                                   : const Color(0xFFD4AF37),
                             ),
                           ),
@@ -11070,7 +11073,7 @@ class _MainScreenState extends State<MainScreen> {
               "n": sacrificeDays,
             }),
             style: const TextStyle(
-              color: Colors.white54,
+              color: Colors.white60,
               fontSize: 11.5,
               fontStyle: FontStyle.italic,
               height: 1.3,
@@ -11163,7 +11166,7 @@ class _MainScreenState extends State<MainScreen> {
                       tFmt("cheatday_credits_short",
                           {"used": used, "max": max}),
                       style: const TextStyle(
-                        color: Colors.white54,
+                        color: Colors.white60,
                         fontSize: 12,
                       ),
                     ),
@@ -11200,7 +11203,7 @@ class _MainScreenState extends State<MainScreen> {
                 Text(
                   t("cheatday_active_banner_subtitle"),
                   style: const TextStyle(
-                    color: Colors.white54,
+                    color: Colors.white60,
                     fontSize: 11,
                     fontStyle: FontStyle.italic,
                   ),
@@ -11357,7 +11360,7 @@ class _MainScreenState extends State<MainScreen> {
                         child: Text(
                           t("cheatday_sacrifice_foot"),
                           style: const TextStyle(
-                            color: Colors.white54,
+                            color: Colors.white60,
                             fontSize: 11.5,
                             fontStyle: FontStyle.italic,
                             height: 1.35,
@@ -11528,7 +11531,7 @@ class _MainScreenState extends State<MainScreen> {
             style: TextStyle(
               color: !manualCheatCap && bonus
                   ? const Color(0xFFD4AF37)
-                  : Colors.white54,
+                  : Colors.white60,
               fontSize: 11,
               fontStyle:
                   !manualCheatCap && bonus ? FontStyle.normal : FontStyle.italic,
@@ -12808,7 +12811,7 @@ class _MainScreenState extends State<MainScreen> {
                           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       subtitle: Text(
                         "${carbK == "komplex" ? t("carb_tag_complex") : t("carb_tag_simple")} · ${t("db_carb_source_tile_sub")}",
-                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                        style: const TextStyle(fontSize: 11, color: Colors.white60),
                       ),
                       trailing: const Icon(Icons.chevron_right, color: Colors.white38),
                       onTap: () async {
@@ -14067,7 +14070,7 @@ class _MainScreenState extends State<MainScreen> {
                     subtitle: Text(
                       "${saveCK == "komplex" ? t("carb_tag_complex") : t("carb_tag_simple")} · ${t("db_carb_source_tile_sub")}",
                       style: const TextStyle(
-                          fontSize: 11, color: Colors.white54),
+                          fontSize: 11, color: Colors.white60),
                     ),
                     trailing:
                         const Icon(Icons.chevron_right, color: Colors.white38),
@@ -15121,7 +15124,7 @@ class _MainScreenState extends State<MainScreen> {
           Text(
             "${_foodCategoryLabelsLine(f)} · ${_tFullType(f.type)}"
             "${f.calories > 0 ? " · ${f.calories.toStringAsFixed(0)} kcal/100g" : ""}",
-            style: const TextStyle(fontSize: 11, color: Colors.white54),
+            style: const TextStyle(fontSize: 11, color: Colors.white60),
           ),
         ],
       ),
@@ -15302,7 +15305,7 @@ class _MainScreenState extends State<MainScreen> {
                     subtitle: Text(
                       "${carbK == "komplex" ? t("carb_tag_complex") : t("carb_tag_simple")} · ${t("db_carb_source_tile_sub")}",
                       style: const TextStyle(
-                          fontSize: 11, color: Colors.white54),
+                          fontSize: 11, color: Colors.white60),
                     ),
                     trailing:
                         const Icon(Icons.chevron_right, color: Colors.white38),
@@ -16006,13 +16009,13 @@ class _MainScreenState extends State<MainScreen> {
     if (dark) {
       return (
         title: const Color(0xFFE7D9C3),
-        subtitle: Colors.white54,
+        subtitle: Colors.white60,
         kcal: Colors.white,
         kcalShorthand: Colors.white60,
         ziel: const Color(0xFFD4AF37),
-        range: Colors.white54,
+        range: Colors.white60,
         expandIcon: Colors.white60,
-        noteOff: Colors.white54,
+        noteOff: Colors.white60,
       );
     }
     final s = context.sol;
@@ -17530,7 +17533,7 @@ class _MainScreenState extends State<MainScreen> {
               onPressed: () => Navigator.of(ctx).pop(false),
               child: Text(
                 t("commitment_decline"),
-                style: const TextStyle(color: Colors.white54),
+                style: const TextStyle(color: Colors.white60),
               ),
             ),
             TextButton(
@@ -17657,13 +17660,13 @@ class _MainScreenState extends State<MainScreen> {
                   ? Text(
                       t("meal_order_free_sub"),
                       style: const TextStyle(
-                          fontSize: 11, color: Colors.white54),
+                          fontSize: 11, color: Colors.white60),
                     )
                   : (groupId == "prepost"
                       ? Text(
                           t("meal_order_block_hint"),
                           style: const TextStyle(
-                              fontSize: 11, color: Colors.white54),
+                              fontSize: 11, color: Colors.white60),
                         )
                       : null)),
           trailing: Row(
@@ -17673,7 +17676,7 @@ class _MainScreenState extends State<MainScreen> {
                 IconButton(
                   tooltip: t("meal_order_rename"),
                   icon: const Icon(Icons.edit_outlined, size: 20),
-                  color: Colors.white54,
+                  color: Colors.white60,
                   onPressed: () => _openMealRenameDialog(groupId),
                 ),
               if (showDrag && dragIndex != null)
@@ -17684,7 +17687,7 @@ class _MainScreenState extends State<MainScreen> {
                     onPointerDown: (_) {
                       HapticFeedback.selectionClick();
                     },
-                    child: const Icon(Icons.drag_handle, color: Colors.white54),
+                    child: const Icon(Icons.drag_handle, color: Colors.white60),
                   ),
                 )
               else
@@ -17981,7 +17984,7 @@ class _MainScreenState extends State<MainScreen> {
                   subtitle: Text(
                     t("settings_last_meal_track_prompt_sub"),
                     style: const TextStyle(
-                        fontSize: 11.5, color: Colors.white54, height: 1.3),
+                        fontSize: 11.5, color: Colors.white60, height: 1.3),
                   ),
                 ),
               ],
@@ -18418,7 +18421,7 @@ class _MainScreenState extends State<MainScreen> {
                   Text(
                     t("cut_style_hint"),
                     style: const TextStyle(
-                        fontSize: 11, color: Colors.white54, height: 1.3),
+                        fontSize: 11, color: Colors.white60, height: 1.3),
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -18485,7 +18488,7 @@ class _MainScreenState extends State<MainScreen> {
                   Text(
                     t("cut_baseline_steps_body"),
                     style: const TextStyle(
-                        fontSize: 11, color: Colors.white54, height: 1.3),
+                        fontSize: 11, color: Colors.white60, height: 1.3),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -18545,13 +18548,13 @@ class _MainScreenState extends State<MainScreen> {
                 Row(
                   children: [
                     const Icon(Icons.info_outline,
-                        size: 14, color: Colors.white54),
+                        size: 14, color: Colors.white60),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         t("mode_age_hint"),
                         style: const TextStyle(
-                          color: Colors.white54,
+                          color: Colors.white60,
                           fontSize: 11,
                           fontStyle: FontStyle.italic,
                         ),
@@ -18619,7 +18622,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   Text(
                     t("advanced_preset_hint"),
-                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                    style: const TextStyle(fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 12),
                   const Divider(height: 1),
@@ -18631,7 +18634,7 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(height: 3),
                   Text(
                     t("cheatday_budget_hint"),
-                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                    style: const TextStyle(fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 8),
                   SwitchListTile(
@@ -18749,7 +18752,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   Text(
                     t("alltag_distribution_hint"),
-                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                    style: const TextStyle(fontSize: 11, color: Colors.white60),
                   ),
                   const SizedBox(height: 10),
                   Builder(builder: (context) {
@@ -21142,7 +21145,7 @@ class _MainScreenState extends State<MainScreen> {
     required double? dayTotalGoalG,
     required double? mealCenterGoalG,
     Color mainTextColor = const Color(0xFFEDEDE5),
-    Color footTextColor = const Color(0xFF8E8C88),
+    Color footTextColor = const Color(0xFFAAA7A1),
   }) {
     String? foot;
     double? displayPct;
@@ -21211,7 +21214,7 @@ class _MainScreenState extends State<MainScreen> {
     final lightCard = barSurf.computeLuminance() > 0.42;
     final sol = context.sol;
     final labelMain = lightCard ? sol.onCard : const Color(0xFFEDEDE5);
-    final labelFoot = lightCard ? sol.soft : const Color(0xFF8E8C88);
+    final labelFoot = lightCard ? sol.soft : const Color(0xFFAAA7A1);
     final barChrome = _kcalBarChromeForSurface(barSurf);
     const overfill = 1.1;
     final safeMax = maxVal > 0.01 ? maxVal : 1.0;
@@ -21413,7 +21416,7 @@ class _MainScreenState extends State<MainScreen> {
                       t("gen_no_recipe_pick"),
                       style: const TextStyle(
                         fontSize: 12.5,
-                        color: Colors.white54,
+                        color: Colors.white60,
                       ),
                     )
                   else ...[
@@ -21490,7 +21493,7 @@ class _MainScreenState extends State<MainScreen> {
                     t("gen_recipe_ideas_sub"),
                     style: const TextStyle(
                       fontSize: 12.5,
-                      color: Colors.white54,
+                      color: Colors.white60,
                       height: 1.3,
                     ),
                   ),
@@ -22183,7 +22186,7 @@ class _MainScreenState extends State<MainScreen> {
                                 cPct > cFreeM + 0.01 ||
                                 fPct > fFreeM + 0.01
                             ? Colors.orange
-                            : Colors.white54,
+                            : Colors.white60,
                         height: 1.3,
                       ),
                     ),
@@ -22569,7 +22572,7 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           style: const TextStyle(
                             fontSize: 11.5,
-                            color: Colors.white54,
+                            color: Colors.white60,
                             height: 1.3,
                             fontFeatures: [FontFeature.tabularFigures()],
                           ),
@@ -22602,7 +22605,7 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           style: const TextStyle(
                             fontSize: 11.5,
-                            color: Colors.white54,
+                            color: Colors.white60,
                             height: 1.3,
                             fontFeatures: [FontFeature.tabularFigures()],
                           ),
@@ -22635,7 +22638,7 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           style: const TextStyle(
                             fontSize: 11.5,
-                            color: Colors.white54,
+                            color: Colors.white60,
                             height: 1.3,
                             fontFeatures: [FontFeature.tabularFigures()],
                           ),
@@ -23543,7 +23546,7 @@ class _MainScreenState extends State<MainScreen> {
                           child: Text(
                             t("track_search_none"),
                             style: const TextStyle(
-                                color: Colors.white54, fontSize: 12.5),
+                                color: Colors.white60, fontSize: 12.5),
                           ),
                         );
                       }
@@ -23578,7 +23581,7 @@ class _MainScreenState extends State<MainScreen> {
                                     Text(
                                       "${f.calories.round()} kcal",
                                       style: const TextStyle(
-                                          color: Colors.white54,
+                                          color: Colors.white60,
                                           fontSize: 12),
                                     ),
                                   ],
@@ -24313,7 +24316,7 @@ class _MainScreenState extends State<MainScreen> {
                     Text(
                       t("track_error_bad"),
                       style: const TextStyle(
-                        color: Colors.white54,
+                        color: Colors.white60,
                         fontSize: 11,
                         fontStyle: FontStyle.italic,
                       ),
@@ -25068,7 +25071,7 @@ class _MainScreenState extends State<MainScreen> {
       child: Text(
         text,
         style: const TextStyle(
-          color: Color(0xFF8E8C88),
+          color: Color(0xFFAAA7A1),
           fontSize: 10.5,
           height: 1.35,
         ),
@@ -26419,7 +26422,7 @@ class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
                 t("meal_note_checklist_sub"),
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Colors.white54,
+                  color: Colors.white60,
                   height: 1.35,
                 ),
               ),
@@ -26490,7 +26493,7 @@ class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
                       style: const TextStyle(
                         color: Colors.white70,
                         decoration: TextDecoration.lineThrough,
-                        decorationColor: Colors.white54,
+                        decorationColor: Colors.white60,
                         height: 1.25,
                       ),
                     ),
@@ -26515,7 +26518,7 @@ class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
           IconButton(
             padding: const EdgeInsets.only(top: 2),
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            icon: const Icon(Icons.close, size: 20, color: Colors.white54),
+            icon: const Icon(Icons.close, size: 20, color: Colors.white60),
             onPressed: () => _removeAt(i),
             tooltip: t("meal_note_remove_line"),
           ),
@@ -26822,7 +26825,7 @@ class _WeekStartCalendarPickerState extends State<_WeekStartCalendarPicker> {
                     widget.weekdayShort(wd),
                     style: const TextStyle(
                       fontSize: 11,
-                      color: Colors.white54,
+                      color: Colors.white60,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -26913,7 +26916,7 @@ class _WeekStartCalendarPickerState extends State<_WeekStartCalendarPicker> {
                   widget.legendText,
                   style: const TextStyle(
                     fontSize: 11.5,
-                    color: Colors.white54,
+                    color: Colors.white60,
                     height: 1.35,
                   ),
                 ),
@@ -27212,7 +27215,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
             trailing: g.id != "_def"
                 ? IconButton(
                     icon:
-                        const Icon(Icons.delete_outline, color: Colors.white54),
+                        const Icon(Icons.delete_outline, color: Colors.white60),
                     tooltip: widget.t("delete"),
                     onPressed: () {
                       setState(() {
