@@ -2887,6 +2887,333 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  // ───────────── Gewicht: Karte wie REPIT (Schnitt 7 Tage, Vorwoche, Verlauf) ─────────────
+  final TextEditingController _weightTodayCtrl = TextEditingController();
+  String? _weightTodayPrefilledFor;
+
+  double? _avgWeight(DateTime from, DateTime to) {
+    final vals = <double>[];
+    weightHistory.forEach((k, v) {
+      try {
+        final d = dateFromKey(k);
+        if (!d.isBefore(from) && !d.isAfter(to)) vals.add(v.kg);
+      } catch (_) {}
+    });
+    if (vals.isEmpty) return null;
+    return vals.reduce((a, b) => a + b) / vals.length;
+  }
+
+  Future<void> _saveWeightToday() async {
+    final w = double.tryParse(_weightTodayCtrl.text.trim().replaceAll(",", "."));
+    if (w == null || w < 25 || w > 400) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("track_error_bad"))),
+      );
+      return;
+    }
+    final key = dateKeyFromDate(_dateOnlyLocal(DateTime.now()));
+    final old = weightHistory[key];
+    setState(() {
+      weightHistory[key] = _WeightDayEntry(
+        kg: w,
+        recordedAt: DateTime.now(),
+        formImagePath: old?.formImagePath,
+        formImageB64: old?.formImageB64,
+      );
+      currentWeightKg = w;
+      if (nutritionMode != "Advanced") _applyAutoNutritionTargets();
+    });
+    await _saveAppState();
+    _maybeWeeklyGoalRecalc();
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t("weight_saved"))),
+    );
+  }
+
+  Widget _weightBodyCard() {
+    const gold = Color(0xFFC9A24A);
+    final onCard = context.sol.onCard;
+    final muted = context.sol.muted;
+    final today = _dateOnlyLocal(DateTime.now());
+    final todayKey = dateKeyFromDate(today);
+    if (_weightTodayPrefilledFor != todayKey) {
+      _weightTodayPrefilledFor = todayKey;
+      final e = weightHistory[todayKey];
+      _weightTodayCtrl.text = e != null ? _fmtKgGoal(e.kg) : "";
+    }
+    final avg7 = _avgWeight(today.subtract(const Duration(days: 6)), today);
+    final prev7 = _avgWeight(today.subtract(const Duration(days: 13)),
+        today.subtract(const Duration(days: 7)));
+    final delta = (avg7 != null && prev7 != null) ? avg7 - prev7 : null;
+    final target = (phaseGoal?["targetWeight"] is num)
+        ? (phaseGoal!["targetWeight"] as num).toDouble()
+        : null;
+
+    // Verlauf: letzte 28 Tage mit Eintrag
+    final from = today.subtract(const Duration(days: 27));
+    final pts = <MapEntry<DateTime, double>>[];
+    weightHistory.forEach((k, v) {
+      try {
+        final d = dateFromKey(k);
+        if (!d.isBefore(from) && !d.isAfter(today)) pts.add(MapEntry(d, v.kg));
+      } catch (_) {}
+    });
+    pts.sort((a, b) => a.key.compareTo(b.key));
+
+    Widget stat(String value, String label, {Color? color}) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: context.sol.dailyCard,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: color ?? gold)),
+                const SizedBox(height: 2),
+                Text(label, style: TextStyle(fontSize: 11.5, color: muted, height: 1.25)),
+              ],
+            ),
+          ),
+        );
+
+    Widget chart() {
+      if (pts.length < 2) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          child: Text(t("weight_chart_empty"),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted, fontSize: 12.5)),
+        );
+      }
+      final first = pts.first.key;
+      final spots = [
+        for (final p in pts)
+          FlSpot(p.key.difference(first).inDays.toDouble(), p.value)
+      ];
+      var minY = pts.map((e) => e.value).reduce(math.min);
+      var maxY = pts.map((e) => e.value).reduce(math.max);
+      if (target != null) {
+        minY = math.min(minY, target);
+        maxY = math.max(maxY, target);
+      }
+      minY = (minY - 1).floorToDouble();
+      maxY = (maxY + 1).ceilToDouble();
+      final maxX = spots.last.x <= 0 ? 1.0 : spots.last.x;
+      String dLabel(DateTime d) => "${d.day}.${d.month}.";
+      return SizedBox(
+        height: 170,
+        child: LineChart(
+          LineChartData(
+            minX: 0,
+            maxX: maxX,
+            minY: minY,
+            maxY: maxY,
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              horizontalInterval: ((maxY - minY) / 3).clamp(0.5, 100),
+              getDrawingHorizontalLine: (_) =>
+                  FlLine(color: muted.withValues(alpha: 0.15), strokeWidth: 1),
+            ),
+            borderData: FlBorderData(show: false),
+            titlesData: FlTitlesData(
+              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 36,
+                  interval: ((maxY - minY) / 3).clamp(0.5, 100),
+                  getTitlesWidget: (v, m) => SideTitleWidget(
+                    meta: m,
+                    space: 4,
+                    child: Text(v.toStringAsFixed(1),
+                        style: TextStyle(color: muted, fontSize: 10)),
+                  ),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 22,
+                  interval: maxX,
+                  getTitlesWidget: (v, m) => SideTitleWidget(
+                    meta: m,
+                    space: 4,
+                    child: Text(
+                      dLabel(first.add(Duration(days: v.round()))),
+                      style: TextStyle(color: muted, fontSize: 10),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            extraLinesData: ExtraLinesData(
+              horizontalLines: [
+                if (target != null)
+                  HorizontalLine(
+                    y: target,
+                    color: gold.withValues(alpha: 0.9),
+                    strokeWidth: 1.5,
+                    dashArray: const [6, 5],
+                    label: HorizontalLineLabel(
+                      show: true,
+                      alignment: Alignment.topRight,
+                      style: const TextStyle(
+                          color: gold, fontSize: 11, fontWeight: FontWeight.w700),
+                      labelResolver: (_) => "${t("ring_goal")} ${_fmtKgGoal(target)}",
+                    ),
+                  ),
+              ],
+            ),
+            lineTouchData: LineTouchData(enabled: false),
+            lineBarsData: [
+              LineChartBarData(
+                spots: spots,
+                isCurved: false,
+                color: gold,
+                barWidth: 2.2,
+                dotData: FlDotData(
+                  show: true,
+                  checkToShowDot: (s, d) => s.x == spots.last.x,
+                  getDotPainter: (s, p, d, i) => FlDotCirclePainter(
+                      radius: 4, color: gold, strokeWidth: 0, strokeColor: gold),
+                ),
+                belowBarData: BarAreaData(
+                  show: true,
+                  color: gold.withValues(alpha: 0.12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final d = today;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Card(
+        margin: EdgeInsets.zero,
+        color: context.sol.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: context.sol.soft.withValues(alpha: 0.4)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(t("weight_today_title"),
+                        style: TextStyle(
+                            fontSize: 12,
+                            letterSpacing: 1.6,
+                            fontWeight: FontWeight.w700,
+                            color: muted)),
+                  ),
+                  Text("${t("weekday_${d.weekday}")}. ${d.day}.${d.month}.${d.year}",
+                      style: TextStyle(fontSize: 12.5, color: muted)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _weightTodayCtrl,
+                      textAlign: TextAlign.center,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      style: TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.w800, color: onCard),
+                      decoration: const InputDecoration(isDense: true),
+                      onSubmitted: (_) => _saveWeightToday(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text("kg", style: TextStyle(color: muted, fontSize: 15)),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: gold,
+                      foregroundColor: const Color(0xFF17130A),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    ),
+                    onPressed: _saveWeightToday,
+                    child: Text(t("save"),
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  stat(avg7 != null ? _fmtKg1(avg7) : "—", t("weight_avg7")),
+                  const SizedBox(width: 10),
+                  stat(
+                    delta != null
+                        ? "${delta >= 0 ? "+" : "−"}${_fmtKg1(delta.abs())}"
+                        : "—",
+                    t("weight_vs_prev"),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              chart(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmtKg1(double v) => ((v * 10).round() / 10).toStringAsFixed(1);
+
+  /// Intelligentes Ziel: einmal pro Woche mit dem Wochenschnitt neu rechnen.
+  void _maybeWeeklyGoalRecalc() {
+    final g = phaseGoal;
+    if (g == null || g["adjust"] != "smart") return;
+    if (g["targetWeight"] is! num) return;
+    final today = _dateOnlyLocal(DateTime.now());
+    DateTime last;
+    try {
+      last = dateFromKey((g["snapAt"] ?? g["start"]).toString());
+    } catch (_) {
+      last = today;
+    }
+    if (today.difference(last).inDays < 7 && g["snapW"] != null) return;
+    final avg7 = _avgWeight(today.subtract(const Duration(days: 6)), today);
+    if (avg7 == null) return;
+    final m = Map<String, dynamic>.from(g);
+    m["snapW"] = avg7;
+    m["snapAt"] = dateKeyFromDate(today);
+    final target = (g["targetWeight"] as num).toDouble();
+    final bulk = g["bulk"] == true;
+    final remaining = math.max(0.0, bulk ? target - avg7 : avg7 - target);
+    if (g["targetDate"] != null) {
+      try {
+        final td = dateFromKey(g["targetDate"].toString());
+        final days = td.difference(today).inDays;
+        if (days > 0) {
+          m["kcal"] = (remaining * 7000 / days).clamp(0, 1500).roundToDouble();
+        }
+      } catch (_) {}
+    }
+    unawaited(_savePhaseGoal(m));
+  }
+
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
   bool showHelpTexts = true;
@@ -3247,6 +3574,10 @@ class _MainScreenState extends State<MainScreen> {
       final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       if (!mounted) return;
       setState(() => phaseGoal = m);
+      // Gewichte werden parallel geladen — kurz warten, dann ggf. Wochen-Update.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) _maybeWeeklyGoalRecalc();
+      });
     } catch (_) {}
   }
 
@@ -3308,6 +3639,39 @@ class _MainScreenState extends State<MainScreen> {
     try {
       start = _dateOnlyLocal(dateFromKey((g["start"] ?? "").toString()));
     } catch (_) {}
+    // Intelligent: Fortschritt nach Wochenschnitt-Gewicht (einmal pro Woche aktualisiert).
+    if (g["adjust"] == "smart" &&
+        g["targetWeight"] is num &&
+        g["startWeight"] is num) {
+      final tw = (g["targetWeight"] as num).toDouble();
+      final sw = (g["startWeight"] as num).toDouble();
+      final nowW = (g["snapW"] is num) ? (g["snapW"] as num).toDouble() : sw;
+      final kgTotal = (tw - sw).abs();
+      final remaining = math.max(0.0, bulk ? tw - nowW : nowW - tw);
+      int daysLeft;
+      if (g["targetDate"] != null) {
+        try {
+          daysLeft = math.max(0,
+              dateFromKey(g["targetDate"].toString()).difference(today).inDays);
+        } catch (_) {
+          daysLeft = (remaining * 7000 / daily).ceil();
+        }
+      } else {
+        daysLeft = remaining <= 0 ? 0 : (remaining * 7000 / daily).ceil();
+      }
+      if (remaining <= 0) daysLeft = 0;
+      final doneKg = (kgTotal - remaining).clamp(0.0, kgTotal);
+      return (
+        bulk: bulk,
+        kg: kgTotal,
+        totalKcal: kgTotal * 7000,
+        doneKcal: doneKg * 7000,
+        dailyKcal: daily,
+        daysLeft: daysLeft,
+        eta: today.add(Duration(days: daysLeft)),
+        progress: kgTotal > 0 ? (doneKg / kgTotal).clamp(0.0, 1.0) : 0.0,
+      );
+    }
     final maint = _maintenanceKcalFromBody();
     var done = 0.0;
     var day = start;
@@ -3457,6 +3821,7 @@ class _MainScreenState extends State<MainScreen> {
       } catch (_) {}
     }
     var advanced = tempo == "custom";
+    var adjust = (g?["adjust"] ?? "smart").toString();
     double? parse(String v) =>
         double.tryParse(v.trim().replaceAll(",", ".").replaceAll("'", ""));
     const tempoKcal = {"moderat": 300.0, "normal": 500.0, "aggressiv": 800.0};
@@ -3494,6 +3859,16 @@ class _MainScreenState extends State<MainScreen> {
               "days": days,
               "date": "${_phaseGoalEtaLabel(eta)}${eta.year}",
             });
+            if (bulk) {
+              // Grobe Muskel-Schätzung: Fortgeschritten ~0,25, Anfänger ~0,9 kg/Monat.
+              final months = days / 30.4;
+              final lo = math.min(kg, 0.25 * months);
+              final hi = math.min(kg, 0.9 * months);
+              preview += "\n${tFmt("phase_goal_muscle", {
+                "a": _fmtKg1(lo),
+                "b": _fmtKg1(hi),
+              })}";
+            }
             if (!bulk && kc > 1000) warn = t("phase_goal_warn_fast");
             if (bulk && kc > 500) warn = t("phase_goal_warn_bulk");
           }
@@ -3594,6 +3969,38 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                       ],
                     ],
+                    const SizedBox(height: 14),
+                    Text(t("phase_goal_adjust"),
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFC9A24A))),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        ChoiceChip(
+                          label: Text(t("phase_adjust_smart"),
+                              style: const TextStyle(fontSize: 12.5)),
+                          selected: adjust == "smart",
+                          onSelected: (_) => setL(() => adjust = "smart"),
+                        ),
+                        ChoiceChip(
+                          label: Text(t("phase_adjust_fixed"),
+                              style: const TextStyle(fontSize: 12.5)),
+                          selected: adjust == "fixed",
+                          onSelected: (_) => setL(() => adjust = "fixed"),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      adjust == "smart"
+                          ? t("phase_adjust_smart_hint")
+                          : t("phase_adjust_fixed_hint"),
+                      style: const TextStyle(
+                          fontSize: 11.5, color: Colors.white60, height: 1.3),
+                    ),
                     if (preview.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       Text(
@@ -3671,6 +4078,10 @@ class _MainScreenState extends State<MainScreen> {
         "bulk": bulk,
         "kcal": kc.roundToDouble(),
         "targetWeight": tw,
+        "startWeight": sameKind && g?["startWeight"] is num
+            ? g!["startWeight"]
+            : curW,
+        "adjust": adjust,
         "tempo": advanced ? "custom" : tempo,
         if (advanced && targetDate != null)
           "targetDate": dateKeyFromDate(targetDate!),
@@ -5701,6 +6112,17 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "weight_today_title": "GEWICHT HEUTE",
+      "weight_avg7": "Schnitt letzte 7 Tage (kg)",
+      "weight_vs_prev": "gegenüber Vorwoche (kg)",
+      "weight_saved": "Gewicht gespeichert.",
+      "weight_chart_empty": "Ab 2 Einträgen siehst du hier deinen Verlauf.",
+      "phase_goal_adjust": "ANPASSUNG",
+      "phase_adjust_smart": "Intelligent (wöchentlich)",
+      "phase_adjust_fixed": "Fest (Anfang bis Ende)",
+      "phase_adjust_smart_hint": "Einmal pro Woche wird mit deinem Wochenschnitt-Gewicht neu gerechnet: Fortschritt, Resttage und — mit Zieldatum — die nötigen kcal pro Tag.",
+      "phase_adjust_fixed_hint": "Läuft einmal durch: zählt die kcal, die du an getrackten Tagen wirklich eingespart hast.",
+      "phase_goal_muscle": "Davon realistisch Muskel: ca. {a}–{b} kg (je nach Trainingserfahrung), der Rest v. a. Fett & Wasser.",
       "phase_goal_target_weight": "Zielgewicht",
       "phase_goal_current": "Aktuell {w} kg → {d} kg",
       "phase_goal_tempo": "TEMPO",
@@ -6818,6 +7240,17 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "weight_today_title": "WEIGHT TODAY",
+      "weight_avg7": "Average last 7 days (kg)",
+      "weight_vs_prev": "vs. previous week (kg)",
+      "weight_saved": "Weight saved.",
+      "weight_chart_empty": "Your trend appears here from 2 entries.",
+      "phase_goal_adjust": "ADJUSTMENT",
+      "phase_adjust_smart": "Smart (weekly)",
+      "phase_adjust_fixed": "Fixed (start to end)",
+      "phase_adjust_smart_hint": "Once a week it recalculates with your weekly average weight: progress, days left and — with a target date — the kcal per day needed.",
+      "phase_adjust_fixed_hint": "Runs once: counts the kcal you actually saved on tracked days.",
+      "phase_goal_muscle": "Realistic muscle share: approx. {a}–{b} kg (depending on training experience), the rest mostly fat & water.",
       "phase_goal_target_weight": "Target weight",
       "phase_goal_current": "Now {w} kg → {d} kg",
       "phase_goal_tempo": "PACE",
@@ -16662,7 +17095,14 @@ class _MainScreenState extends State<MainScreen> {
               20 + MediaQuery.viewPaddingOf(context).bottom,
             ),
             sliver: SliverToBoxAdapter(
-              child: _buildTrackingMealsLayout(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildTrackingMealsLayout(),
+                  const SizedBox(height: 6),
+                  _weightBodyCard(),
+                ],
+              ),
             ),
           ),
         ],
