@@ -26063,7 +26063,7 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
       } catch (_) {}
       final x = await ImagePicker().pickImage(
         source: ImageSource.camera,
-        maxWidth: 1800,
+        maxWidth: 2400,
         imageQuality: 92,
       );
       if (x == null) {
