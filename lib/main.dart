@@ -2496,7 +2496,17 @@ class _MainScreenState extends State<MainScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            tFmt("plan_meal_header", {"kcal": kc.round()}),
+            () {
+              // Rest in dieser Mahlzeit bis zur Zielmitte, wenn alles Geplante gegessen ist.
+              final r = displayMealKcalRangeForUi(meal);
+              final mid = (r.minKcal + r.maxKcal) / 2.0;
+              final eaten = _mealTotals[meal]?['calories'] ?? 0.0;
+              final rest = mid - eaten - kc;
+              final restTxt = rest >= 0
+                  ? tFmt("plan_meal_rest", {"kcal": rest.round()})
+                  : tFmt("plan_meal_over", {"kcal": (-rest).round()});
+              return "${tFmt("plan_meal_header", {"kcal": kc.round()})}  ·  $restTxt";
+            }(),
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -4959,6 +4969,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "plan_meal_rest": "danach noch {kcal} kcal",
+      "plan_meal_over": "danach {kcal} kcal drüber",
       "settings_open_intro": "Einleitung & Anleitung öffnen",
       "plan_rest": "Rest nach Plan: {kcal}",
       "plan_rest_over": "nach Plan {kcal} zu viel",
@@ -6037,6 +6049,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "plan_meal_rest": "then {kcal} kcal left",
+      "plan_meal_over": "then {kcal} kcal over",
       "settings_open_intro": "Open intro & guide",
       "plan_rest": "left after plan: {kcal}",
       "plan_rest_over": "{kcal} over after plan",
