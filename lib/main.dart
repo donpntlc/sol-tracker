@@ -175,7 +175,7 @@ class SolUi extends ThemeExtension<SolUi> {
   // fg F2EEE5, muted 8F8A7E, gold C9A24A. Vorheriger Stand: Branch backup-vor-kontrast-29-10.
   static const SolUi dark = SolUi(
     scaffold: Color(0xFF0B0B0C),
-    card: Color(0xFF1A1A1D),
+    card: Color(0xFF17171A),
     appBar: Color(0xFF0B0B0C),
     onCard: Color(0xFFF2EEE5),
     muted: Color(0xFFA39E92),
@@ -183,7 +183,7 @@ class SolUi extends ThemeExtension<SolUi> {
     bottomNav: Color(0xFF0B0B0C),
     navSelected: Color(0xFFC9A24A),
     navUnselected: Color(0xFFA39E92),
-    dailyCard: Color(0xFF222226),
+    dailyCard: Color(0xFF1F1F22),
     dailyBorder: Color(0xFF2A2A2E),
   );
 
@@ -15829,6 +15829,8 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Nach Tagesübersicht: ggf. **Snacks**, dann **Mahlzeiten**-Block mit
   /// Workout (Pre+Post) und Main/Evening in Einstellungs-Reihenfolge.
+  static const double _kMealCardScale = 0.9;
+
   Widget _buildTrackingMealsLayout() {
     final hasPre = meals.contains("Pre-Workout");
     final hasPost = meals.contains("Post-Workout");
@@ -15840,7 +15842,7 @@ class _MainScreenState extends State<MainScreen> {
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(
         textScaler: TextScaler.linear(
-            MediaQuery.of(context).textScaler.scale(1.0) * 0.92),
+            MediaQuery.of(context).textScaler.scale(1.0)),
       ),
       child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -15895,21 +15897,39 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                 ),
+                // Mahlzeiten komplett auf ~90 % skaliert (Schrift, Symbole, Abstände).
                 if (mergedMeals != null)
-                  _buildMergedMealSectionCard(mergedMeals),
+                  _UniformScale(
+                    scale: _kMealCardScale,
+                    child: _buildMergedMealSectionCard(mergedMeals),
+                  ),
                 if (hasPre && hasPost && !_workoutBlockHiddenByMerge()) ...[
-                  _buildWorkoutSectionCard(
-                    sectionCardMargin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  _UniformScale(
+                    scale: _kMealCardScale,
+                    child: _buildWorkoutSectionCard(
+                      sectionCardMargin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    ),
                   ),
                 ] else ...[
                   if (hasPre && !_isMealMergedLocked("Pre-Workout"))
-                    _buildMealSectionCard("Pre-Workout", sectionCardMargin: nest),
+                    _UniformScale(
+                      scale: _kMealCardScale,
+                      child: _buildMealSectionCard("Pre-Workout",
+                          sectionCardMargin: nest),
+                    ),
                   if (hasPost && !_isMealMergedLocked("Post-Workout"))
-                    _buildMealSectionCard("Post-Workout", sectionCardMargin: nest),
+                    _UniformScale(
+                      scale: _kMealCardScale,
+                      child: _buildMealSectionCard("Post-Workout",
+                          sectionCardMargin: nest),
+                    ),
                 ],
                 for (final m in core)
                   if (!_isMealMergedLocked(m))
-                    _buildMealSectionCard(m, sectionCardMargin: nest),
+                    _UniformScale(
+                      scale: _kMealCardScale,
+                      child: _buildMealSectionCard(m, sectionCardMargin: nest),
+                    ),
               ],
             ),
           ),
