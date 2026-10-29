@@ -2306,6 +2306,24 @@ class _MainScreenState extends State<MainScreen> {
                           color: isOver ? over : muted,
                         ),
                       ),
+                      if (_plannedKcalForSelectedDay() > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text(
+                            () {
+                              final r = left - _plannedKcalForSelectedDay();
+                              return r >= 0
+                                  ? tFmt("plan_rest", {"kcal": _fmtThousands(r)})
+                                  : tFmt("plan_rest_over", {"kcal": _fmtThousands(-r)});
+                            }(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: gold,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -2524,6 +2542,17 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  double _dayGoalKcalForOverview() {
+    if (!isCheatDay(selectedDayKey)) return goalCalories;
+    if (isSelectedDayCrashout) return goalCalories;
+    final eff = effectiveGoalKcalForDay(selectedDayKey);
+    return eff > 0 ? eff : goalCalories;
+  }
+
+  double _plannedKcalForSelectedDay() => plannedFoods
+      .where((p) => p.dayKey == selectedDayKey)
+      .fold(0.0, (a, p) => a + p.calories);
+
   /// Tagesübersicht: „Wenn du alles isst: …“ (nur wenn etwas geplant ist).
   Widget _plannedDayPreview() {
     final items =
@@ -2547,9 +2576,11 @@ class _MainScreenState extends State<MainScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              tFmt("plan_day_preview", {
-                "kcal": sum(all, (e) => e.calories).round(),
-              }),
+              () {
+                final tot = sum(all, (e) => e.calories);
+                final rest = _dayGoalKcalForOverview() - tot;
+                return "${tFmt("plan_day_preview", {"kcal": tot.round()})}  (${rest >= 0 ? tFmt("plan_rest", {"kcal": rest.round()}) : tFmt("plan_rest_over", {"kcal": (-rest).round()})})";
+              }(),
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
@@ -4928,6 +4959,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "plan_rest": "Rest nach Plan: {kcal}",
+      "plan_rest_over": "nach Plan {kcal} zu viel",
       "track_search_hint": "Lebensmittel suchen …",
       "track_search_none": "Nichts gefunden.",
       "ring_eaten": "Gegessen",
@@ -6003,6 +6036,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "plan_rest": "left after plan: {kcal}",
+      "plan_rest_over": "{kcal} over after plan",
       "track_search_hint": "Search food …",
       "track_search_none": "Nothing found.",
       "ring_eaten": "Eaten",
