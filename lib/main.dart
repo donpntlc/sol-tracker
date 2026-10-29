@@ -3432,10 +3432,15 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _openPhaseGoalDialog() async {
     final g = phaseGoal;
-    var bulk = g != null ? g["bulk"] == true : nutritionMode == "Aufbau";
-    final kgCtrl = TextEditingController(
-      text: g != null ? _fmtKgGoal(((g["kg"] ?? 0) as num).toDouble()) : "",
-    );
+    final curW = currentWeightKg;
+    final startTarget = g != null && g["targetWeight"] is num
+        ? (g["targetWeight"] as num).toDouble()
+        : (g != null
+            ? curW +
+                (((g["bulk"] == true) ? 1 : -1) *
+                    ((g["kg"] ?? 0) as num).toDouble())
+            : (nutritionMode == "Aufbau" ? curW + 2 : curW - 2));
+    final targetCtrl = TextEditingController(text: _fmtKgGoal(startTarget));
     final kcalCtrl = TextEditingController(
       text: (g != null
               ? ((g["kcal"] ?? 0) as num).toDouble()
@@ -3443,95 +3448,177 @@ class _MainScreenState extends State<MainScreen> {
           .round()
           .toString(),
     );
+    // Tempo: moderat / normal / aggressiv / plan / custom
+    var tempo = (g?["tempo"] ?? "plan").toString();
+    DateTime? targetDate;
+    if (g?["targetDate"] != null) {
+      try {
+        targetDate = dateFromKey(g!["targetDate"].toString());
+      } catch (_) {}
+    }
+    var advanced = tempo == "custom";
     double? parse(String v) =>
         double.tryParse(v.trim().replaceAll(",", ".").replaceAll("'", ""));
+    const tempoKcal = {"moderat": 300.0, "normal": 500.0, "aggressiv": 800.0};
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setL) {
-          final kg = parse(kgCtrl.text) ?? 0;
-          final kc = parse(kcalCtrl.text) ?? 0;
+          final tw = parse(targetCtrl.text) ?? curW;
+          final diff = tw - curW;
+          final bulk = diff > 0;
+          final kg = diff.abs();
+          final today = _dateOnlyLocal(DateTime.now());
+          double kc;
+          if (advanced && targetDate != null) {
+            final days = targetDate!.difference(today).inDays;
+            kc = days > 0 ? kg * 7000 / days : 0;
+          } else if (advanced) {
+            kc = parse(kcalCtrl.text) ?? 0;
+          } else if (tempo == "plan") {
+            kc = _phaseGoalSuggestedDailyKcal();
+          } else {
+            kc = tempoKcal[tempo] ?? 500;
+          }
           String preview = "";
-          if (kg > 0 && kc > 0) {
+          String warn = "";
+          if (kg >= 0.1 && kc > 0) {
             final total = kg * 7000;
             final days = (total / kc).ceil();
-            final eta = _dateOnlyLocal(DateTime.now()).add(Duration(days: days));
-            preview = tFmt("phase_goal_preview", {
+            final eta = today.add(Duration(days: days));
+            preview = tFmt("phase_goal_preview2", {
+              "dir": bulk ? "+" : "−",
               "kg": _fmtKgGoal(kg),
               "total": _fmtThousands(total),
               "kcal": _fmtThousands(kc),
               "days": days,
-              "date": _phaseGoalEtaLabel(eta),
+              "date": "${_phaseGoalEtaLabel(eta)}${eta.year}",
             });
+            if (!bulk && kc > 1000) warn = t("phase_goal_warn_fast");
+            if (bulk && kc > 500) warn = t("phase_goal_warn_bulk");
           }
+          Widget chip(String id, String label) => ChoiceChip(
+                label: Text(label, style: const TextStyle(fontSize: 12.5)),
+                selected: !advanced && tempo == id,
+                onSelected: (_) => setL(() {
+                  advanced = false;
+                  tempo = id;
+                }),
+              );
           return AlertDialog(
-            backgroundColor: const Color(0xFF1E1E1E),
             title: Text(t("phase_goal_title")),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      ChoiceChip(
-                        label: Text(t("phase_goal_lose")),
-                        selected: !bulk,
-                        onSelected: (_) => setL(() => bulk = false),
+            content: SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: targetCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: t("phase_goal_target_weight"),
+                        suffixText: "kg",
+                        helperText: tFmt("phase_goal_current", {
+                          "w": _fmtKgGoal(curW),
+                          "d": "${bulk ? "+" : "−"}${_fmtKgGoal(kg)}",
+                        }),
                       ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: Text(t("phase_goal_gain")),
-                        selected: bulk,
-                        onSelected: (_) => setL(() => bulk = true),
+                      onChanged: (_) => setL(() {}),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(t("phase_goal_tempo"),
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFC9A24A))),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        chip("moderat", t("phase_tempo_moderat")),
+                        chip("normal", t("phase_tempo_normal")),
+                        chip("aggressiv", t("phase_tempo_aggressiv")),
+                        chip("plan", tFmt("phase_tempo_plan", {
+                          "kcal": _fmtThousands(_phaseGoalSuggestedDailyKcal())
+                        })),
+                        ChoiceChip(
+                          label: const Text("Advanced",
+                              style: TextStyle(fontSize: 12.5)),
+                          selected: advanced,
+                          onSelected: (_) => setL(() => advanced = true),
+                        ),
+                      ],
+                    ),
+                    if (advanced) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.event, size: 18),
+                        label: Text(targetDate == null
+                            ? t("phase_goal_pick_date")
+                            : tFmt("phase_goal_date_set", {
+                                "d":
+                                    "${targetDate!.day}.${targetDate!.month}.${targetDate!.year}"
+                              })),
+                        onPressed: () async {
+                          final d = await showDatePicker(
+                            context: ctx,
+                            initialDate: targetDate ??
+                                today.add(const Duration(days: 42)),
+                            firstDate: today.add(const Duration(days: 1)),
+                            lastDate: today.add(const Duration(days: 730)),
+                          );
+                          if (d != null) setL(() => targetDate = d);
+                        },
+                      ),
+                      if (targetDate != null)
+                        TextButton(
+                          onPressed: () => setL(() => targetDate = null),
+                          child: Text(t("phase_goal_no_date")),
+                        ),
+                      if (targetDate == null) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: kcalCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: bulk
+                                ? t("phase_goal_surplus_label")
+                                : t("phase_goal_deficit_label"),
+                            suffixText: "kcal",
+                          ),
+                          onChanged: (_) => setL(() {}),
+                        ),
+                      ],
+                    ],
+                    if (preview.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        preview,
+                        style: const TextStyle(
+                          color: Color(0xFFC9A24A),
+                          fontWeight: FontWeight.w600,
+                          height: 1.4,
+                        ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: kgCtrl,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText: t("phase_goal_kg_label"),
-                      suffixText: "kg",
-                    ),
-                    onChanged: (_) => setL(() {}),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: kcalCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: bulk
-                          ? t("phase_goal_surplus_label")
-                          : t("phase_goal_deficit_label"),
-                      suffixText: "kcal",
-                      helperText: tFmt("phase_goal_plan_hint", {
-                        "kcal": _fmtThousands(_phaseGoalSuggestedDailyKcal()),
-                      }),
-                      helperMaxLines: 2,
-                    ),
-                    onChanged: (_) => setL(() {}),
-                  ),
-                  if (preview.isNotEmpty) ...[
-                    const SizedBox(height: 14),
+                    if (warn.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(warn,
+                          style: const TextStyle(
+                              color: Color(0xFFE57373), fontSize: 12, height: 1.3)),
+                    ],
+                    const SizedBox(height: 10),
                     Text(
-                      preview,
+                      t("phase_goal_info"),
                       style: const TextStyle(
-                        color: Color(0xFFC9A24A),
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
+                          color: Colors.white60, fontSize: 11, height: 1.3),
                     ),
                   ],
-                  const SizedBox(height: 10),
-                  Text(
-                    t("phase_goal_info"),
-                    style: const TextStyle(
-                        color: Colors.white60, fontSize: 11, height: 1.3),
-                  ),
-                ],
+                ),
               ),
             ),
             actions: [
@@ -3548,7 +3635,7 @@ class _MainScreenState extends State<MainScreen> {
                 child: Text(t("cancel")),
               ),
               FilledButton(
-                onPressed: (kg > 0 && kc > 0)
+                onPressed: (kg >= 0.1 && kc > 0)
                     ? () => Navigator.pop(ctx, "save")
                     : null,
                 child: Text(t("save")),
@@ -3562,13 +3649,31 @@ class _MainScreenState extends State<MainScreen> {
     if (result == "delete") {
       await _savePhaseGoal(null);
     } else if (result == "save") {
-      final kg = parse(kgCtrl.text) ?? 0;
-      final kc = parse(kcalCtrl.text) ?? 0;
+      final tw = parse(targetCtrl.text) ?? curW;
+      final diff = tw - curW;
+      final bulk = diff > 0;
+      final kg = diff.abs();
+      final today = _dateOnlyLocal(DateTime.now());
+      double kc;
+      if (advanced && targetDate != null) {
+        final days = targetDate!.difference(today).inDays;
+        kc = days > 0 ? kg * 7000 / days : 0;
+      } else if (advanced) {
+        kc = parse(kcalCtrl.text) ?? 0;
+      } else if (tempo == "plan") {
+        kc = _phaseGoalSuggestedDailyKcal();
+      } else {
+        kc = tempoKcal[tempo] ?? 500;
+      }
       final sameKind = g != null && (g["bulk"] == true) == bulk;
       await _savePhaseGoal({
         "kg": kg,
         "bulk": bulk,
-        "kcal": kc,
+        "kcal": kc.roundToDouble(),
+        "targetWeight": tw,
+        "tempo": advanced ? "custom" : tempo,
+        if (advanced && targetDate != null)
+          "targetDate": dateKeyFromDate(targetDate!),
         "start": sameKind
             ? (g?["start"] ?? selectedDayKeyToday())
             : selectedDayKeyToday(),
@@ -5596,6 +5701,20 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "phase_goal_target_weight": "Zielgewicht",
+      "phase_goal_current": "Aktuell {w} kg → {d} kg",
+      "phase_goal_tempo": "TEMPO",
+      "phase_tempo_moderat": "Moderat · 300",
+      "phase_tempo_normal": "Normal · 500",
+      "phase_tempo_aggressiv": "Aggressiv · 800",
+      "phase_tempo_plan": "Mein Plan · {kcal}",
+      "phase_goal_pick_date": "Zieldatum wählen",
+      "phase_goal_date_set": "Zieldatum: {d}",
+      "phase_goal_no_date": "Ohne Datum (kcal/Tag selbst eingeben)",
+      "phase_goal_preview2": "{dir}{kg} kg ≈ {total} kcal\nbei {kcal} kcal/Tag → ca. {days} Tage\nZiel erreicht ca. {date}",
+      "phase_goal_warn_fast": "Mehr als 1000 kcal Defizit pro Tag ist sehr hart — Muskelverlust-Risiko.",
+      "phase_goal_warn_bulk": "Mehr als 500 kcal Überschuss pro Tag bringt meist vor allem Fett.",
+      "phase_goal_set_short": "Ziel setzen",
       "size_small": "Klein",
       "size_medium": "Mittel",
       "size_large": "Groß",
@@ -6699,6 +6818,20 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "phase_goal_target_weight": "Target weight",
+      "phase_goal_current": "Now {w} kg → {d} kg",
+      "phase_goal_tempo": "PACE",
+      "phase_tempo_moderat": "Moderate · 300",
+      "phase_tempo_normal": "Normal · 500",
+      "phase_tempo_aggressiv": "Aggressive · 800",
+      "phase_tempo_plan": "My plan · {kcal}",
+      "phase_goal_pick_date": "Pick target date",
+      "phase_goal_date_set": "Target date: {d}",
+      "phase_goal_no_date": "No date (enter kcal/day)",
+      "phase_goal_preview2": "{dir}{kg} kg ≈ {total} kcal\nat {kcal} kcal/day → approx. {days} days\nGoal reached approx. {date}",
+      "phase_goal_warn_fast": "More than 1000 kcal deficit per day is very hard — risk of muscle loss.",
+      "phase_goal_warn_bulk": "More than 500 kcal surplus per day mostly adds fat.",
+      "phase_goal_set_short": "Set goal",
       "size_small": "Small",
       "size_medium": "Medium",
       "size_large": "Large",
@@ -16491,6 +16624,19 @@ class _MainScreenState extends State<MainScreen> {
                           totalCarbs: totalCarbs,
                           totalFat: totalFat,
                         ),
+                        if (phaseGoal == null)
+                          Align(
+                            alignment: Alignment.center,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: const Color(0xFFC9A24A),
+                              ),
+                              onPressed: _openPhaseGoalDialog,
+                              child: Text("🎯 ${t("phase_goal_set_short")}",
+                                  style: const TextStyle(fontSize: 12.5)),
+                            ),
+                          ),
                       ],
                     ),
                   ),
