@@ -2410,7 +2410,7 @@ class _MainScreenState extends State<MainScreen> {
       ["SOL · Skyr, Haferflocken & Erdnussbutter", "Skyr", "Haferflocken", "Erdnussbutter"],
       ["SOL · Eier & Kartoffeln", "Eier", "Kartoffel", "Magerquark"],
       ["SOL · Lachs & Süßkartoffel", "Lachs", "Süßkartoffel"],
-      ["SOL · Protein Shake + Banane", "Protein Shake", "Banane"],
+      ["SOL · Protein Shake + Banane", "Protein Shake", "Banane (ohne Schale)"],
     ];
     final out = <Map<String, dynamic>>[];
     for (final r in raw) {
@@ -2421,6 +2421,15 @@ class _MainScreenState extends State<MainScreen> {
     }
     return out;
   }
+
+  /// Größen-Presets (Gramm ohne Schale, dazu ca. mit Schale) — USDA-Standardgrößen.
+  static const Map<String, List<(String, double, double)>> _kSizePresets = {
+    "Banane (ohne Schale)": [
+      ("size_small", 101.0, 158.0),
+      ("size_medium", 118.0, 184.0),
+      ("size_large", 136.0, 213.0),
+    ],
+  };
 
   double _fixedGramsFor(Food f) =>
       f.isRecipe ? (f.basePortionGrams ?? 100.0) : 0.0;
@@ -5587,6 +5596,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "size_small": "Klein",
+      "size_medium": "Mittel",
+      "size_large": "Groß",
+      "size_peel_hint": "Gramm = ohne Schale. Mit Schale wiegen klein / mittel / groß ca. {s} g.",
       "meal_tpl_menu": "Mahlzeit (Vorlage)",
       "meal_tpl_title": "Mahlzeiten",
       "meal_tpl_sub": "Vorgefertigte Kombinationen. SOL rechnet die Mengen so aus, dass Protein, KH und Fett dieser Mahlzeit möglichst genau passen. Rezepte zählen immer als 1 Portion.",
@@ -6686,6 +6699,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "size_small": "Small",
+      "size_medium": "Medium",
+      "size_large": "Large",
+      "size_peel_hint": "Grams = without peel. With peel small / medium / large weigh approx. {s} g.",
       "meal_tpl_menu": "Meal (template)",
       "meal_tpl_title": "Meals",
       "meal_tpl_sub": "Ready-made combos. SOL calculates amounts so protein, carbs and fat of this meal fit as closely as possible. Recipes always count as 1 portion.",
@@ -7762,11 +7779,13 @@ class _MainScreenState extends State<MainScreen> {
         isDefault: true,
         carbKind: "komplex",
       ),
+      // Werte: USDA FoodData Central „Bananas, raw“ (FDC 173944), pro 100 g
+      // essbarer Teil = OHNE Schale. Schale ≈ 36 % des Gesamtgewichts.
       Food(
-        name: "Banane",
+        name: "Banane (ohne Schale)",
         protein: 1.1,
-        carbs: 23,
-        sugar: 12,
+        carbs: 22.8,
+        sugar: 12.2,
         fiber: 2.6,
         fat: 0.3,
         category: "Carbs",
@@ -24916,6 +24935,37 @@ class _MainScreenState extends State<MainScreen> {
                       },
                       t: t,
                     ),
+                    if (_kSizePresets[fInList.name] != null) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          for (final pr in _kSizePresets[fInList.name]!)
+                            ActionChip(
+                              label: Text(
+                                "${t(pr.$1)} · ${pr.$2.round()} g",
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              onPressed: () => setDialogState(() {
+                                inputMode = "grams";
+                                trackScrollDisplayValue = pr.$2;
+                                trackScrollGrams = pr.$2;
+                                trackFillNonce++;
+                              }),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        tFmt("size_peel_hint", {
+                          "s": _kSizePresets[fInList.name]!
+                              .map((e) => e.$3.round().toString())
+                              .join(" / "),
+                        }),
+                        style: const TextStyle(fontSize: 11, color: Colors.white60),
+                      ),
+                    ],
                     if (!fInList.isRecipe) ...[
                       const SizedBox(height: 6),
                       Align(
