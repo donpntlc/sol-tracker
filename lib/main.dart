@@ -2194,7 +2194,10 @@ class _MainScreenState extends State<MainScreen> {
     final onCard = context.sol.onCard;
     final muted = context.sol.muted;
     final left = goal - eaten;
+    // „Zu viel“ ab Ziel, ROT aber erst über der Obergrenze des Bereichs.
     final isOver = left < 0;
+    final kRange = dailyKcalRange();
+    final isOverRange = kRange.maxKcal > 0 && eaten > kRange.maxKcal;
     final ratio = goal > 0 ? (eaten / goal) : 0.0;
     final mg = effectiveMacroGoalsForDay(selectedDayKey);
 
@@ -2214,9 +2217,10 @@ class _MainScreenState extends State<MainScreen> {
           ],
         );
 
-    Widget macro(String label, double cur, double target, Color color) {
+    Widget macro(String label, String key, double cur, double target, Color color) {
       final r = target > 0 ? (cur / target).clamp(0.0, 1.0) : 0.0;
-      final o = target > 0 && cur > target * 1.05;
+      final mr = dailyMacroRange(key);
+      final o = mr.maxG > 0 && cur > mr.maxG;
       return Expanded(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -2270,7 +2274,7 @@ class _MainScreenState extends State<MainScreen> {
                         style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w800,
-                          color: isOver ? over : onCard,
+                          color: isOverRange ? over : onCard,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -2278,7 +2282,7 @@ class _MainScreenState extends State<MainScreen> {
                         isOver ? t("ring_over") : t("ring_left"),
                         style: TextStyle(
                           fontSize: 12.5,
-                          color: isOver ? over : muted,
+                          color: isOverRange ? over : muted,
                         ),
                       ),
                       if (_plannedKcalForSelectedDay() > 0)
@@ -2312,7 +2316,7 @@ class _MainScreenState extends State<MainScreen> {
                           : null,
                       ratio: ratio,
                       track: muted.withValues(alpha: 0.22),
-                      color: isOver ? over : gold,
+                      color: isOverRange ? over : gold,
                     ),
                     child: Center(
                       child: Column(
@@ -2343,11 +2347,24 @@ class _MainScreenState extends State<MainScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                macro(t("carbs"), carbs, mg.carbs, _carbColor),
-                macro(t("protein"), protein, mg.protein, gold),
-                macro(t("fat"), fat, mg.fat, _proteinColor),
+                macro(t("carbs"), "carbs", carbs, mg.carbs, gold),
+                macro(t("protein"), "protein", protein, mg.protein, gold),
+                macro(t("fat"), "fat", fat, mg.fat, gold),
               ],
             ),
+            // Aufgeklappt: kcal-Bereich des Tages.
+            if (_macroDetailsExpanded && kRange.maxKcal > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  tFmt("ring_range", {
+                    "a": _fmtThousands(kRange.minKcal),
+                    "b": _fmtThousands(kRange.maxKcal),
+                  }),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5, color: muted),
+                ),
+              ),
           ],
         ),
       ),
@@ -6404,6 +6421,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "ring_range": "Tagesbereich: {a}–{b} kcal",
       "pre_split_title": "Pre-Workout: komplexe & einfache KH",
       "pre_split_sub": "Anteil am Tages-Kohlenhydrat-Ziel. Antippen zum Ändern.",
       "pre_split_from": "von",
@@ -7542,6 +7560,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "ring_range": "Daily range: {a}–{b} kcal",
       "pre_split_title": "Pre-workout: complex & simple carbs",
       "pre_split_sub": "Share of your daily carb target. Tap to change.",
       "pre_split_from": "from",
