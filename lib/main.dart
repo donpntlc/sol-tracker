@@ -2227,7 +2227,7 @@ class _MainScreenState extends State<MainScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12.5, color: muted)),
               const SizedBox(height: 6),
-              ClipRRect(
+              _barOutline(ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: r,
@@ -2235,7 +2235,7 @@ class _MainScreenState extends State<MainScreen> {
                   backgroundColor: muted.withValues(alpha: 0.25),
                   valueColor: AlwaysStoppedAnimation<Color>(o ? over : color),
                 ),
-              ),
+              )),
               const SizedBox(height: 5),
               Text(
                 "${cur.round()} / ${target.round()} g",
@@ -2307,6 +2307,9 @@ class _MainScreenState extends State<MainScreen> {
                   height: 140,
                   child: CustomPaint(
                     painter: _KcalRingPainter(
+                      outline: Theme.of(context).brightness == Brightness.light
+                          ? Colors.black.withValues(alpha: 0.22)
+                          : null,
                       ratio: ratio,
                       track: muted.withValues(alpha: 0.22),
                       color: isOver ? over : gold,
@@ -2348,6 +2351,21 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Hell-Modus: ganz leichte dunkle Umrandung um Balken (besser erkennbar).
+  Widget _barOutline(Widget bar, {double radius = 8}) {
+    if (Theme.of(context).brightness != Brightness.light) return bar;
+    return Container(
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: Colors.black.withValues(alpha: 0.28),
+          width: 0.8,
+        ),
+      ),
+      child: bar,
     );
   }
 
@@ -2493,35 +2511,117 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// In der Mahlzeit-Karte: geplante Einträge ausgegraut mit Haken-Kästchen.
-  Widget _plannedFoodsBlock(String meal) {
-    final items = _plannedFor(meal);
+  Widget _plannedFoodsBlock(String meal, {bool workoutBlock = false}) {
+    final items = workoutBlock
+        ? [..._plannedFor("Pre-Workout"), ..._plannedFor("Post-Workout")]
+        : _plannedFor(meal);
     if (items.isEmpty) return const SizedBox.shrink();
     final muted = context.sol.muted;
     final kc = items.fold(0.0, (a, p) => a + p.calories);
+    // Zweiter Balken „Mit Plan“: gegessen + alles Geplante gegen die Zielmitte.
+    final double eaten;
+    final double minK;
+    final double maxK;
+    if (workoutBlock) {
+      eaten = _workoutBlockAggregatedTotals()['calories'] ?? 0.0;
+      final r = _workoutBlockKcalRange();
+      minK = r.minKcal;
+      maxK = r.maxKcal;
+    } else {
+      eaten = _mealTotals[meal]?['calories'] ?? 0.0;
+      final r = displayMealKcalRangeForUi(meal);
+      minK = r.minKcal;
+      maxK = r.maxKcal;
+    }
+    final mid = (minK + maxK) / 2.0;
+    final withPlan = eaten + kc;
+    final scaleEnd = math.max(maxK * 1.1, withPlan);
+    final ratio = scaleEnd > 0 ? (withPlan / scaleEnd).clamp(0.0, 1.0) : 0.0;
+    final midRatio = scaleEnd > 0 ? (mid / scaleEnd).clamp(0.0, 1.0) : 0.0;
+    final over = withPlan > maxK && maxK > 0;
+    const gold = Color(0xFFC9A24A);
+    final barColor = over ? const Color(0xFFE57373) : gold.withValues(alpha: 0.75);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            () {
-              // Rest in dieser Mahlzeit bis zur Zielmitte, wenn alles Geplante gegessen ist.
-              final r = displayMealKcalRangeForUi(meal);
-              final mid = (r.minKcal + r.maxKcal) / 2.0;
-              final eaten = _mealTotals[meal]?['calories'] ?? 0.0;
-              final rest = mid - eaten - kc;
-              final restTxt = rest >= 0
-                  ? tFmt("plan_meal_rest", {"kcal": rest.round()})
-                  : tFmt("plan_meal_over", {"kcal": (-rest).round()});
-              return "${tFmt("plan_meal_header", {"kcal": kc.round()})}  ·  $restTxt";
-            }(),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFFC9A24A),
-              letterSpacing: 0.3,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: [
+                Text(
+                  t("plan_with_plan"),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: gold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _barOutline(
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: ratio,
+                            minHeight: 8,
+                            color: barColor,
+                            backgroundColor: muted.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: LayoutBuilder(builder: (ctx, c) {
+                            final w = c.maxWidth;
+                            if (w <= 2) return const SizedBox.shrink();
+                            return Stack(children: [
+                              Positioned(
+                                left: (w * midRatio - 1)
+                                    .clamp(0.0, w - 2)
+                                    .toDouble(),
+                                top: 0,
+                                bottom: 0,
+                                child: Container(width: 2, color: gold),
+                              ),
+                            ]);
+                          }),
+                        ),
+                      ],
+                    ),
+                    radius: 6,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text.rich(
+                  TextSpan(children: [
+                    TextSpan(
+                      text: withPlan.round().toString(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                        color: over ? const Color(0xFFE57373) : context.sol.onCard,
+                      ),
+                    ),
+                    TextSpan(
+                      text: " / ",
+                      style: TextStyle(fontSize: 12, color: muted),
+                    ),
+                    TextSpan(
+                      text: mid.round().toString(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                        color: gold,
+                      ),
+                    ),
+                  ]),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 2),
           for (final p in items)
             Row(
               children: [
@@ -2787,7 +2887,7 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                ClipRRect(
+                _barOutline(ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
                     value: st.progress,
@@ -2795,7 +2895,7 @@ class _MainScreenState extends State<MainScreen> {
                     backgroundColor: Colors.white12,
                     valueColor: const AlwaysStoppedAnimation<Color>(gold),
                   ),
-                ),
+                )),
                 const SizedBox(height: 5),
                 Text(
                   "${_fmtThousands(st.doneKcal)} / ${_fmtThousands(st.totalKcal)} kcal · ${st.bulk ? "+" : "−"}${_fmtThousands(st.dailyKcal)} kcal/${t("phase_goal_per_day")}",
@@ -4977,6 +5077,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "plan_with_plan": "Mit Plan",
       "meal_range_line": "Bereich: {r}",
       "overview_details": "Details",
       "overview_less": "Weniger",
@@ -6062,6 +6163,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "plan_with_plan": "With plan",
       "meal_range_line": "Range: {r}",
       "overview_details": "Details",
       "overview_less": "Less",
@@ -16764,8 +16866,7 @@ class _MainScreenState extends State<MainScreen> {
               showInlineAdd: false,
             ),
             ),
-            _plannedFoodsBlock("Pre-Workout"),
-            _plannedFoodsBlock("Post-Workout"),
+            _plannedFoodsBlock("Pre-Workout", workoutBlock: true),
             if (sectionOpen) ...[
               _categoryExpandDivider(),
               _workoutBlockMacroTableBlock(),
@@ -20959,7 +21060,7 @@ class _MainScreenState extends State<MainScreen> {
       statusColor = const Color(0xFFE53935);
     }
 
-    final bar = Stack(
+    final bar = _barOutline(Stack(
       clipBehavior: Clip.none,
       children: [
         ClipRRect(
@@ -21017,7 +21118,7 @@ class _MainScreenState extends State<MainScreen> {
           }),
         ),
       ],
-    );
+    ));
 
     // Rechts neben dem Balken: aktuell (weiss) / Zielmitte (gold) | Bereich.
     final kcalAddTrailing = <Widget>[
@@ -21093,7 +21194,7 @@ class _MainScreenState extends State<MainScreen> {
         : const SizedBox.shrink();
 
     if (simple) {
-      final simpleBar = _mealKcalSimpleCorridorBar(
+      final simpleBar = _barOutline(_mealKcalSimpleCorridorBar(
         current: current,
         minKcal: minKcal,
         maxKcal: maxKcal,
@@ -21101,7 +21202,7 @@ class _MainScreenState extends State<MainScreen> {
         trackColor: barChrome.$1,
         minTickColor: barChrome.$2,
         maxTickColor: barChrome.$3,
-      );
+      ));
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -21382,7 +21483,7 @@ class _MainScreenState extends State<MainScreen> {
         children: [
           Stack(
             children: [
-              ClipRRect(
+              _barOutline(ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: TweenAnimationBuilder<double>(
                   duration: const Duration(milliseconds: 520),
@@ -21397,7 +21498,7 @@ class _MainScreenState extends State<MainScreen> {
                     );
                   },
                 ),
-              ),
+              )),
               Positioned.fill(
                 child: LayoutBuilder(builder: (ctx, c) {
                   final w0 = c.maxWidth;
@@ -27734,7 +27835,13 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
 
 /// Halbrund-Ring (270°, Lücke unten) für die kcal-Übersicht.
 class _KcalRingPainter extends CustomPainter {
-  _KcalRingPainter({required this.ratio, required this.track, required this.color});
+  _KcalRingPainter({
+    required this.ratio,
+    required this.track,
+    required this.color,
+    this.outline,
+  });
+  final Color? outline;
   final double ratio;
   final Color track;
   final Color color;
@@ -27751,6 +27858,18 @@ class _KcalRingPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
+    if (outline != null) {
+      canvas.drawArc(
+          rect,
+          start,
+          sweep,
+          false,
+          Paint()
+            ..color = outline!
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = stroke + 1.6
+            ..strokeCap = StrokeCap.round);
+    }
     canvas.drawArc(rect, start, sweep, false, base);
     final r = ratio.clamp(0.0, 1.0);
     if (r > 0.001) {
