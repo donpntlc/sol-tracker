@@ -18073,60 +18073,78 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        // Logo wie bei REPIT: „PREP“ hell + „IT.“ gold, darunter das Datum.
-        // In SOL-GYM: Tipp aufs Logo wechselt zu REPIT.
+        // Logo im REPIT-Look: goldenes Symbol im Kästchen + „PREP“ hell / „IT.“ gold, darunter das Datum.
+        // In SOL-GYM: Tipp aufs Logo öffnet die Auswahl REPIT · PREPIT · GESAMT.
+        titleSpacing: 12,
         title: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: solGymEmbedded() ? solGymSwitch : null,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        const TextSpan(text: "PREP"),
-                        TextSpan(
-                          text: "IT.",
-                          style: TextStyle(
-                            color: Theme.of(context).brightness == Brightness.light
-                                ? const Color(0xFF7A5A1E)
-                                : const Color(0xFFC9A24A),
-                          ),
-                        ),
-                      ],
-                    ),
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.4,
-                      height: 1.0,
-                      color: Theme.of(context).appBarTheme.foregroundColor,
-                    ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A0A0A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF2A2418)),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    _trackingAppBarDateTitle(),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.8,
-                      height: 1.0,
-                      color: context.sol.muted,
-                    ),
-                  ),
-                ],
-              ),
-              if (solGymEmbedded())
-                const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: Icon(Icons.swap_horiz_rounded,
-                      size: 22, color: Color(0xFFC9A24A)),
+                  child: const Icon(Icons.restaurant_rounded,
+                      size: 20, color: Color(0xFFC9A24A)),
                 ),
-            ],
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          const TextSpan(text: "PREP"),
+                          TextSpan(
+                            text: "IT.",
+                            style: TextStyle(
+                              color: Theme.of(context).brightness ==
+                                      Brightness.light
+                                  ? const Color(0xFF7A5A1E)
+                                  : const Color(0xFFC9A24A),
+                            ),
+                          ),
+                        ],
+                      ),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                        height: 1.0,
+                        color: Theme.of(context).appBarTheme.foregroundColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _trackingAppBarDateTitle(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                        height: 1.0,
+                        color: context.sol.muted,
+                      ),
+                    ),
+                  ],
+                ),
+                if (solGymEmbedded())
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(Icons.swap_horiz_rounded,
+                        size: 22, color: Color(0xFFC9A24A)),
+                  ),
+              ],
+            ),
           ),
         ),
         actions: [
