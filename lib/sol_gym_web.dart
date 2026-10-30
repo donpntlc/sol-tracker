@@ -20,3 +20,20 @@ void solGymSwitch() {
     p?.callMethod<JSAny?>('postMessage'.toJS, 'solgym:switch'.toJS, '*'.toJS);
   } catch (_) {}
 }
+
+/// Alle PREPIT-Daten als Datei sichern (Funktion steht in pages/index.html).
+bool solDataExport() {
+  try {
+    final r = globalContext.callMethod<JSAny?>('solDataExport'.toJS);
+    return (r as JSBoolean?)?.toDart ?? false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// PREPIT-Backup-Datei wählen und laden (danach lädt die App neu).
+void solDataImport() {
+  try {
+    globalContext.callMethod<JSAny?>('solDataImport'.toJS);
+  } catch (_) {}
+}

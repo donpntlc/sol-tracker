@@ -7294,6 +7294,14 @@ class _MainScreenState extends State<MainScreen> {
       "plan_meal_rest": "danach noch {kcal} kcal",
       "plan_meal_over": "danach {kcal} kcal drüber",
       "settings_open_intro": "Einleitung & Anleitung öffnen",
+      "data_title": "Daten sichern & umziehen",
+      "data_sub": "Sichert alle PREPIT-Daten (Tracking, Gewicht, Datenbank, Einstellungen) in einer Datei. So holst du sie z. B. in SOL-GYM.",
+      "data_export": "Daten sichern (Datei)",
+      "data_import": "Daten laden (Datei)",
+      "data_import_confirm_title": "Daten laden?",
+      "data_import_confirm": "Die Daten aus der Datei ersetzen die Daten in dieser App. Danach startet PREPIT neu.",
+      "data_import_go": "Datei wählen",
+      "data_export_fail": "Sichern hat nicht geklappt.",
       "plan_rest": "Rest nach Plan: {kcal}",
       "plan_rest_over": "nach Plan {kcal} zu viel",
       "track_search_hint": "Lebensmittel suchen …",
@@ -8454,6 +8462,14 @@ class _MainScreenState extends State<MainScreen> {
       "plan_meal_rest": "then {kcal} kcal left",
       "plan_meal_over": "then {kcal} kcal over",
       "settings_open_intro": "Open intro & guide",
+      "data_title": "Back up & move data",
+      "data_sub": "Saves all PREPIT data (tracking, weight, database, settings) to one file, e.g. to move it into SOL-GYM.",
+      "data_export": "Back up data (file)",
+      "data_import": "Load data (file)",
+      "data_import_confirm_title": "Load data?",
+      "data_import_confirm": "The data from the file replaces the data in this app. PREPIT restarts afterwards.",
+      "data_import_go": "Choose file",
+      "data_export_fail": "Backup failed.",
       "plan_rest": "left after plan: {kcal}",
       "plan_rest_over": "{kcal} over after plan",
       "track_search_hint": "Search food …",
@@ -20475,6 +20491,69 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(title: Text(t("settings"))),
       body: ListView(
         children: [
+          if (kIsWeb)
+            _sectionCard(
+              title: t("data_title"),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("data_sub"),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.sol.soft,
+                      height: 1.35,
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.download_rounded,
+                        color: Color(0xFFC9A24A)),
+                    title: Text(t("data_export"),
+                        style: TextStyle(
+                            color: context.sol.onCard, fontSize: 15)),
+                    onTap: () {
+                      if (!solDataExport()) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(t("data_export_fail"))),
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.upload_rounded,
+                        color: Color(0xFFC9A24A)),
+                    title: Text(t("data_import"),
+                        style: TextStyle(
+                            color: context.sol.onCard, fontSize: 15)),
+                    onTap: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: Text(t("data_import_confirm_title")),
+                          content: Text(t("data_import_confirm")),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: Text(t("cancel")),
+                            ),
+                            TextButton(
+                              // Direkt im Tipp öffnen, sonst blockt das iPhone die Dateiauswahl.
+                              onPressed: () {
+                                solDataImport();
+                                Navigator.pop(ctx);
+                              },
+                              child: Text(t("data_import_go")),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
           _sectionCard(
             title: t("intro"),
             child: ListTile(
