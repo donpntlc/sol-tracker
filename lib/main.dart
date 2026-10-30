@@ -3631,6 +3631,492 @@ class _MainScreenState extends State<MainScreen> {
         child: child,
       );
 
+  // ───────────── Neuer Hinzufügen-Screen (Suche · Typ · Kategorie) ─────────────
+  /// Portionsgrößen pro Lebensmittel (Label, Gramm).
+  static const Map<String, List<(String, double)>> _kPortionPresets = {
+    "Eier": [("Ei S", 44), ("Ei M", 50), ("Ei L", 58), ("Ei XL", 66)],
+    "Apfel (mit Schale, Mittelwert)": [("Klein", 150), ("Mittel", 182), ("Groß", 223)],
+    "Banane (ohne Schale)": [("Klein", 101), ("Mittel", 118), ("Groß", 136)],
+    "Banane (mit Schale)": [("Klein", 158), ("Mittel", 184), ("Groß", 213)],
+    "Kartoffel": [("Klein", 100), ("Mittel", 170), ("Groß", 300)],
+    "Süßkartoffel": [("Klein", 130), ("Mittel", 200), ("Groß", 300)],
+    "Birne": [("Klein", 140), ("Mittel", 180), ("Groß", 230)],
+    "Kiwi": [("1 Stück", 75)],
+    "Mango": [("½ Mango", 100), ("1 Mango", 200)],
+    "Grapefruit": [("½ Grapefruit", 120)],
+    "Avocado": [("½ Avocado", 70), ("1 Avocado", 140)],
+    "Karotte": [("1 Karotte", 60)],
+    "Tomate": [("1 Tomate", 120)],
+    "Gurke": [("½ Gurke", 150), ("1 Gurke", 300)],
+    "Paprika (rot, roh)": [("1 Paprika", 160)],
+    "Zucchini": [("1 Zucchini", 200)],
+    "Datteln": [("1 Dattel", 8), ("5 Datteln", 40)],
+    "Weißbrot": [("1 Scheibe", 30)],
+    "Vollkornbrot": [("1 Scheibe", 45)],
+    "Haferflocken": [("40 g", 40), ("60 g", 60), ("80 g", 80)],
+    "Olivenöl": [("1 TL", 4), ("1 EL", 10)],
+    "Kokosöl": [("1 TL", 4), ("1 EL", 12)],
+    "Distelöl (Raps)": [("1 TL", 4), ("1 EL", 10)],
+    "Ghee": [("1 TL", 5), ("1 EL", 13)],
+    "Butter": [("1 TL", 5), ("1 EL", 12)],
+    "Erdnussbutter": [("1 TL", 6), ("1 EL", 16)],
+    "Chia Samen": [("1 EL", 12)],
+    "Leinsamen": [("1 EL", 10)],
+    "Nüsse": [("1 Handvoll", 30)],
+    "Mandeln": [("1 Handvoll", 30)],
+    "Walnüsse": [("1 Handvoll", 30)],
+    "Haselnüsse": [("1 Handvoll", 30)],
+    "Kürbiskerne": [("1 EL", 10), ("1 Handvoll", 30)],
+    "Skyr": [("1 Becher", 150), ("1 Becher groß", 450)],
+    "Magerquark": [("½ Becher", 125), ("1 Becher", 250), ("1 Becher groß", 500)],
+    "Hüttenkäse (0.2% Fett)": [("1 Becher", 200)],
+    "Joghurt (griechisch, 2% Fett)": [("1 Becher", 150)],
+    "Hähnchen Brust": [("1 Filet", 150)],
+    "Putenbrust (gekocht)": [("1 Portion", 150)],
+    "Lachs": [("1 Filet", 125)],
+    "Reis": [("1 Portion", 150)],
+    "Brauner Reis (gekocht)": [("1 Portion", 150)],
+    "Nudeln (Weizen)": [("1 Portion", 200)],
+    "Vollkornnudeln (gekocht)": [("1 Portion", 200)],
+    "Thunfisch (Dose, im eigenen Saft, abgetropft)": [("1 Dose", 130)],
+    "Erdbeeren": [("1 Handvoll", 80), ("1 Schale", 250)],
+    "Heidelbeeren": [("1 Handvoll", 50), ("1 Schale", 125)],
+    "TK Beeren Mix": [("1 Handvoll", 80)],
+    "Broccoli": [("1 Portion", 150)],
+    "Spinat": [("1 Portion", 100)],
+  };
+
+  List<(String, double)> _portionsFor(Food f) {
+    final out = <(String, double)>[];
+    if (f.isRecipe && f.basePortionGrams != null) {
+      final b = f.basePortionGrams!;
+      out.addAll([("½ Portion", b / 2), ("1 Portion", b), ("2 Portionen", b * 2)]);
+    }
+    out.addAll(_kPortionPresets[f.name] ?? const []);
+    return out;
+  }
+
+  /// Standardmenge für die Liste: 1 Portion / mittlere Größe / 100 g.
+  (String, double) _defaultPortion(Food f) {
+    final p = _portionsFor(f);
+    if (p.isEmpty) return ("100 g", 100);
+    final one = p.where((e) => e.$1 == "1 Portion" || e.$1 == "Mittel" || e.$1 == "Ei M");
+    return one.isNotEmpty ? one.first : p.first;
+  }
+
+  String _pickerType = "food"; // food | meals | recipes
+  String _pickerCat = "Alle";
+
+  Map<String, int> _foodUsageCounts() {
+    final m = <String, int>{};
+    for (final t in trackedFoods) {
+      m[t.food.name] = (m[t.food.name] ?? 0) + 1;
+    }
+    return m;
+  }
+
+  Future<void> _openFoodPicker(String meal) async {
+    var q = "";
+    final usage = _foodUsageCounts();
+    String norm(String x) => x
+        .toLowerCase()
+        .replaceAll("ä", "a")
+        .replaceAll("ö", "o")
+        .replaceAll("ü", "u")
+        .replaceAll("ß", "ss");
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.sol.scaffold,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          const gold = Color(0xFFC9A24A);
+          final muted = context.sol.muted;
+          final words = norm(q).split(RegExp(r"\s+")).where((w) => w.isNotEmpty).toList();
+          bool match(String name) => words.every(norm(name).contains);
+
+          List<Widget> rows;
+          if (_pickerType == "meals") {
+            final tpls = [...userMealTemplates, ..._solMealTemplates]
+                .where((t) => match(t["name"].toString()))
+                .toList();
+            rows = [
+              for (final tpl in tpls)
+                _pickerRow(
+                  title: tpl["name"].toString(),
+                  sub: (tpl["items"] as List).join(" + "),
+                  trailing: "",
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _applyMealTemplate(meal, tpl);
+                  },
+                ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: Text(t("meal_tpl_new")),
+                  onPressed: () async {
+                    await _editMealTemplate(null);
+                    setL(() {});
+                  },
+                ),
+              ),
+            ];
+          } else {
+            var list = foodDatabase.where((f) {
+              if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) return false;
+              if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) return false;
+              return words.isEmpty || match(f.name);
+            }).toList();
+            list.sort((a, b) {
+              final u = (usage[b.name] ?? 0).compareTo(usage[a.name] ?? 0);
+              if (u != 0) return u;
+              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            });
+            rows = [
+              for (final f in list)
+                () {
+                  final p = _defaultPortion(f);
+                  return _pickerRow(
+                    title: f.name,
+                    sub: p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)",
+                    trailing: "${(f.calories * p.$2 / 100).round()} kcal",
+                    image: f.imagePath,
+                    onTap: () async {
+                      final added = await _openAmountDialog(f, meal);
+                      if (added && ctx.mounted) Navigator.pop(ctx);
+                    },
+                  );
+                }(),
+            ];
+          }
+
+          Widget dd(String value, List<(String, String)> items, ValueChanged<String> on,
+                  {bool enabled = true}) =>
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: muted.withValues(alpha: 0.5), width: 1.4),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: value,
+                      isExpanded: true,
+                      dropdownColor: context.sol.card,
+                      style: TextStyle(
+                          color: enabled ? context.sol.onCard : muted,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14.5),
+                      items: [
+                        for (final it in items)
+                          DropdownMenuItem(value: it.$1, child: Text(it.$2)),
+                      ],
+                      onChanged: enabled ? (v) => setL(() => on(v!)) : null,
+                    ),
+                  ),
+                ),
+              );
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+            child: SizedBox(
+              height: MediaQuery.sizeOf(ctx).height * 0.92,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _displayMealName(meal),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: context.sol.onCard),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: t("track_barcode"),
+                          icon: const Icon(Icons.qr_code_scanner),
+                          onPressed: () async {
+                            final fetch = await _barcodeOpenFoodLookup();
+                            if (fetch == null || !ctx.mounted) return;
+                            Food? hit;
+                            if (fetch.barcode.isNotEmpty) {
+                              for (final f in foodDatabase) {
+                                if (f.offBarcode == fetch.barcode) {
+                                  hit = f;
+                                  break;
+                                }
+                              }
+                            }
+                            hit ??= await _showOffPreviewFromOff(fetch);
+                            if (hit == null || !ctx.mounted) return;
+                            final added = await _openAmountDialog(hit, meal);
+                            if (added && ctx.mounted) Navigator.pop(ctx);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                    child: TextField(
+                      autofocus: false,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: t("track_search_hint"),
+                        filled: true,
+                        fillColor: context.sol.card,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: gold, width: 1.6),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: gold, width: 1.6),
+                        ),
+                      ),
+                      onChanged: (v) => setL(() => q = v),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        dd(_pickerType, [
+                          ("food", t("picker_type_food")),
+                          ("meals", t("picker_type_meals")),
+                          ("recipes", t("picker_type_recipes")),
+                        ], (v) => _pickerType = v),
+                        const SizedBox(width: 10),
+                        dd(
+                          _pickerCat,
+                          [
+                            for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse"])
+                              (c, _tCat(c)),
+                          ],
+                          (v) => _pickerCat = v,
+                          enabled: _pickerType == "food",
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: rows.isEmpty
+                        ? Center(
+                            child: Text(t("track_search_none"),
+                                style: TextStyle(color: muted)))
+                        : ListView(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            children: rows,
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _pickerRow({
+    required String title,
+    required String sub,
+    required String trailing,
+    String? image,
+    required VoidCallback onTap,
+  }) {
+    const gold = Color(0xFFC9A24A);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+                color: context.sol.muted.withValues(alpha: 0.18), width: 0.8),
+          ),
+        ),
+        child: Row(
+          children: [
+            if (image != null && image.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(image, width: 46, height: 46, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46)),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: context.sol.onCard)),
+                  const SizedBox(height: 2),
+                  Text(sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, color: context.sol.muted)),
+                ],
+              ),
+            ),
+            if (trailing.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 8, right: 10),
+                child: Text(trailing,
+                    style: TextStyle(fontSize: 14, color: context.sol.onCard)),
+              ),
+            const Icon(Icons.add_circle_outline, color: gold, size: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Menge wählen (Portionen, Gramm, Füllen) → hinzufügen / vormerken. true = hinzugefügt.
+  Future<bool> _openAmountDialog(Food food, String meal) async {
+    final portions = _portionsFor(food);
+    final def = _defaultPortion(food);
+    final ctrl = TextEditingController(text: def.$2.round().toString());
+    double grams() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
+    String? fillMsg;
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setL) {
+          void fill(String mode) {
+            final g = _fillGramsForTarget(food, mode, meal);
+            setL(() {
+              if (g == null || g <= 0) {
+                fillMsg = t("track_fill_none");
+              } else {
+                fillMsg = null;
+                ctrl.text = g.round().toString();
+              }
+            });
+          }
+
+          return AlertDialog(
+            title: Text(food.name, style: const TextStyle(fontSize: 18)),
+            content: SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (portions.isNotEmpty) ...[
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          for (final p in portions)
+                            ChoiceChip(
+                              label: Text("${p.$1} · ${p.$2.round()} g",
+                                  style: const TextStyle(fontSize: 12)),
+                              selected: (grams() - p.$2).abs() < 0.5,
+                              onSelected: (_) =>
+                                  setL(() => ctrl.text = p.$2.round().toString()),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    TextField(
+                      controller: ctrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(suffixText: "g"),
+                      onChanged: (_) => setL(() {}),
+                    ),
+                    if (grams() > 0) _trackPortionMacroPreview(food, grams()),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 4,
+                      children: [
+                        if (food.protein > 0.01)
+                          ActionChip(
+                              label: Text(t("track_fill_protein"),
+                                  style: const TextStyle(fontSize: 11.5)),
+                              onPressed: () => fill("protein")),
+                        if (food.carbs > 0.01)
+                          ActionChip(
+                              label: Text(t("track_fill_carbs"),
+                                  style: const TextStyle(fontSize: 11.5)),
+                              onPressed: () => fill("carbs")),
+                        if (food.fat > 0.01)
+                          ActionChip(
+                              label: Text(t("track_fill_fat"),
+                                  style: const TextStyle(fontSize: 11.5)),
+                              onPressed: () => fill("fat")),
+                        ActionChip(
+                            label: Text(t("track_fill_kcal"),
+                                style: const TextStyle(fontSize: 11.5)),
+                            onPressed: () => fill("kcal")),
+                      ],
+                    ),
+                    if (fillMsg != null)
+                      Text(fillMsg!,
+                          style: const TextStyle(
+                              fontSize: 12, color: Color(0xFFA84A4A))),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t("cancel")),
+              ),
+              TextButton(
+                onPressed: grams() > 0 ? () => Navigator.pop(ctx, "plan") : null,
+                child: Text(t("plan_add_button")),
+              ),
+              FilledButton(
+                onPressed: grams() > 0 ? () => Navigator.pop(ctx, "add") : null,
+                child: Text(t("add")),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    final g = grams();
+    if (!mounted || res == null || g <= 0) return false;
+    final e = TrackedFood(food: food, grams: g, meal: meal, dayKey: selectedDayKey);
+    if (res == "plan") {
+      setState(() => plannedFoods.add(e));
+      _savePlannedFoods();
+      return true;
+    }
+    setState(() => trackedFoods.add(e));
+    _updateMealTotals();
+    _saveAppState();
+    _showBlessing();
+    _applyDailyKcalOverSchedule();
+    return true;
+  }
+
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
   bool showHelpTexts = true;
@@ -6586,6 +7072,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "picker_type_food": "Lebensmittel",
+      "picker_type_meals": "Mahlzeiten",
+      "picker_type_recipes": "Rezepte",
       "day_fill_title": "Rest des Tages auffüllen · in „{m}“",
       "day_fill_add_meal": "Mahlzeit hinzufügen",
       "pre_split_in_editor": "Pre-Workout-KH aufteilen",
@@ -7731,6 +8220,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "picker_type_food": "Foods",
+      "picker_type_meals": "Meals",
+      "picker_type_recipes": "Recipes",
       "day_fill_title": "Fill the rest of the day · into “{m}”",
       "day_fill_add_meal": "Add meal",
       "pre_split_in_editor": "Split pre-workout carbs",
@@ -25170,7 +25662,16 @@ class _MainScreenState extends State<MainScreen> {
       unawaited(_addTrackedFoodAfterLastMealPrompt(meal));
       return;
     }
-    _addTrackedFoodImpl(meal);
+    _openAddFlow(meal);
+  }
+
+  /// Füllen-Knöpfe nutzen den alten Dialog (mit Füll-Logik), sonst neuer Screen.
+  void _openAddFlow(String meal) {
+    if (_pendingTrackFillApply != null || _fillDayMode) {
+      _addTrackedFoodImpl(meal);
+    } else {
+      unawaited(_openFoodPicker(meal));
+    }
   }
 
   Future<void> _addTrackedFoodAfterLastMealPrompt(String meal) async {
@@ -25179,7 +25680,7 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
     if (!mounted) return;
-    _addTrackedFoodImpl(meal);
+    _openAddFlow(meal);
   }
 
   void _addTrackedFoodImpl(String meal) {
