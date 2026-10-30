@@ -3706,6 +3706,9 @@ class _MainScreenState extends State<MainScreen> {
 
   String _pickerType = "food"; // food | meals | recipes
   String _pickerCat = "Alle";
+  String _pickerMode = "Alle"; // Alle | Diät | Aufbau
+  String _pickerSort = "freq"; // freq | az | kcalUp | kcalDown | macroDown
+  bool _pickerPer100 = false; // false = Portion/Menge, true = pro 100 g
 
   Map<String, int> _foodUsageCounts() {
     final m = <String, int>{};
@@ -3768,21 +3771,62 @@ class _MainScreenState extends State<MainScreen> {
             var list = foodDatabase.where((f) {
               if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) return false;
               if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) return false;
+              if (_pickerMode != "Alle" && !f.type.startsWith(_pickerMode)) return false;
               return words.isEmpty || match(f.name);
             }).toList();
+            // Makro passend zur Kategorie (für Anzeige + Sortierung).
+            final macroKey = switch (_pickerCat) {
+              "Carbs" => "c",
+              "Protein" => "p",
+              "Fett" => "f",
+              "Ballaststoffe" => "fi",
+              _ => "",
+            };
+            double macroOf(Food f) => switch (macroKey) {
+                  "c" => f.carbs,
+                  "p" => f.protein,
+                  "f" => f.fat,
+                  "fi" => f.fiber,
+                  _ => 0,
+                };
+            int byName(Food a, Food b) =>
+                a.name.toLowerCase().compareTo(b.name.toLowerCase());
             list.sort((a, b) {
-              final u = (usage[b.name] ?? 0).compareTo(usage[a.name] ?? 0);
-              if (u != 0) return u;
-              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              switch (_pickerSort) {
+                case "az":
+                  return byName(a, b);
+                case "kcalUp":
+                  return a.calories.compareTo(b.calories);
+                case "kcalDown":
+                  return b.calories.compareTo(a.calories);
+                case "macroDown":
+                  final m = macroOf(b).compareTo(macroOf(a));
+                  return m != 0 ? m : byName(a, b);
+                default:
+                  final u = (usage[b.name] ?? 0).compareTo(usage[a.name] ?? 0);
+                  return u != 0 ? u : byName(a, b);
+              }
             });
+            final macroLabel = switch (macroKey) {
+              "c" => t("abbr_carbs"),
+              "p" => t("abbr_protein"),
+              "f" => t("abbr_fat"),
+              "fi" => t("picker_fiber_short"),
+              _ => "",
+            };
             rows = [
               for (final f in list)
                 () {
-                  final p = _defaultPortion(f);
+                  final p0 = _defaultPortion(f);
+                  final p = _pickerPer100 ? ("100 g", 100.0) : p0;
+                  final fac = p.$2 / 100.0;
+                  final mTxt = macroKey.isEmpty
+                      ? ""
+                      : " · $macroLabel ${(macroOf(f) * fac).round()} g";
                   return _pickerRow(
                     title: f.name,
-                    sub: p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)",
-                    trailing: "${(f.calories * p.$2 / 100).round()} kcal",
+                    sub: (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
+                    trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
                     onTap: () async {
                       final added = await _openAmountDialog(f, meal);
@@ -3952,6 +3996,64 @@ class _MainScreenState extends State<MainScreen> {
                       ],
                     ),
                   ),
+                  if (_pickerType != "meals")
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: Row(
+                        children: [
+                          for (final m in const ["Alle", "Diät", "Aufbau"])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: ChoiceChip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text(_tTypeFilter(m),
+                                    style: const TextStyle(fontSize: 12)),
+                                selected: _pickerMode == m,
+                                onSelected: (_) => setL(() => _pickerMode = m),
+                              ),
+                            ),
+                          const Spacer(),
+                          // 100 g ↔ Portion
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: gold,
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                            ),
+                            onPressed: () => setL(() => _pickerPer100 = !_pickerPer100),
+                            child: Text(
+                              _pickerPer100 ? t("picker_per100") : t("picker_per_portion"),
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            tooltip: t("picker_sort"),
+                            position: PopupMenuPosition.under,
+                            color: context.sol.card,
+                            icon: const Icon(Icons.sort, color: gold),
+                            onSelected: (v) => setL(() => _pickerSort = v),
+                            itemBuilder: (_) => [
+                              for (final o in [
+                                ("freq", t("picker_sort_freq")),
+                                ("az", t("picker_sort_az")),
+                                ("kcalUp", t("picker_sort_kcal_up")),
+                                ("kcalDown", t("picker_sort_kcal_down")),
+                                ("macroDown", t("picker_sort_macro")),
+                              ])
+                                PopupMenuItem(
+                                  value: o.$1,
+                                  child: Text(o.$2,
+                                      style: TextStyle(
+                                          color: _pickerSort == o.$1 ? gold : context.sol.onCard,
+                                          fontWeight: _pickerSort == o.$1
+                                              ? FontWeight.w800
+                                              : FontWeight.w500)),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   Expanded(
                     child: rows.isEmpty
                         ? Center(
@@ -7111,6 +7213,15 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "picker_per100": "pro 100 g",
+      "picker_per_portion": "pro Portion",
+      "picker_sort": "Sortieren",
+      "picker_sort_freq": "Häufig",
+      "picker_sort_az": "A–Z",
+      "picker_sort_kcal_up": "Wenig kcal zuerst",
+      "picker_sort_kcal_down": "Viel kcal zuerst",
+      "picker_sort_macro": "Meiste KH/P/F (nach Kategorie)",
+      "picker_fiber_short": "Ballast",
       "picker_type_food": "Lebensmittel",
       "picker_type_meals": "Mahlzeiten",
       "picker_type_recipes": "Rezepte",
@@ -8259,6 +8370,15 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "picker_per100": "per 100 g",
+      "picker_per_portion": "per portion",
+      "picker_sort": "Sort",
+      "picker_sort_freq": "Frequent",
+      "picker_sort_az": "A–Z",
+      "picker_sort_kcal_up": "Fewest kcal first",
+      "picker_sort_kcal_down": "Most kcal first",
+      "picker_sort_macro": "Most C/P/F (by category)",
+      "picker_fiber_short": "Fiber",
       "picker_type_food": "Foods",
       "picker_type_meals": "Meals",
       "picker_type_recipes": "Recipes",
