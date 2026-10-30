@@ -7213,6 +7213,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "workout_block_open_hint": "antippen zum Öffnen",
       "picker_per100": "pro 100 g",
       "picker_per_portion": "pro Portion",
       "picker_sort": "Sortieren",
@@ -8370,6 +8371,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "workout_block_open_hint": "tap to open",
       "picker_per100": "per 100 g",
       "picker_per_portion": "per portion",
       "picker_sort": "Sort",
@@ -19189,13 +19191,56 @@ class _MainScreenState extends State<MainScreen> {
                               ),
                               const SizedBox(width: 10),
                               Expanded(
-                                child: Text(
-                                  t("tracking_workout_block_title"),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14,
-                                    color: wtx.title,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      t("tracking_workout_block_title"),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: wtx.title,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    // Sichtbar machen: dahinter stecken 2 Mahlzeiten.
+                                    Row(
+                                      children: [
+                                        for (final m in const ["Pre-Workout", "Post-Workout"]) ...[
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(
+                                                  color: const Color(0xFFC9A24A)
+                                                      .withValues(alpha: 0.6)),
+                                            ),
+                                            child: Text(
+                                              m == "Pre-Workout" ? "Pre" : "Post",
+                                              style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFFC9A24A)),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 5),
+                                        ],
+                                        Icon(Icons.chevron_right,
+                                            size: 16, color: wtx.expandIcon),
+                                        Flexible(
+                                          child: Text(
+                                            t("workout_block_open_hint"),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                fontSize: 10.5,
+                                                color: wtx.expandIcon),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -19229,8 +19274,26 @@ class _MainScreenState extends State<MainScreen> {
                   onPressed: () =>
                       unawaited(_openMealNoteDialog(_kWorkoutBlockMealId)),
                 ),
-                // Gleicher visueller Abstand wie bei Karten mit +-Menü, aber ohne +.
-                const SizedBox(width: 32),
+                // + : erst wählen, ob Pre- oder Post-Workout.
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  tooltip: t("meal_add_menu"),
+                  position: PopupMenuPosition.under,
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    size: 23,
+                    color: Color(0xFFC9A24A),
+                  ),
+                  onSelected: (m) => addTrackedFood(m),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                        value: "Pre-Workout",
+                        child: Text(_displayMealName("Pre-Workout"))),
+                    PopupMenuItem(
+                        value: "Post-Workout",
+                        child: Text(_displayMealName("Post-Workout"))),
+                  ],
+                ),
                 IconButton(
                   padding: const EdgeInsets.only(top: 2),
                   visualDensity: VisualDensity.compact,
