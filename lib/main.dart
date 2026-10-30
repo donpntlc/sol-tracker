@@ -7213,6 +7213,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "db_category_label": "Kategorie",
+      "db_taste_label": "Geschmack",
       "workout_block_open_hint": "antippen zum Öffnen",
       "picker_per100": "pro 100 g",
       "picker_per_portion": "pro Portion",
@@ -8371,6 +8373,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "db_category_label": "Category",
+      "db_taste_label": "Taste",
       "workout_block_open_hint": "tap to open",
       "picker_per100": "per 100 g",
       "picker_per_portion": "per portion",
@@ -15695,178 +15699,112 @@ class _MainScreenState extends State<MainScreen> {
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
-            child: _sectionCard(
-              title: t("filter"),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   TextField(
                     decoration: InputDecoration(
                       hintText: t("search_food"),
                       prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: context.sol.card,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFFC9A24A), width: 1.6),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFFC9A24A), width: 1.6),
                       ),
                     ),
                     onChanged: (value) => setState(() => searchQuery = value),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    t("db_source_filter_label"),
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: Color(0xFFC9A24A),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _dbDd(t("db_source_filter_label"), databaseSourceFilter, [
+                        ("all", t("db_source_all")),
+                        ("mine", t("db_source_mine")),
+                        ("sol", t("db_source_sol")),
+                      ], (v) => databaseSourceFilter = v),
+                      const SizedBox(width: 10),
+                      _dbDd(t("db_category_label"), databaseCategoryFilter, [
+                        for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Rezepte"])
+                          (c, _tCat(c)),
+                      ], (v) => databaseCategoryFilter = v),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6.0),
-                          child: ChoiceChip(
-                            label: Text(t("db_source_all")),
-                            selected: databaseSourceFilter == "all",
-                            onSelected: (_) => setState(
-                              () => databaseSourceFilter = "all",
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _dbDd(t("db_taste_label"), databaseRecipeFlavorFilter, [
+                        ("all", t("recipe_flavor_all")),
+                        ("sweet", t("recipe_flavor_sweet")),
+                        ("salty", t("recipe_flavor_salty")),
+                      ], (v) => databaseRecipeFlavorFilter = v),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: _openPersonalRatingFilterSheet,
+                          child: Container(
+                            height: 50,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                  color: _personalRatingFiltersActive()
+                                      ? const Color(0xFFC9A24A)
+                                      : context.sol.muted.withValues(alpha: 0.5),
+                                  width: 1.4),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _personalRatingFiltersActive() ? Icons.star : Icons.star_outline,
+                                  size: 18,
+                                  color: _personalRatingFiltersActive()
+                                      ? const Color(0xFFC9A24A)
+                                      : context.sol.muted,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _personalRatingFiltersActive()
+                                        ? _personalRatingFilterSummary()
+                                        : t("db_personal_filter_button"),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: context.sol.onCard),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (final m in const ["Alle", "Diät", "Aufbau"])
                         Padding(
-                          padding: const EdgeInsets.only(right: 6.0),
+                          padding: const EdgeInsets.only(right: 4),
                           child: ChoiceChip(
-                            label: Text(t("db_source_mine")),
-                            selected: databaseSourceFilter == "mine",
-                            onSelected: (_) => setState(
-                              () => databaseSourceFilter = "mine",
-                            ),
+                            visualDensity: VisualDensity.compact,
+                            label: Text(_tTypeFilter(m),
+                                style: const TextStyle(fontSize: 12)),
+                            selected: databaseTypeFilter == m,
+                            onSelected: (_) => setState(() => databaseTypeFilter = m),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6.0),
-                          child: ChoiceChip(
-                            label: Text(t("db_source_sol")),
-                            selected: databaseSourceFilter == "sol",
-                            onSelected: (_) => setState(
-                              () => databaseSourceFilter = "sol",
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: databaseTypeFilter,
-                    decoration: InputDecoration(
-                      labelText: t("mode"),
-                      border: const OutlineInputBorder(),
-                    ),
-                    items: ["Alle", "Diät", "Aufbau"]
-                        .map((type) => DropdownMenuItem(
-                            value: type, child: Text(_tTypeFilter(type))))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => databaseTypeFilter = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        "Alle",
-                        "Carbs",
-                        "Protein",
-                        "Fett",
-                        "Ballaststoffe",
-                        "Obst",
-                        "Gemüse",
-                        "Rezepte",
-                      ]
-                          .map(
-                            (category) => Padding(
-                              padding: const EdgeInsets.only(right: 6.0),
-                              child: ChoiceChip(
-                                label: Text(_tCat(category)),
-                                selected: databaseCategoryFilter == category,
-                                onSelected: (_) => setState(
-                                  () => databaseCategoryFilter = category,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      t("recipe_flavor_filter_label"),
-                      style: const TextStyle(
-                          fontSize: 12, color: Colors.white60),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ["all", "sweet", "salty"]
-                          .map(
-                            (fl) => Padding(
-                              padding: const EdgeInsets.only(right: 6.0),
-                              child: ChoiceChip(
-                                label: Text(
-                                  fl == "all"
-                                      ? t("recipe_flavor_all")
-                                      : (fl == "sweet"
-                                          ? t("recipe_flavor_sweet")
-                                          : t("recipe_flavor_salty")),
-                                ),
-                                selected: databaseRecipeFlavorFilter == fl,
-                                onSelected: (_) => setState(
-                                  () => databaseRecipeFlavorFilter = fl,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _openPersonalRatingFilterSheet,
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        foregroundColor: _personalRatingFiltersActive()
-                            ? const Color(0xFFC9A24A)
-                            : context.sol.muted,
-                      ),
-                      icon: Icon(
-                        _personalRatingFiltersActive()
-                            ? Icons.star
-                            : Icons.star_outline,
-                        size: 18,
-                      ),
-                      label: Text(
-                        _personalRatingFiltersActive()
-                            ? tFmt("db_personal_filter_active", {
-                                "s": _personalRatingFilterSummary(),
-                              })
-                            : t("db_personal_filter_button"),
-                        style: const TextStyle(fontSize: 12.5),
-                      ),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -15933,6 +15871,89 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Kompaktes Dropdown-Feld (wie in der Lebensmittel-Auswahl) mit kleiner Überschrift.
+  Widget _dbDd(String caption, String value, List<(String, String)> items,
+      ValueChanged<String> on) {
+    const gold = Color(0xFFC9A24A);
+    final muted = context.sol.muted;
+    final label = items
+        .firstWhere((e) => e.$1 == value, orElse: () => items.first)
+        .$2;
+    final active = value != items.first.$1;
+    return Expanded(
+      child: PopupMenuButton<String>(
+        position: PopupMenuPosition.under,
+        offset: const Offset(0, 6),
+        color: context.sol.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        constraints: const BoxConstraints(minWidth: 180),
+        onSelected: (v) => setState(() => on(v)),
+        itemBuilder: (_) => [
+          for (var k = 0; k < items.length; k++)
+            PopupMenuItem<String>(
+              value: items[k].$1,
+              height: 46,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Container(
+                height: 46,
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  border: k == items.length - 1
+                      ? null
+                      : Border(
+                          bottom: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              width: 0.7),
+                        ),
+                ),
+                child: Text(items[k].$2,
+                    style: TextStyle(
+                        fontWeight: items[k].$1 == value
+                            ? FontWeight.w800
+                            : FontWeight.w500,
+                        color: items[k].$1 == value ? gold : context.sol.onCard)),
+              ),
+            ),
+        ],
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: active ? gold : muted.withValues(alpha: 0.5), width: 1.4),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(caption,
+                        maxLines: 1,
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: active ? gold : muted,
+                            fontWeight: FontWeight.w600)),
+                    Text(label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: context.sol.onCard,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14)),
+                  ],
+                ),
+              ),
+              Icon(Icons.keyboard_arrow_down, color: context.sol.onCard),
+            ],
+          ),
+        ),
       ),
     );
   }
