@@ -19,6 +19,7 @@ import 'package:sol/ai_meal_photo.dart' as aiphoto;
 import 'package:sol/sol_recipe_hero_image.dart';
 import 'package:sol/barcode_photo_decode.dart';
 import 'package:sol/web_share.dart';
+import 'package:sol/sol_gym.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -17383,44 +17384,60 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: AppBar(
         // Logo wie bei REPIT: „PREP“ hell + „IT.“ gold, darunter das Datum.
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text.rich(
-              TextSpan(
+        // In SOL-GYM: Tipp aufs Logo wechselt zu REPIT.
+        title: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: solGymEmbedded() ? solGymSwitch : null,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const TextSpan(text: "PREP"),
-                  TextSpan(
-                    text: "IT.",
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(text: "PREP"),
+                        TextSpan(
+                          text: "IT.",
+                          style: TextStyle(
+                            color: Theme.of(context).brightness == Brightness.light
+                                ? const Color(0xFF7A5A1E)
+                                : const Color(0xFFC9A24A),
+                          ),
+                        ),
+                      ],
+                    ),
                     style: TextStyle(
-                      color: Theme.of(context).brightness == Brightness.light
-                          ? const Color(0xFF7A5A1E)
-                          : const Color(0xFFC9A24A),
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
+                      height: 1.0,
+                      color: Theme.of(context).appBarTheme.foregroundColor,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _trackingAppBarDateTitle(),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                      height: 1.0,
+                      color: context.sol.muted,
                     ),
                   ),
                 ],
               ),
-              style: TextStyle(
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.4,
-                height: 1.0,
-                color: Theme.of(context).appBarTheme.foregroundColor,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              _trackingAppBarDateTitle(),
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.8,
-                height: 1.0,
-                color: context.sol.muted,
-              ),
-            ),
-          ],
+              if (solGymEmbedded())
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Icon(Icons.swap_horiz_rounded,
+                      size: 22, color: Color(0xFFC9A24A)),
+                ),
+            ],
+          ),
         ),
         actions: [
           IconButton(
