@@ -3506,8 +3506,7 @@ class _MainScreenState extends State<MainScreen> {
       _isLightUi ? const Color(0xFF6B665E) : const Color(0xFFE8E4DC);
   static const Color _barIn = Color(0xFFC9A24A);
   static const Color _barOver = Color(0xFFA84A4A); // Bordeaux / Weinrot
-  Color get _barMidTick =>
-      _isLightUi ? const Color(0xFF1E1A16) : const Color(0xFFFFFFFF);
+  Color get _barMidTick => const Color(0xFFC9A24A);
 
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
@@ -3673,7 +3672,10 @@ class _MainScreenState extends State<MainScreen> {
       minK = r.minKcal;
       maxK = r.maxKcal;
     }
-    final mid = (minK + maxK) / 2.0;
+    final mid = (_mealCenterKcal(workoutBlock ? _kWorkoutBlockMealId : meal) ??
+            (minK + maxK) / 2.0)
+        .clamp(minK, math.max(minK, maxK))
+        .toDouble();
     final withPlan = eaten + kc;
     final scaleEnd = math.max(maxK * 1.1, withPlan);
     final ratio = scaleEnd > 0 ? (withPlan / scaleEnd).clamp(0.0, 1.0) : 0.0;
@@ -4469,6 +4471,24 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// kcal-Spanne der Mahlzeit als Summe der Makro-Min/Max in kcal.
+  /// kcal-Zielmitte einer Mahlzeit aus ihren Makro-Anteilen (Mitte).
+  double? _mealCenterKcal(String meal) {
+    final g = effectiveMacroGoalsForDay(selectedDayKey);
+    double kc(String m) {
+      final mm = mealMacros[m];
+      if (mm == null) return 0;
+      return g.protein * (mm["protein"] ?? 0) / 100.0 * 4.1 +
+          g.carbs * (mm["carbs"] ?? 0) / 100.0 * 4.1 +
+          g.fat * (mm["fat"] ?? 0) / 100.0 * 9.3;
+    }
+
+    if (meal == _kWorkoutBlockMealId) {
+      return kc("Pre-Workout") + kc("Post-Workout");
+    }
+    if (!mealMacros.containsKey(meal)) return null;
+    return kc(meal);
+  }
+
   ({double minKcal, double maxKcal}) dynamicMealKcalRange(String meal) {
     final p = dynamicMealMacroRangeG(meal, "protein");
     final c = dynamicMealMacroRangeG(meal, "carbs");
@@ -22653,7 +22673,11 @@ class _MainScreenState extends State<MainScreen> {
     final maxRatioK = (maxKcal / scaleEndK).clamp(0.0, 1.0);
     final drawSecondKTick = (maxKcal - minKcal).abs() > 1e-6 &&
         (maxRatioK - minRatio).abs() > 1e-4;
-    final midK = (minKcal + maxKcal) / 2.0;
+    // Zielmitte = kcal aus den Makro-Zielen (P/KH/F-Mitte), nicht die
+    // Mitte des Bereichs — sonst passt kcal nicht zu den Makros.
+    final midK = (_mealCenterKcal(meal) ?? (minKcal + maxKcal) / 2.0)
+        .clamp(minKcal, math.max(minKcal, maxKcal))
+        .toDouble();
     final hasBandKcal = (maxKcal - minKcal).abs() > 1e-2;
     final zielmitteRatioK = scaleEndK > 1e-9
         ? (midK / scaleEndK).clamp(0.0, 1.0)
