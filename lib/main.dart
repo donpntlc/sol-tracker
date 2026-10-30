@@ -4150,6 +4150,8 @@ class _MainScreenState extends State<MainScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: Image.asset(image, width: 46, height: 46, fit: BoxFit.cover,
+                    cacheWidth: (46 * 16 / 9 * MediaQuery.devicePixelRatioOf(context) * 1.5).round(),
+                    filterQuality: FilterQuality.high,
                     errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46)),
               ),
               const SizedBox(width: 12),
@@ -16914,11 +16916,19 @@ class _MainScreenState extends State<MainScreen> {
           child: const Icon(Icons.broken_image, color: Colors.white38),
         );
     if (_foodImagePathIsAsset(path)) {
+      // Scharf statt verpixelt: in passender Grösse dekodieren + hochwertig skalieren.
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final cw = (width != null && width.isFinite)
+          ? (width * dpr * 1.5).round().clamp(64, 1440)
+          : null;
       return Image.asset(
         path,
         width: width,
         height: height,
         fit: fit,
+        cacheWidth: cw,
+        filterQuality: FilterQuality.high,
+        isAntiAlias: true,
         errorBuilder: (_, __, ___) => err,
       );
     }
