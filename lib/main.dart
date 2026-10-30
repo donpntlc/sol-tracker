@@ -3942,7 +3942,29 @@ class _MainScreenState extends State<MainScreen> {
       final sw = (g["startWeight"] as num).toDouble();
       final nowW = (g["snapW"] is num) ? (g["snapW"] as num).toDouble() : sw;
       final kgTotal = (tw - sw).abs();
-      final remaining = math.max(0.0, bulk ? tw - nowW : nowW - tw);
+      // Täglich: eingesparte kcal seit dem letzten Wochen-Abgleich dazurechnen.
+      // Einmal pro Woche wird mit dem echten Wochenschnitt-Gewicht neu kalibriert.
+      var since = start;
+      if (g["snapW"] is num && g["snapAt"] != null) {
+        try {
+          since = _dateOnlyLocal(dateFromKey(g["snapAt"].toString()));
+        } catch (_) {}
+      }
+      final maintS = _maintenanceKcalFromBody();
+      var kcalSince = 0.0;
+      var dS = since;
+      var guardS = 0;
+      while (dS.isBefore(today) && guardS < 400) {
+        final key = dateKeyFromDate(dS);
+        if (trackedFoods.any((t) => t.dayKey == key)) {
+          final eat = _kcalEatenOnDay(key);
+          kcalSince += bulk ? (eat - maintS) : (maintS - eat);
+        }
+        dS = dS.add(const Duration(days: 1));
+        guardS++;
+      }
+      final estW = bulk ? nowW + kcalSince / 7000.0 : nowW - kcalSince / 7000.0;
+      final remaining = math.max(0.0, bulk ? tw - estW : estW - tw);
       int daysLeft;
       if (g["targetDate"] != null) {
         try {
