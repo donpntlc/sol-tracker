@@ -1740,6 +1740,8 @@ class _MainScreenState extends State<MainScreen> {
   final Map<String, _LastMealKcalChoice> lastMealKcalByDay = {};
   /// Nach Klick „… füllen“ in der Makro-Tabelle: nach Lebensmittelwahl anwenden.
   String? _pendingTrackFillApply;
+  /// Füllen bis zur Tages-Zielmitte (statt Mahlzeit) — aus der Kalorien-Karte.
+  bool _fillDayMode = false;
 
   // Basis-Verteilung für den Performance-Endpunkt (Summe = 100 pro Makro)
   static const Map<String, Map<String, double>> _performanceMealMacros = {
@@ -2084,6 +2086,74 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Aufklappbare Tages-Makro-Balken (Zielbereiche).
+  /// Nächste Mahlzeit nach dem Training, in der noch nichts getrackt ist.
+  String? _nextMealAfterWorkout() {
+    final order = meals.where((m) => m != "Snacks").toList();
+    var lastW = -1;
+    for (var i = 0; i < order.length; i++) {
+      if (order[i] == "Pre-Workout" || order[i] == "Post-Workout") lastW = i;
+    }
+    for (var i = lastW + 1; i < order.length; i++) {
+      final m = order[i];
+      if (_isMealMergedLocked(m)) continue;
+      if (!trackedFoods.any((t) => t.dayKey == selectedDayKey && t.meal == m)) {
+        return m;
+      }
+    }
+    for (final m in order.reversed) {
+      if (m != "Pre-Workout" && m != "Post-Workout" && !_isMealMergedLocked(m)) {
+        return m;
+      }
+    }
+    return null;
+  }
+
+  bool get _workoutTrackedToday => trackedFoods.any((t) =>
+      t.dayKey == selectedDayKey &&
+      (t.meal == "Pre-Workout" || t.meal == "Post-Workout"));
+
+  Widget _dayFillButtons() {
+    final target = _nextMealAfterWorkout();
+    if (target == null) return const SizedBox.shrink();
+    Widget b(String code, String key, IconData ic) => TextButton.icon(
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            foregroundColor: const Color(0xFFC9A24A),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+          onPressed: () {
+            _fillDayMode = code != "add";
+            _pendingTrackFillApply = code == "add" ? null : code;
+            addTrackedFood(target);
+          },
+          icon: Icon(ic, size: 16),
+          label: Text(t(key), style: const TextStyle(fontSize: 12.5)),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            tFmt("day_fill_title", {"m": _displayMealName(target)}),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: context.sol.muted),
+          ),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 2,
+            children: [
+              b("c", "track_fill_carbs", Icons.vertical_align_top),
+              b("p", "track_fill_protein", Icons.vertical_align_top),
+              b("f", "track_fill_fat", Icons.vertical_align_top),
+              b("add", "day_fill_add_meal", Icons.add_circle_outline),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _dayMacroDetails({
     required double recK,
     required double totalProtein,
@@ -2380,6 +2450,7 @@ class _MainScreenState extends State<MainScreen> {
                   style: TextStyle(fontSize: 12.5, color: muted),
                 ),
               ),
+            if (_macroDetailsExpanded && _workoutTrackedToday) _dayFillButtons(),
           ],
         ),
       ),
@@ -2460,6 +2531,11 @@ class _MainScreenState extends State<MainScreen> {
       ("size_small", 101.0, 158.0),
       ("size_medium", 118.0, 184.0),
       ("size_large", 136.0, 213.0),
+    ],
+    "Banane (mit Schale)": [
+      ("size_small", 158.0, 101.0),
+      ("size_medium", 184.0, 118.0),
+      ("size_large", 213.0, 136.0),
     ],
   };
 
@@ -3507,6 +3583,22 @@ class _MainScreenState extends State<MainScreen> {
   static const Color _barIn = Color(0xFFC9A24A);
   static const Color _barOver = Color(0xFFA84A4A); // Bordeaux / Weinrot
   Color get _barMidTick => const Color(0xFFC9A24A);
+
+  /// Listeneintrag mit feiner, eingerückter Trennlinie unten.
+  Widget _ddLine(Widget child) => Container(
+        height: 48,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.white.withValues(alpha: 0.16),
+              width: 0.7,
+            ),
+          ),
+        ),
+        child: child,
+      );
 
   // ───────────── Hilfetexte ein/aus ─────────────
   static const String _kShowHelpTextsKey = "show_help_texts_v1";
@@ -6463,6 +6555,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "day_fill_title": "Rest des Tages auffüllen · in „{m}“",
+      "day_fill_add_meal": "Mahlzeit hinzufügen",
       "pre_split_in_editor": "Pre-Workout-KH aufteilen",
       "pre_split_complex_short": "Komplex",
       "pre_split_simple_short": "Einfach",
@@ -6506,6 +6600,7 @@ class _MainScreenState extends State<MainScreen> {
       "size_medium": "Mittel",
       "size_large": "Groß",
       "size_peel_hint": "Gramm = ohne Schale. Mit Schale wiegen klein / mittel / groß ca. {s} g.",
+      "size_peel_hint2": "Gramm = mit Schale. Ohne Schale sind es klein / mittel / groß ca. {s} g.",
       "meal_tpl_menu": "Mahlzeit (Vorlage)",
       "meal_tpl_title": "Mahlzeiten",
       "meal_tpl_sub": "Vorgefertigte Kombinationen. SOL rechnet die Mengen so aus, dass Protein, KH und Fett dieser Mahlzeit möglichst genau passen. Rezepte zählen immer als 1 Portion.",
@@ -7605,6 +7700,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "day_fill_title": "Fill the rest of the day · into “{m}”",
+      "day_fill_add_meal": "Add meal",
       "pre_split_in_editor": "Split pre-workout carbs",
       "pre_split_complex_short": "Complex",
       "pre_split_simple_short": "Simple",
@@ -7648,6 +7745,7 @@ class _MainScreenState extends State<MainScreen> {
       "size_medium": "Medium",
       "size_large": "Large",
       "size_peel_hint": "Grams = without peel. With peel small / medium / large weigh approx. {s} g.",
+      "size_peel_hint2": "Grams = with peel. Without peel small / medium / large are approx. {s} g.",
       "meal_tpl_menu": "Meal (template)",
       "meal_tpl_title": "Meals",
       "meal_tpl_sub": "Ready-made combos. SOL calculates amounts so protein, carbs and fat of this meal fit as closely as possible. Recipes always count as 1 portion.",
@@ -8726,6 +8824,20 @@ class _MainScreenState extends State<MainScreen> {
       ),
       // Werte: USDA FoodData Central „Bananas, raw“ (FDC 173944), pro 100 g
       // essbarer Teil = OHNE Schale. Schale ≈ 36 % des Gesamtgewichts.
+      // Ganze Banane MIT Schale (Schale ≈ 36 %): essbarer Teil × 0,64.
+      Food(
+        name: "Banane (mit Schale)",
+        protein: 0.7,
+        carbs: 14.6,
+        sugar: 7.8,
+        fiber: 1.7,
+        fat: 0.2,
+        category: "Carbs",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        carbKind: "einfach",
+        extraCategories: const ["Obst"],
+      ),
       Food(
         name: "Banane (ohne Schale)",
         protein: 1.1,
@@ -10360,6 +10472,14 @@ class _MainScreenState extends State<MainScreen> {
           preWorkoutCarbKind == "komplex" ? split.komplex : split.einfach;
       return (maxG - current).clamp(0.0, 1e9);
     }
+    if (_fillDayMode) {
+      final g = effectiveMacroGoalsForDay(selectedDayKey);
+      final goal = macro == "protein" ? g.protein : (macro == "carbs" ? g.carbs : g.fat);
+      final eaten = trackedFoods
+          .where((t) => t.dayKey == selectedDayKey)
+          .fold(0.0, (a, t) => a + (macro == "protein" ? t.protein : (macro == "carbs" ? t.carbs : t.fat)));
+      return (goal - eaten).clamp(0.0, 1e9);
+    }
     final r = dynamicMealMacroRangeG(meal, macro);
     final cur = _mealTotals[meal]![macro] ?? 0.0;
     // Bis zur Zielmitte des Bands auffüllen.
@@ -10368,6 +10488,10 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Rest-kcal bis **Obergrenze** des Mahlzeiten-kcal-Bands.
   double? _mealKcalFillGap(String meal) {
+    if (_fillDayMode) {
+      final goal = _dayGoalKcalForOverview();
+      return (goal - _kcalEatenOnDay(selectedDayKey)).clamp(0.0, 1e9);
+    }
     final r = displayMealKcalRangeForUi(meal);
     final cur = _mealTotals[meal]!['calories'] ?? 0.0;
     return ((r.minKcal + r.maxKcal) / 2 - cur).clamp(0.0, 1e9);
@@ -25255,8 +25379,22 @@ class _MainScreenState extends State<MainScreen> {
                       "Gemüse",
                       "Rezepte",
                     ]
-                        .map((e) =>
-                            DropdownMenuItem(value: e, child: Text(_tCat(e))))
+                        .map((e) => DropdownMenuItem(
+                            value: e, child: _ddLine(Text(_tCat(e)))))
+                        .toList(),
+                    selectedItemBuilder: (_) => [
+                      "Alle",
+                      "Carbs",
+                      "Protein",
+                      "Fett",
+                      "Ballaststoffe",
+                      "Obst",
+                      "Gemüse",
+                      "Rezepte",
+                    ]
+                        .map((e) => Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(_tCat(e))))
                         .toList(),
                     onChanged: (val) {
                       if (val == null) return;
@@ -25503,7 +25641,7 @@ class _MainScreenState extends State<MainScreen> {
                               .map(
                                 (f) => DropdownMenuItem(
                                   value: f,
-                                  child: Row(
+                                  child: _ddLine(Row(
                                     children: [
                                       if (_trackAddFoodIsSolGoldPick(
                                         f,
@@ -25534,9 +25672,16 @@ class _MainScreenState extends State<MainScreen> {
                                         ),
                                       ),
                                     ],
-                                  ),
+                                  )),
                                 ),
                               )
+                              .toList(),
+                          selectedItemBuilder: (_) => foods
+                              .map((f) => Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(f.name,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
                               .toList(),
                           onChanged: foods.isEmpty
                               ? null
@@ -26046,7 +26191,7 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        tFmt("size_peel_hint", {
+                        tFmt(fInList.name.contains("mit Schale") ? "size_peel_hint2" : "size_peel_hint", {
                           "s": _kSizePresets[fInList.name]!
                               .map((e) => e.$3.round().toString())
                               .join(" / "),
@@ -26258,6 +26403,7 @@ class _MainScreenState extends State<MainScreen> {
         },
       ),
     ).then((_) {
+      _fillDayMode = false;
       recipePortionCtrl.dispose();
       recipeGramCtrl.dispose();
       advCtrl.dispose();
