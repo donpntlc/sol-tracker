@@ -19212,8 +19212,7 @@ class _MainScreenState extends State<MainScreen> {
                               ),
                               const SizedBox(width: 10),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                child: Row(
                                   children: [
                                     Text(
                                       t("tracking_workout_block_title"),
@@ -19223,43 +19222,14 @@ class _MainScreenState extends State<MainScreen> {
                                         color: wtx.title,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    // Sichtbar machen: dahinter stecken 2 Mahlzeiten.
-                                    Row(
-                                      children: [
-                                        for (final m in const ["Pre-Workout", "Post-Workout"]) ...[
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 8, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(20),
-                                              border: Border.all(
-                                                  color: const Color(0xFFC9A24A)
-                                                      .withValues(alpha: 0.6)),
-                                            ),
-                                            child: Text(
-                                              m == "Pre-Workout" ? "Pre" : "Post",
-                                              style: const TextStyle(
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xFFC9A24A)),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 5),
-                                        ],
-                                        Icon(Icons.chevron_right,
-                                            size: 16, color: wtx.expandIcon),
-                                        Flexible(
-                                          child: Text(
-                                            t("workout_block_open_hint"),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                                fontSize: 10.5,
-                                                color: wtx.expandIcon),
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      "Pre · Post",
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: wtx.expandIcon,
+                                      ),
                                     ),
                                   ],
                                 ),
