@@ -3794,32 +3794,71 @@ class _MainScreenState extends State<MainScreen> {
           }
 
           Widget dd(String value, List<(String, String)> items, ValueChanged<String> on,
-                  {bool enabled = true}) =>
-              Expanded(
+                  {bool enabled = true}) {
+            final label = items.firstWhere((e) => e.$1 == value, orElse: () => items.first).$2;
+            // Menü klappt immer NACH UNTEN auf (unter dem Feld).
+            return Expanded(
+              child: PopupMenuButton<String>(
+                enabled: enabled,
+                position: PopupMenuPosition.under,
+                offset: const Offset(0, 6),
+                color: context.sol.card,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                constraints: const BoxConstraints(minWidth: 180),
+                onSelected: (v) => setL(() => on(v)),
+                itemBuilder: (_) => [
+                  for (var k = 0; k < items.length; k++)
+                    PopupMenuItem<String>(
+                      value: items[k].$1,
+                      height: 46,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: Container(
+                        height: 46,
+                        alignment: Alignment.centerLeft,
+                        decoration: BoxDecoration(
+                          border: k == items.length - 1
+                              ? null
+                              : Border(
+                                  bottom: BorderSide(
+                                      color: Colors.white.withValues(alpha: 0.14),
+                                      width: 0.7),
+                                ),
+                        ),
+                        child: Text(items[k].$2,
+                            style: TextStyle(
+                                fontWeight: items[k].$1 == value
+                                    ? FontWeight.w800
+                                    : FontWeight.w500,
+                                color: items[k].$1 == value ? gold : context.sol.onCard)),
+                      ),
+                    ),
+                ],
                 child: Container(
+                  height: 50,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: muted.withValues(alpha: 0.5), width: 1.4),
                   ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: value,
-                      isExpanded: true,
-                      dropdownColor: context.sol.card,
-                      style: TextStyle(
-                          color: enabled ? context.sol.onCard : muted,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14.5),
-                      items: [
-                        for (final it in items)
-                          DropdownMenuItem(value: it.$1, child: Text(it.$2)),
-                      ],
-                      onChanged: enabled ? (v) => setL(() => on(v!)) : null,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: enabled ? context.sol.onCard : muted,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14.5)),
+                      ),
+                      Icon(Icons.keyboard_arrow_down,
+                          color: enabled ? context.sol.onCard : muted),
+                    ],
                   ),
                 ),
-              );
+              ),
+            );
+          }
 
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
