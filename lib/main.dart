@@ -931,6 +931,8 @@ class _MealMacroLineParse {
 /// Web-App: alles etwas kleiner darstellen (wie "rausgezoomt"), damit es weniger eng wirkt.
 /// Nur im Browser/Homescreen-Web-App aktiv, die iOS-App bleibt unverändert.
 const double kWebUiScale = 0.88;
+/// Gleicht die Web-Verkleinerung aus (für Logos, die gleich gross wie in REPIT sein sollen).
+const double kWebUiScaleEff = kIsWeb ? kWebUiScale : 1.0;
 Widget _webZoom(BuildContext context, Widget? child) {
   if (!kIsWeb || child == null || kWebUiScale == 1.0) return child ?? const SizedBox.shrink();
   const s = kWebUiScale;
@@ -18136,17 +18138,17 @@ class _MainScreenState extends State<MainScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 38,
-                  height: 38,
+                  width: 38 / kWebUiScaleEff,
+                  height: 38 / kWebUiScaleEff,
                   decoration: BoxDecoration(
                     color: const Color(0xFF0A0A0A),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFF2A2418)),
                   ),
                   child: const Icon(Icons.restaurant_rounded,
-                      size: 20, color: Color(0xFFC9A24A)),
+                      size: 20 / kWebUiScaleEff, color: Color(0xFFC9A24A)),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 10 / kWebUiScaleEff),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -18167,22 +18169,27 @@ class _MainScreenState extends State<MainScreen> {
                         ],
                       ),
                       style: TextStyle(
-                        fontSize: 22,
+                        fontSize: 22 / kWebUiScaleEff,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
+                        letterSpacing: 1.55 / kWebUiScaleEff,
                         height: 1.0,
                         color: Theme.of(context).appBarTheme.foregroundColor,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 5 / kWebUiScaleEff),
+                    // Wie REPIT: Slogan darunter. Anderer Tag gewählt → Datum in Gold.
                     Text(
-                      _trackingAppBarDateTitle(),
+                      selectedDayKey == dateKeyFromDate(DateTime.now())
+                          ? "PREP IT. TRACK IT."
+                          : _trackingAppBarDateTitle(),
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
+                        fontSize: 11 / kWebUiScaleEff,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.9 / kWebUiScaleEff,
                         height: 1.0,
-                        color: context.sol.muted,
+                        color: selectedDayKey == dateKeyFromDate(DateTime.now())
+                            ? context.sol.muted
+                            : const Color(0xFFC9A24A),
                       ),
                     ),
                   ],
@@ -18199,18 +18206,22 @@ class _MainScreenState extends State<MainScreen> {
         ),
         actions: [
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _pickDay,
             icon: const Icon(Icons.calendar_month),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _openWeightSheet,
             icon: const Icon(Icons.monitor_weight),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _openDayNoteDialog,
             icon: const Icon(Icons.edit_note),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: t("cheatday_open"),
             onPressed: () => _openCheatDayManager(selectedDayKey),
             icon: Icon(
@@ -18223,6 +18234,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: () => openMealGenerator(),
             icon: const Icon(Icons.auto_fix_high),
           ),
