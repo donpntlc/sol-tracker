@@ -3372,7 +3372,7 @@ class _MainScreenState extends State<MainScreen> {
     } catch (_) {
       last = today;
     }
-    if (today.difference(last).inDays < 7 && g["snapW"] != null) return;
+    if (today.difference(last).inDays < 7) return;
     final avg7 = _avgWeight(today.subtract(const Duration(days: 6)), today);
     if (avg7 == null) return;
     final m = Map<String, dynamic>.from(g);
@@ -3939,13 +3939,25 @@ class _MainScreenState extends State<MainScreen> {
         g["targetWeight"] is num &&
         g["startWeight"] is num) {
       final tw = (g["targetWeight"] as num).toDouble();
-      final sw = (g["startWeight"] as num).toDouble();
-      final nowW = (g["snapW"] is num) ? (g["snapW"] as num).toDouble() : sw;
+      // Start = Wochenschnitt bis zum Startdatum (gleiche Basis wie der
+      // Wochen-Abgleich) — einzelne Tage schwanken zu stark (Wasser).
+      final sw = _avgWeight(start.subtract(const Duration(days: 6)), start) ??
+          (g["startWeight"] as num).toDouble();
+      var snapValid = false;
+      if (g["snapW"] is num && g["snapAt"] != null) {
+        try {
+          snapValid = dateFromKey(g["snapAt"].toString())
+                  .difference(start)
+                  .inDays >=
+              7;
+        } catch (_) {}
+      }
+      final nowW = snapValid ? (g["snapW"] as num).toDouble() : sw;
       final kgTotal = (tw - sw).abs();
       // Täglich: eingesparte kcal seit dem letzten Wochen-Abgleich dazurechnen.
       // Einmal pro Woche wird mit dem echten Wochenschnitt-Gewicht neu kalibriert.
       var since = start;
-      if (g["snapW"] is num && g["snapAt"] != null) {
+      if (snapValid) {
         try {
           since = _dateOnlyLocal(dateFromKey(g["snapAt"].toString()));
         } catch (_) {}
