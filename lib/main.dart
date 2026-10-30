@@ -17547,33 +17547,42 @@ class _MainScreenState extends State<MainScreen> {
                     scale: _kMealCardScale,
                     child: _buildMergedMealSectionCard(mergedMeals),
                   ),
-                if (hasPre && hasPost && !_workoutBlockHiddenByMerge()) ...[
-                  _UniformScale(
-                    scale: _kMealCardScale,
-                    child: _buildWorkoutSectionCard(
-                      sectionCardMargin: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                    ),
-                  ),
-                ] else ...[
-                  if (hasPre && !_isMealMergedLocked("Pre-Workout"))
-                    _UniformScale(
-                      scale: _kMealCardScale,
-                      child: _buildMealSectionCard("Pre-Workout",
-                          sectionCardMargin: nest),
-                    ),
-                  if (hasPost && !_isMealMergedLocked("Post-Workout"))
-                    _UniformScale(
-                      scale: _kMealCardScale,
-                      child: _buildMealSectionCard("Post-Workout",
-                          sectionCardMargin: nest),
-                    ),
-                ],
-                for (final m in core)
-                  if (!_isMealMergedLocked(m))
-                    _UniformScale(
+                // Reihenfolge wie in den Einstellungen; Training-Block dort,
+                // wo Pre-/Post-Workout zuerst steht.
+                ...() {
+                  final combined =
+                      hasPre && hasPost && !_workoutBlockHiddenByMerge();
+                  final out = <Widget>[];
+                  var workoutDone = false;
+                  for (final m in meals) {
+                    if (m == "Snacks") continue;
+                    if (m == "Pre-Workout" || m == "Post-Workout") {
+                      if (combined) {
+                        if (workoutDone) continue;
+                        workoutDone = true;
+                        out.add(_UniformScale(
+                          scale: _kMealCardScale,
+                          child: _buildWorkoutSectionCard(
+                            sectionCardMargin:
+                                const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                          ),
+                        ));
+                        continue;
+                      }
+                    }
+                    if (_isMealMergedLocked(m)) continue;
+                    if (m != "Pre-Workout" &&
+                        m != "Post-Workout" &&
+                        !core.contains(m)) {
+                      continue;
+                    }
+                    out.add(_UniformScale(
                       scale: _kMealCardScale,
                       child: _buildMealSectionCard(m, sectionCardMargin: nest),
-                    ),
+                    ));
+                  }
+                  return out;
+                }(),
               ],
             ),
           ),
