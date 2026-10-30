@@ -17382,7 +17382,46 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_trackingAppBarDateTitle()),
+        // Logo wie bei REPIT: „PREP“ hell + „IT.“ gold, darunter das Datum.
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text.rich(
+              TextSpan(
+                children: [
+                  const TextSpan(text: "PREP"),
+                  TextSpan(
+                    text: "IT.",
+                    style: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.light
+                          ? const Color(0xFF7A5A1E)
+                          : const Color(0xFFC9A24A),
+                    ),
+                  ),
+                ],
+              ),
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+                height: 1.0,
+                color: Theme.of(context).appBarTheme.foregroundColor,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              _trackingAppBarDateTitle(),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                height: 1.0,
+                color: context.sol.muted,
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             onPressed: _pickDay,
