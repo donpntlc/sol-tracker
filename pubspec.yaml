@@ -81,6 +81,7 @@ flutter:
     - assets/images/female_steps_walker.png
     - assets/images/male_steps_walker.png
     - assets/recipes/
+    - assets/foods/
     - assets/bodyfat/
     - assets/intro/hero_generations_male.png
     - assets/intro/hero_generations_female.png

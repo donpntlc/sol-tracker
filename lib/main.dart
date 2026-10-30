@@ -3584,6 +3584,36 @@ class _MainScreenState extends State<MainScreen> {
   static const Color _barOver = Color(0xFFA84A4A); // Bordeaux / Weinrot
   Color get _barMidTick => const Color(0xFFC9A24A);
 
+  /// Lebensmittel-Name → Bild-Datei (nur Dateien, die es wirklich gibt).
+  static const Map<String, String> _kFoodImageSlugs = {
+    // FOOD_IMAGES_START
+    "Haferflocken": "haferflocken",
+    "Banane (mit Schale)": "banane",
+    "Cornflakes (ungesüßt)": "cornflakes",
+    "Kartoffel": "kartoffel",
+    "Grieß-Hafer-Instantbrei (süß, 2–3 min)": "griess_hafer_brei",
+    "Reis": "reis",
+    "Weizengrieß": "weizengriess",
+    "Datteln": "datteln",
+    "Süßkartoffel": "suesskartoffel",
+    "Nudeln (Weizen)": "nudeln",
+    "Banane (ohne Schale)": "banane",
+    "Hähnchen Brust": "haehnchenbrust",
+    "Protein Shake": "protein_shake",
+    "Rindfleisch": "rindfleisch",
+    "Lachs": "lachs",
+    "Eier": "eier",
+    "Seitan": "seitan",
+    "EAAs": "eaas",
+    "Tofu": "tofu",
+    "Käse (fettarm)": "kaese_fettarm",
+    "Nüsse": "nuesse",
+    "Avocado": "avocado",
+    "Olivenöl": "olivenoel",
+    "Kokosöl": "kokosoel",
+    // FOOD_IMAGES_END
+  };
+
   /// Listeneintrag mit feiner, eingerückter Trennlinie unten.
   Widget _ddLine(Widget child) => Container(
         height: 48,
@@ -9198,6 +9228,12 @@ class _MainScreenState extends State<MainScreen> {
     // REZEPTE — krasse Eigenkreationen von DON (s. [_buildSolDefaultRecipeFoods]).
     foodDatabase.addAll(_buildSolDefaultRecipeFoods());
     foodDatabase.addAll(_extraDefaultFoods());
+    // Bilder für Standard-Lebensmittel (assets/foods/<slug>.webp).
+    for (final f in foodDatabase) {
+      if (f.imagePath != null && f.imagePath!.isNotEmpty) continue;
+      final slug = _kFoodImageSlugs[f.name];
+      if (slug != null) f.imagePath = "assets/foods/$slug.webp";
+    }
   }
 
   /// SOL-Standard-Rezepte (auch nach [food]-Merge genutzt, falls je Eintrag fehlt).
