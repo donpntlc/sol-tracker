@@ -18138,17 +18138,17 @@ class _MainScreenState extends State<MainScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 38 / kWebUiScaleEff,
-                  height: 38 / kWebUiScaleEff,
+                  width: 32 / kWebUiScaleEff,
+                  height: 32 / kWebUiScaleEff,
                   decoration: BoxDecoration(
                     color: const Color(0xFF0A0A0A),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(9),
                     border: Border.all(color: const Color(0xFF2A2418)),
                   ),
                   child: const Icon(Icons.restaurant_rounded,
-                      size: 20 / kWebUiScaleEff, color: Color(0xFFC9A24A)),
+                      size: 17 / kWebUiScaleEff, color: Color(0xFFC9A24A)),
                 ),
-                const SizedBox(width: 10 / kWebUiScaleEff),
+                const SizedBox(width: 9 / kWebUiScaleEff),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -18170,21 +18170,21 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       style: TextStyle(
                         fontFamily: "SolLogo",
-                        fontSize: 22 / kWebUiScaleEff,
+                        fontSize: 18 / kWebUiScaleEff,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 1.55 / kWebUiScaleEff,
+                        letterSpacing: 1.25 / kWebUiScaleEff,
                         height: 1.0,
                         color: Theme.of(context).appBarTheme.foregroundColor,
                       ),
                     ),
-                    const SizedBox(height: 5 / kWebUiScaleEff),
+                    const SizedBox(height: 4 / kWebUiScaleEff),
                     // Wie REPIT: Slogan darunter. Anderer Tag gewählt → Datum in Gold.
                     Text(
                       selectedDayKey == dateKeyFromDate(DateTime.now())
                           ? "PREP IT. TRACK IT."
                           : _trackingAppBarDateTitle(),
                       style: TextStyle(
-                        fontSize: 11 / kWebUiScaleEff,
+                        fontSize: 10 / kWebUiScaleEff,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.9 / kWebUiScaleEff,
                         height: 1.0,
