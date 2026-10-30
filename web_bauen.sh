@@ -1,6 +1,7 @@
 #!/bin/bash
 # SOL Tracker Web-App bauen und in Upload-Pakete (<100 Dateien, <25 MB) aufteilen.
 cd "$(dirname "$0")"
+bash scripts/logo_schrift_holen.sh || { echo "LOGO-SCHRIFT FEHLT"; exit 1; }
 flutter build web --release --base-href /sol-tracker/ --no-tree-shake-icons || { echo "BUILD FEHLER"; exit 1; }
 B=build/web; U=build/upload; rm -rf "$U"; mkdir -p "$U/1" "$U/2" "$U/3"
 touch "$B/.nojekyll"

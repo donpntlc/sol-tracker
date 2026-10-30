@@ -18169,6 +18169,7 @@ class _MainScreenState extends State<MainScreen> {
                         ],
                       ),
                       style: TextStyle(
+                        fontFamily: "SolLogo",
                         fontSize: 22 / kWebUiScaleEff,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.55 / kWebUiScaleEff,
