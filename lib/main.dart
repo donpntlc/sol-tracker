@@ -250,18 +250,12 @@ class SolUi extends ThemeExtension<SolUi> {
   }
 }
 
-/// Schriften wie in REPIT (werden beim Bauen in assets/fonts geladen).
-const String kSolBodyFont = 'Manrope';
-const String kSolDisplayFont = 'BarlowCondensed';
-
 ThemeData _buildSolAppThemeData(bool light) {
   final s = light ? SolUi.light : SolUi.dark;
   final b = light ? Brightness.light : Brightness.dark;
   return ThemeData(
     useMaterial3: true,
     brightness: b,
-    // Gleiche Schriften wie REPIT: Manrope für Text, Barlow Condensed für Titel.
-    fontFamily: kSolBodyFont,
     scaffoldBackgroundColor: s.scaffold,
     extensions: <ThemeExtension<dynamic>>[s],
     colorScheme: light
@@ -312,11 +306,9 @@ ThemeData _buildSolAppThemeData(bool light) {
       ),
       centerTitle: false,
       titleTextStyle: TextStyle(
-        fontFamily: kSolDisplayFont,
         color: s.onCard,
-        fontSize: 26,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.2,
+        fontSize: 20,
+        fontWeight: FontWeight.w500,
       ),
       iconTheme: IconThemeData(color: s.onCard),
     ),
@@ -324,17 +316,9 @@ ThemeData _buildSolAppThemeData(bool light) {
       bodyLarge: TextStyle(color: s.onCard),
       bodyMedium: TextStyle(color: s.muted),
       titleLarge: TextStyle(
-        fontFamily: kSolDisplayFont,
         color: s.onCard,
         fontWeight: FontWeight.w700,
-        letterSpacing: 0.4,
       ),
-      headlineSmall: const TextStyle(fontFamily: kSolDisplayFont, fontWeight: FontWeight.w700),
-      headlineMedium: const TextStyle(fontFamily: kSolDisplayFont, fontWeight: FontWeight.w700),
-      headlineLarge: const TextStyle(fontFamily: kSolDisplayFont, fontWeight: FontWeight.w700),
-      displaySmall: const TextStyle(fontFamily: kSolDisplayFont, fontWeight: FontWeight.w700),
-      displayMedium: const TextStyle(fontFamily: kSolDisplayFont, fontWeight: FontWeight.w700),
-      displayLarge: const TextStyle(fontFamily: kSolDisplayFont, fontWeight: FontWeight.w700),
     ),
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
       backgroundColor: s.bottomNav,
@@ -2305,10 +2289,8 @@ class _MainScreenState extends State<MainScreen> {
             Text(
               value,
               style: TextStyle(
-                fontFamily: kSolDisplayFont,
-                fontSize: 25,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.3,
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
                 color: onCard,
               ),
             ),
@@ -2374,10 +2356,8 @@ class _MainScreenState extends State<MainScreen> {
                       Text(
                         _fmtThousands(left.abs()),
                         style: TextStyle(
-                          fontFamily: kSolDisplayFont,
-                          fontSize: 25,
-                          letterSpacing: 0.3,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
                           color: isOverRange ? over : onCard,
                         ),
                       ),
@@ -2430,10 +2410,8 @@ class _MainScreenState extends State<MainScreen> {
                           Text(
                             _fmtThousands(eaten),
                             style: TextStyle(
-                              fontFamily: kSolDisplayFont,
-                              fontSize: 40,
-                              letterSpacing: 0.3,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900,
                               color: onCard,
                               height: 1.0,
                             ),

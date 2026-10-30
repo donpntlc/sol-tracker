@@ -28,9 +28,6 @@ jobs:
       - name: Version festlegen
         run: echo "VER=$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
-      - name: Schriften holen (Barlow Condensed + Manrope)
-        run: bash scripts/schriften_holen.sh
-
       - run: flutter pub get
 
       - name: Bauen
@@ -55,17 +52,6 @@ jobs:
           echo "${GITHUB_SHA}" > sha.txt
           git add -A && git commit -qm "Fehlerlog ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" build-logs
-
-      - name: Schriften im Quellcode sichern (nur beim ersten Mal)
-        shell: bash
-        run: |
-          if [ -n "$(git status --porcelain assets/fonts)" ]; then
-            git config --global user.name "SOL Build"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add assets/fonts
-            git commit -m "Schriften (Barlow Condensed, Manrope) hinzugefügt"
-            git push origin HEAD:source || echo "Schriften nicht gesichert (nicht schlimm)"
-          fi
 
       - name: Veröffentlichen (jede Version in eigenem Ordner, kein Cache-Problem)
         run: |

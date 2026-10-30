@@ -86,30 +86,6 @@ flutter:
     - assets/intro/hero_generations_male.png
     - assets/intro/hero_generations_female.png
 
-  # Schriften wie REPIT. Die Dateien holt scripts/schriften_holen.sh (läuft auch beim Bauen auf GitHub).
-  fonts:
-    - family: Manrope
-      fonts:
-        - asset: assets/fonts/Manrope-Regular.ttf
-        - asset: assets/fonts/Manrope-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Manrope-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Manrope-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Manrope-ExtraBold.ttf
-          weight: 800
-    - family: BarlowCondensed
-      fonts:
-        - asset: assets/fonts/BarlowCondensed-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/BarlowCondensed-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/BarlowCondensed-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/BarlowCondensed-ExtraBold.ttf
-          weight: 800
-
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
