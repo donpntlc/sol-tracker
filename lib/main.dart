@@ -8028,7 +8028,7 @@ class _MainScreenState extends State<MainScreen> {
       "cheatday_active_today": "Heute ist Cheatday aktiv.",
       "cheatday_warning_title": "Sei dir bewusst",
       "cheatday_warning_body":
-          "Sei dir bewusst, was du tust.\n\nEin kontrollierter Cheatday ist okay — solange du zu jedem Moment Herr/Frau deiner Sinne bleibst.\n\nDieser Modus erkauft heutige Freiheit mit Fortschritt der nächsten Tage. Triff die Entscheidung nüchtern, nicht aus dem Affekt.",
+          "Sei dir bewusst, was du tust.\n\nEin kontrollierter Cheatday ist okay — solange du zu jedem Moment {hf} deiner Sinne bleibst.\n\nDieser Modus erkauft heutige Freiheit mit Fortschritt der nächsten Tage. Triff die Entscheidung nüchtern, nicht aus dem Affekt.",
       "cheatday_continue": "Bewusst aktivieren",
       "cheatday_cancel": "Lieber nicht",
       "cheatday_choose_sacrifice": "Wieviele Tage Fortschritt opferst du?",
@@ -9389,6 +9389,10 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   // Übersetzung mit {placeholder} Substitution.
+  /// Text mit „Herr“/„Frau“ passend zum gewählten Geschlecht.
+  String _tHf(String key) => t(key).replaceAll(
+      "{hf}", genderCode == "female" ? "Frau" : "Herr");
+
   String tFmt(String key, Map<String, Object> args) {
     var s = t(key);
     args.forEach((k, v) {
@@ -13840,7 +13844,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         content: SingleChildScrollView(
           child: Text(
-            t("cheatday_warning_body"),
+            _tHf("cheatday_warning_body"),
             style: const TextStyle(
               color: Colors.white,
               height: 1.5,
