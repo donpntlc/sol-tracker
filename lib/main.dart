@@ -3864,7 +3864,7 @@ class _MainScreenState extends State<MainScreen> {
     return m;
   }
 
-  Future<void> _openFoodPicker(String meal) async {
+  Future<void> _openFoodPicker(String meal, {String? fillTag}) async {
     var q = "";
     final usage = _foodUsageCounts();
     String norm(String x) => x
@@ -3975,7 +3975,7 @@ class _MainScreenState extends State<MainScreen> {
                     trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
                     onTap: () async {
-                      final added = await _openAmountDialog(f, meal);
+                      final added = await _openAmountDialog(f, meal, fillTag: fillTag);
                       if (added && ctx.mounted) Navigator.pop(ctx);
                     },
                   );
@@ -4067,7 +4067,9 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                         Expanded(
                           child: Text(
-                            _displayMealName(meal),
+                            fillTag == null
+                                ? _displayMealName(meal)
+                                : "${_displayMealName(meal)} · ${t("picker_fill_hint")}",
                             textAlign: TextAlign.center,
                             style: TextStyle(
                                 fontSize: 18,
@@ -4092,7 +4094,7 @@ class _MainScreenState extends State<MainScreen> {
                             }
                             hit ??= await _showOffPreviewFromOff(fetch);
                             if (hit == null || !ctx.mounted) return;
-                            final added = await _openAmountDialog(hit, meal);
+                            final added = await _openAmountDialog(hit, meal, fillTag: fillTag);
                             if (added && ctx.mounted) Navigator.pop(ctx);
                           },
                         ),
@@ -4283,12 +4285,33 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Menge wählen (Portionen, Gramm, Füllen) → hinzufügen / vormerken. true = hinzugefügt.
-  Future<bool> _openAmountDialog(Food food, String meal) async {
+  Future<bool> _openAmountDialog(Food food, String meal, {String? fillTag}) async {
     final portions = _portionsFor(food);
     final def = _defaultPortion(food);
     final ctrl = TextEditingController(text: def.$2.round().toString());
     double grams() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
     String? fillMsg;
+    // Kommt von einem „… füllen“-Knopf: Menge direkt bis zur Zielmitte setzen.
+    if (fillTag != null) {
+      final (String? mode, String? kind) = switch (fillTag) {
+        "p" => ("protein", null),
+        "c" => ("carbs", null),
+        "f" => ("fat", null),
+        "k" => ("kcal", null),
+        "cP" => ("carbs", "komplex"),
+        "cE" => ("carbs", "einfach"),
+        _ => (null, null),
+      };
+      if (mode != null) {
+        final g = _fillGramsForTarget(food, mode, meal,
+            preWorkoutCarbKind: kind);
+        if (g == null || g <= 0) {
+          fillMsg = t("track_fill_none");
+        } else {
+          ctrl.text = g.round().toString();
+        }
+      }
+    }
     final res = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -7369,6 +7392,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "picker_fill_hint": "Füllen bis Zielmitte",
       "rest_day_label": "Rest Day · KH ½",
       "rest_day_tooltip": "Rest Day (KH in Pre/Post halbieren)",
       "rest_day_on_snack": "Rest Day: KH in Pre- & Post-Workout halbiert (−{g} g KH heute).",
@@ -8542,6 +8566,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "picker_fill_hint": "fill to target",
       "rest_day_label": "Rest day · carbs ½",
       "rest_day_tooltip": "Rest day (halve pre/post carbs)",
       "rest_day_on_snack": "Rest day: pre & post-workout carbs halved (−{g} g carbs today).",
@@ -11344,9 +11369,11 @@ class _MainScreenState extends State<MainScreen> {
       final gDayM = effectiveMacroGoalsForDay(selectedDayKey);
       final dayCarbG = gDayM.carbs;
       if (dayCarbG <= 0.01) return null;
-      final maxG = preWorkoutCarbKind == "komplex"
-          ? dayCarbG * preCxMax / 100.0
-          : dayCarbG * preSiMax / 100.0;
+      // Zielmitte (nicht Maximum).
+      final maxG = (preWorkoutCarbKind == "komplex"
+              ? dayCarbG * (preCxMin + preCxMax) / 200.0
+              : dayCarbG * (preSiMin + preSiMax) / 200.0) *
+          _restCarbFactor("Pre-Workout");
       final split = _mealCarbKindSplitG("Pre-Workout");
       final current =
           preWorkoutCarbKind == "komplex" ? split.komplex : split.einfach;
@@ -11354,7 +11381,9 @@ class _MainScreenState extends State<MainScreen> {
     }
     if (_fillDayMode) {
       final g = effectiveMacroGoalsForDay(selectedDayKey);
-      final goal = macro == "protein" ? g.protein : (macro == "carbs" ? g.carbs : g.fat);
+      final goal = macro == "protein"
+          ? g.protein
+          : (macro == "carbs" ? g.carbs - _restCarbCutG(selectedDayKey) : g.fat);
       final eaten = trackedFoods
           .where((t) => t.dayKey == selectedDayKey)
           .fold(0.0, (a, t) => a + (macro == "protein" ? t.protein : (macro == "carbs" ? t.carbs : t.fat)));
@@ -11362,8 +11391,19 @@ class _MainScreenState extends State<MainScreen> {
     }
     final r = dynamicMealMacroRangeG(meal, macro);
     final cur = _mealTotals[meal]![macro] ?? 0.0;
-    // Bis zur Zielmitte des Bands auffüllen.
-    return ((r.minG + r.maxG) / 2 - cur).clamp(0.0, 1e9);
+    // Bis zur Zielmitte (goldener Strich = eigene Verteilung) auffüllen.
+    final pct = mealMacros[meal]?[macro];
+    double target;
+    if (pct != null) {
+      final gE = effectiveMacroGoalsForDay(selectedDayKey);
+      final goalG = macro == "protein"
+          ? gE.protein
+          : (macro == "carbs" ? gE.carbs : gE.fat);
+      target = goalG * pct / 100.0 * (macro == "carbs" ? _restCarbFactor(meal) : 1.0);
+    } else {
+      target = (r.minG + r.maxG) / 2;
+    }
+    return (target - cur).clamp(0.0, 1e9);
   }
 
   /// Rest-kcal bis **Obergrenze** des Mahlzeiten-kcal-Bands.
@@ -11374,7 +11414,8 @@ class _MainScreenState extends State<MainScreen> {
     }
     final r = displayMealKcalRangeForUi(meal);
     final cur = _mealTotals[meal]!['calories'] ?? 0.0;
-    return ((r.minKcal + r.maxKcal) / 2 - cur).clamp(0.0, 1e9);
+    final center = _mealCenterKcal(meal) ?? (r.minKcal + r.maxKcal) / 2;
+    return (center - cur).clamp(0.0, 1e9);
   }
 
   /// Gramm, sodass [food] ungefähr [gap] g des Ziel-Makros (bzw. kcal) in [meal] deckt.
@@ -11399,7 +11440,6 @@ class _MainScreenState extends State<MainScreen> {
           if (gap == null || gap <= 0) return null;
           return _gramsFromTrackInputDisplay(food, "carbs", gap);
         }
-        return null;
       }
       final gap = _mealMacroFillGapG(meal, macro);
       if (gap == null || gap <= 0) return null;
@@ -26193,11 +26233,12 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Füllen-Knöpfe nutzen den alten Dialog (mit Füll-Logik), sonst neuer Screen.
   void _openAddFlow(String meal) {
-    if (_pendingTrackFillApply != null || _fillDayMode) {
-      _addTrackedFoodImpl(meal);
-    } else {
-      unawaited(_openFoodPicker(meal));
-    }
+    // Auch die Füllen-Knöpfe nutzen jetzt den neuen Screen.
+    final tag = _pendingTrackFillApply;
+    _pendingTrackFillApply = null;
+    unawaited(_openFoodPicker(meal, fillTag: tag).whenComplete(() {
+      _fillDayMode = false;
+    }));
   }
 
   Future<void> _addTrackedFoodAfterLastMealPrompt(String meal) async {
