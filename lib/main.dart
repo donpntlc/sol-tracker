@@ -10313,12 +10313,13 @@ class _MainScreenState extends State<MainScreen> {
           "250 g Magerquark = 1 Portion · für die doppelte Portion: 500 g Magerquark",
           "40 g TK-Beerenmischung (1 Portion) bzw. 80 g (doppelte Portion)",
           "100 ml Wasser (1 Portion) bzw. 200 ml (doppelte Portion)",
-          "Süßungsmittel nach Geschmack",
+          "Gesüßt mit Flüssigsüßungsmittel (nach Geschmack)",
+          "Optional: Honig oder Zucker (separat tracken)",
           "Geheimtipp: Eiswürfel hinzufügen – streckt den Shake, mehr Volumen & Sättigung",
         ],
         instructions: [
           "1 Portion = 250 g Magerquark; alles doppelt wiegen, wenn du 500 g Magerquark nimmst (doppelte Portion).",
-          "TK-Beeren mit Wasser und Süßungsmittel in den Mixer geben.",
+          "TK-Beeren mit Wasser und Flüssigsüßungsmittel in den Mixer geben.",
           "Geheimtipp: Eiswürfel mit in den Mixer – gibt deutlich mehr Volumen und sättigt besser.",
           "Kurz mixen bis cremig.",
           "Magerquark dazugeben und nochmal kurz untermixen — fertig.",
@@ -20111,7 +20112,12 @@ class _MainScreenState extends State<MainScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 6),
                       itemBuilder: (c, i) {
                         final f = items[i];
-                        return Container(
+                        // Antippen → Lebensmittel/Rezept nochmal ansehen.
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _showRecipeInfoDialog(
+                              _foodByName(f.food.name) ?? f.food),
+                          child: Container(
                           padding: const EdgeInsets.fromLTRB(8, 6, 2, 6),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.04),
@@ -20205,6 +20211,7 @@ class _MainScreenState extends State<MainScreen> {
                               ),
                             ],
                           ),
+                        ),
                         );
                       },
                     ),
