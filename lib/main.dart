@@ -4339,7 +4339,33 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Menge wählen (Portionen, Gramm, Füllen) → hinzufügen / vormerken. true = hinzugefügt.
+  /// roh ↔ gekocht: passender Zwilling (z. B. „Reis (roh)“ ↔ „Reis (gekocht)“).
+  Food? _cookedRawSibling(Food f) {
+    final n = f.name;
+    String? other;
+    for (final (a, b) in const [
+      ("(roh)", "(gekocht)"),
+      (", roh)", ", gekocht)"),
+      ("(gekocht)", "(roh)"),
+      (", gekocht)", ", roh)"),
+      (", gebraten)", ", roh)"),
+    ]) {
+      if (n.endsWith(a)) {
+        other = n.substring(0, n.length - a.length) + b;
+        break;
+      }
+    }
+    if (other == null) return null;
+    if (n.endsWith(", roh)") && _foodByName(other) == null) {
+      other = "${n.substring(0, n.length - 6)}, gebraten)";
+    }
+    return _foodByName(other);
+  }
+
+  bool _isRawName(String n) => n.endsWith("(roh)") || n.endsWith(", roh)");
+
   Future<bool> _openAmountDialog(Food food, String meal, {String? fillTag}) async {
+    final sibling = _cookedRawSibling(food);
     final portions = _portionsFor(food);
     final def = _defaultPortion(food);
     final ctrl = TextEditingController(text: def.$2.round().toString());
@@ -4383,7 +4409,35 @@ class _MainScreenState extends State<MainScreen> {
           }
 
           return AlertDialog(
-            title: Text(food.name, style: const TextStyle(fontSize: 18)),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(food.name, style: const TextStyle(fontSize: 18)),
+                if (sibling != null) ...[
+                  const SizedBox(height: 8),
+                  // Direkt umschalten: roh ↔ gekocht (Nährwerte passen sich an).
+                  Row(
+                    children: [
+                      for (final raw in const [true, false])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            visualDensity: VisualDensity.compact,
+                            label: Text(raw ? t("raw_label") : t("cooked_label"),
+                                style: const TextStyle(fontSize: 12.5)),
+                            selected: _isRawName(food.name) == raw,
+                            onSelected: (_) {
+                              if (_isRawName(food.name) != raw) {
+                                Navigator.pop(ctx, "swap");
+                              }
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
             content: SizedBox(
               width: 360,
               child: SingleChildScrollView(
@@ -4468,6 +4522,9 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
     final g = grams();
+    if (res == "swap" && sibling != null && mounted) {
+      return _openAmountDialog(sibling, meal, fillTag: fillTag);
+    }
     if (!mounted || res == null || g <= 0) return false;
     final e = TrackedFood(food: food, grams: g, meal: meal, dayKey: selectedDayKey);
     if (res == "plan") {
@@ -7447,6 +7504,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "raw_label": "Roh",
+      "cooked_label": "Gekocht",
       "meal_pct_intro": "Wie viel % deines Tagesziels in diese Mahlzeit gehen. Ziel = goldener Strich im Balken, Von–Bis = erlaubter Bereich.",
       "meal_pct_free": "noch frei: {p} %",
       "meal_pct_from": "Von",
@@ -7754,16 +7813,16 @@ class _MainScreenState extends State<MainScreen> {
 
       // Filters / database
       "food_database": "Lebensmittel-Datenbank",
-      "db_highlights_title": "SOL — Vorschläge (Top pro Quelle)",
+      "db_highlights_title": "SOL-Vorschläge",
       "db_highlights_collapse_hint": "Tippen zum Anzeigen — Vorschläge & Lesetipps",
       "db_highlights_sub":
-          "Wähle unten beim Typ Diät oder Aufbau. In jeder Vorschlagszeile sind Plätze 1–2 am besten für dieses Ziel, Platz 3 ist neutral (kcal nahe der Mitte), 4–5 eher fürs andere Ziel — trotzdem essbar, nur oft schwerer am Plan zu bleiben. Bei Typ „Alle“: zuerst Diät-Tipps, dann neutral, dann Aufbau-Tipps. Die kleine Zahl = Position (1–5). Bei Protein stehen ggf. Favoriten vorn; Nummern folgen der sichtbaren Reihe.",
-      "db_hl_protein": "Protein (2+2+1 · g / 100 g)",
-      "db_hl_fat": "Fett (2+2+1 · g / 100 g)",
-      "db_hl_fiber": "Ballaststoffe (2+2+1 · g / 100 g)",
-      "db_hl_carbs_c": "Kohlenhydrate — komplex (2+2+1)",
-      "db_hl_carbs_s": "Kohlenhydrate — einfach (2+2+1)",
-      "db_hl_recipes": "Rezepte (Vorschläge, max. 5)",
+          "Antippen zeigt Details. Gold = beste Wahl für dein Ziel (oben Diät oder Aufbau wählen), grau = auch okay. Werte pro 100 g.",
+      "db_hl_protein": "Protein",
+      "db_hl_fat": "Fett",
+      "db_hl_fiber": "Ballaststoffe",
+      "db_hl_carbs_c": "Kohlenhydrate · komplex",
+      "db_hl_carbs_s": "Kohlenhydrate · einfach",
+      "db_hl_recipes": "Rezepte",
       "db_highlights_foot":
           "Gesamtdatenbank unten, nach Quelle & Kategorie filterbar. OBD-Paket: Barcode, Schnell+Name+optional Foto.",
       "db_user_star_label": "Eigener Favorit (dezenter Rahmen)",
@@ -8631,6 +8690,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "raw_label": "Raw",
+      "cooked_label": "Cooked",
       "meal_pct_intro": "How many % of your daily target go into this meal. Target = gold mark on the bar, From–To = allowed range.",
       "meal_pct_free": "still free: {p} %",
       "meal_pct_from": "From",
@@ -8933,16 +8994,16 @@ class _MainScreenState extends State<MainScreen> {
       "type_bulk_full": "Bulk (low volume)",
 
       "food_database": "Food database",
-      "db_highlights_title": "SOL — suggestions (top by source)",
+      "db_highlights_title": "SOL suggestions",
       "db_highlights_collapse_hint": "Tap to show suggestions & how to read the order",
       "db_highlights_sub":
-          "Set Type below to Diet or Bulk. In each row, slots 1–2 are best for that goal, 3 is neutral (kcal near the middle), 4–5 lean to the other goal — still fine to eat, but often harder to hit your focus. With Type set to All: diet picks first, then neutral, then bulk. The small number is position (1–5). For protein, favorites may appear first; numbers follow the visible order left to right.",
-      "db_hl_protein": "Protein (2+2+1 · g / 100 g)",
-      "db_hl_fat": "Fat (2+2+1 · g / 100 g)",
-      "db_hl_fiber": "Fiber (2+2+1 · g / 100 g)",
-      "db_hl_carbs_c": "Carbs — complex (2+2+1)",
-      "db_hl_carbs_s": "Carbs — simple (2+2+1)",
-      "db_hl_recipes": "Recipes (suggestions, max 5)",
+          "Tap for details. Gold = best for your goal (pick Diet or Bulk above), grey = also fine. Values per 100 g.",
+      "db_hl_protein": "Protein",
+      "db_hl_fat": "Fat",
+      "db_hl_fiber": "Fiber",
+      "db_hl_carbs_c": "Carbs · complex",
+      "db_hl_carbs_s": "Carbs · simple",
+      "db_hl_recipes": "Recipes",
       "db_highlights_foot":
           "Full database below; filter by source and category. Barcode: Open Food Facts; quick add: name + optional photo reference.",
       "db_user_star_label": "Your highlight (softer frame)",
@@ -17793,7 +17854,10 @@ class _MainScreenState extends State<MainScreen> {
         isSolTop ? _DbPcfFrameKind.solGold : _DbPcfFrameKind.gray;
     return SizedBox(
       width: 178,
-      child: _dbPcfFrameForKind(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _showRecipeInfoDialog(f),
+        child: _dbPcfFrameForKind(
         frameKind,
         padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
         child: Column(
@@ -17848,6 +17912,7 @@ class _MainScreenState extends State<MainScreen> {
             _foodPcfRow(f, compact: true),
           ],
         ),
+      ),
       ),
     );
   }
