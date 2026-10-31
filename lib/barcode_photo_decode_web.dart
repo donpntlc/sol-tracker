@@ -120,14 +120,14 @@ window.solLiveScan = function (L) {
     v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
     ov.appendChild(v);
     var shade = document.createElement('div');
-    shade.style.cssText = 'position:absolute;left:8%;right:8%;top:38%;height:22%;border:3px solid #C9A24A;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)';
+    shade.style.cssText = 'position:absolute;left:7%;right:7%;top:30%;height:34%;border:3px solid #C9A24A;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)';
     var line = document.createElement('div');
     line.style.cssText = 'position:absolute;left:6%;right:6%;top:50%;height:2px;background:rgba(201,162,74,.8)';
     shade.appendChild(line);
     ov.appendChild(shade);
     var tip = document.createElement('div');
     tip.textContent = L.hint;
-    tip.style.cssText = 'position:absolute;top:calc(38% - 56px);left:0;right:0;text-align:center;color:#fff;font-size:17px;font-weight:600';
+    tip.style.cssText = 'position:absolute;top:calc(30% - 56px);left:0;right:0;text-align:center;color:#fff;font-size:17px;font-weight:600';
     ov.appendChild(tip);
     var bar = document.createElement('div');
     bar.style.cssText = 'position:absolute;bottom:calc(36px + env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:12px';
@@ -152,11 +152,11 @@ window.solLiveScan = function (L) {
     v.srcObject = stream;
     try { await v.play(); } catch (e) {}
     var det = null;
-    try { if ('BarcodeDetector' in window) det = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] }); } catch (e) { det = null; }
+    try { if ('BarcodeDetector' in window) det = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code'] }); } catch (e) { det = null; }
     var hints = null, reader = null;
     if (Z) {
       hints = new Map();
-      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.CODE_128]);
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.QR_CODE]);
       reader = new Z.MultiFormatReader(); reader.setHints(hints);
     }
     var c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
@@ -170,12 +170,22 @@ window.solLiveScan = function (L) {
             var r0 = await det.detect(v);
             if (r0 && r0.length && r0[0].rawValue) { try { navigator.vibrate && navigator.vibrate(80); } catch (e) {} return finish(r0[0].rawValue); }
           } else if (reader) {
-            // Mittlerer Streifen (wo der Rahmen ist), abwechselnd groß/klein.
-            var f = (n++ % 2) ? 0.9 : 0.65;
-            var cw = W * f, ch = Math.min(H, cw * 0.45), cx = (W - cw) / 2, cy = (H - ch) / 2;
-            var k = Math.min(1, 1000 / cw);
-            c.width = Math.round(cw * k); c.height = Math.round(ch * k);
-            ctx.drawImage(v, cx, cy, cw, ch, 0, 0, c.width, c.height);
+            // Abwechselnd: großer Bereich, ganzes Bild, gedreht (Barcode hochkant), Mitte.
+            var mode = n++ % 4;
+            var f = mode === 3 ? 0.6 : (mode === 0 ? 0.9 : 1.0);
+            var cw = W * f, ch = (mode === 0 || mode === 3) ? Math.min(H, cw * 0.8) : H;
+            var cx = (W - cw) / 2, cy = (H - ch) / 2;
+            var k = Math.min(1, 1100 / Math.max(cw, ch));
+            var w2 = Math.round(cw * k), h2 = Math.round(ch * k);
+            if (mode === 2) {
+              c.width = h2; c.height = w2; ctx.setTransform(1, 0, 0, 1, 0, 0);
+              ctx.translate(h2, 0); ctx.rotate(Math.PI / 2);
+              ctx.drawImage(v, cx, cy, cw, ch, 0, 0, w2, h2);
+              ctx.setTransform(1, 0, 0, 1, 0, 0);
+            } else {
+              c.width = w2; c.height = h2;
+              ctx.drawImage(v, cx, cy, cw, ch, 0, 0, w2, h2);
+            }
             var bins = [Z.HybridBinarizer, Z.GlobalHistogramBinarizer];
             for (var i = 0; i < bins.length; i++) {
               try {
@@ -187,7 +197,7 @@ window.solLiveScan = function (L) {
           }
         } catch (e) {}
       }
-      timer = setTimeout(tick, 120);
+      timer = setTimeout(tick, 60);
     }
     tick();
   });

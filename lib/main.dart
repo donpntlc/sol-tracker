@@ -2539,8 +2539,13 @@ class _MainScreenState extends State<MainScreen> {
                       track: muted.withValues(alpha: 0.22),
                       color: isOverRange ? _barOver : (inRange ? _barIn : _barUnder),
                     ),
-                    child: Align(
-                      alignment: const Alignment(0, 0.05),
+                    // Zahl genau in der Kreismitte (Kreis-Mittelpunkt = halbe Breite).
+                    child: Stack(
+                      children: [
+                        Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 75 - 17,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -2560,6 +2565,8 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                         ],
                       ),
+                    ),
+                      ],
                     ),
                   ),
                 ),
