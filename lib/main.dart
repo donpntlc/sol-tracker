@@ -15824,10 +15824,11 @@ class _MainScreenState extends State<MainScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(14),
+                              color: const Color(0xFFC9A24A).withValues(
+                                  alpha: _personalRatingFiltersActive() ? 0.20 : 0.10),
                               border: Border.all(
-                                  color: _personalRatingFiltersActive()
-                                      ? const Color(0xFFC9A24A)
-                                      : context.sol.muted.withValues(alpha: 0.5),
+                                  color: const Color(0xFFC9A24A).withValues(
+                                      alpha: _personalRatingFiltersActive() ? 1.0 : 0.35),
                                   width: 1.4),
                             ),
                             child: Row(
@@ -15835,9 +15836,7 @@ class _MainScreenState extends State<MainScreen> {
                                 Icon(
                                   _personalRatingFiltersActive() ? Icons.star : Icons.star_outline,
                                   size: 18,
-                                  color: _personalRatingFiltersActive()
-                                      ? const Color(0xFFC9A24A)
-                                      : context.sol.muted,
+                                  color: const Color(0xFFC9A24A),
                                 ),
                                 const SizedBox(width: 6),
                                 Expanded(
@@ -15994,8 +15993,9 @@ class _MainScreenState extends State<MainScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
+            color: gold.withValues(alpha: active ? 0.20 : 0.10),
             border: Border.all(
-                color: active ? gold : muted.withValues(alpha: 0.5), width: 1.4),
+                color: gold.withValues(alpha: active ? 1.0 : 0.35), width: 1.4),
           ),
           child: Row(
             children: [
@@ -16008,7 +16008,7 @@ class _MainScreenState extends State<MainScreen> {
                         maxLines: 1,
                         style: TextStyle(
                             fontSize: 10.5,
-                            color: active ? gold : muted,
+                            color: gold.withValues(alpha: active ? 1.0 : 0.85),
                             fontWeight: FontWeight.w600)),
                     Text(label,
                         maxLines: 1,
