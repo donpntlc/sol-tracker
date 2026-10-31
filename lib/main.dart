@@ -1794,6 +1794,62 @@ class _MainScreenState extends State<MainScreen> {
   String? _pendingTrackFillApply;
   /// Füllen bis zur Tages-Zielmitte (statt Mahlzeit) — aus der Kalorien-Karte.
   bool _fillDayMode = false;
+  /// Über „Tag auffüllen“ hinzugefügt → automatisch auf offene Mahlzeiten verteilen.
+  bool _dayAddMode = false;
+
+  /// Verteilt [grams] von [food] der Reihe nach: offene Mahlzeit bis Zielmitte
+  /// auffüllen, Rest in die nächste (… → Abendessen → Snacks).
+  void _distributeDayAdd(Food food, double grams) {
+    _updateMealTotals();
+    final order = [
+      ...meals.where((m) => m != "Snacks" && !_isMealMergedLocked(m)),
+      if (meals.contains("Snacks")) "Snacks",
+    ];
+    // Start: letzte Mahlzeit (ohne Snacks), in der heute schon etwas steht.
+    var start = 0;
+    for (var i = 0; i < order.length; i++) {
+      if (order[i] == "Snacks") continue;
+      if (trackedFoods.any((t) => t.dayKey == selectedDayKey && t.meal == order[i])) {
+        start = i;
+      }
+    }
+    final targets = order.sublist(start);
+    final kcalPerG = food.calories / 100.0;
+    var leftG = grams;
+    final parts = <String, double>{};
+    if (kcalPerG > 0.001) {
+      for (final m in targets) {
+        if (leftG <= 0.05) break;
+        final cap = (_mealCenterKcal(m) ?? 0) - (_mealTotals[m]?['calories'] ?? 0);
+        if (cap <= 1) continue;
+        final g = math.min(leftG, cap / kcalPerG);
+        parts[m] = (parts[m] ?? 0) + g;
+        leftG -= g;
+      }
+    }
+    if (leftG > 0.05) {
+      final last = targets.isNotEmpty ? targets.last : meals.last;
+      parts[last] = (parts[last] ?? 0) + leftG;
+    }
+    setState(() {
+      parts.forEach((m, g) {
+        final r = (g * 10).roundToDouble() / 10;
+        if (r > 0) {
+          trackedFoods.add(TrackedFood(
+              food: food, grams: r, meal: m, dayKey: selectedDayKey));
+        }
+      });
+    });
+    if (parts.length > 1 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tFmt("day_fill_split_snack", {
+          "list": parts.entries
+              .map((e) => "${_displayMealName(e.key)} ${e.value.round()} g")
+              .join(" · ")
+        })),
+      ));
+    }
+  }
 
   // Basis-Verteilung für den Performance-Endpunkt (Summe = 100 pro Makro)
   static const Map<String, Map<String, double>> _performanceMealMacros = {
@@ -2178,6 +2234,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
           onPressed: () {
             _fillDayMode = code != "add";
+            _dayAddMode = true;
             _pendingTrackFillApply = code == "add" ? null : code;
             addTrackedFood(target);
           },
@@ -2190,9 +2247,18 @@ class _MainScreenState extends State<MainScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            tFmt("day_fill_title", {"m": _displayMealName(target)}),
+            t("day_fill_title2"),
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: context.sol.muted),
+            style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFC9A24A)),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            t("day_fill_explain"),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11.5, color: context.sol.muted, height: 1.35),
           ),
           Wrap(
             alignment: WrapAlignment.center,
@@ -2515,7 +2581,7 @@ class _MainScreenState extends State<MainScreen> {
                   style: TextStyle(fontSize: 12.5, color: muted),
                 ),
               ),
-            if (_macroDetailsExpanded && _workoutTrackedToday) _dayFillButtons(),
+            if (_macroDetailsExpanded) _dayFillButtons(),
           ],
         ),
       ),
@@ -4532,7 +4598,11 @@ class _MainScreenState extends State<MainScreen> {
       _savePlannedFoods();
       return true;
     }
-    setState(() => trackedFoods.add(e));
+    if (_dayAddMode) {
+      _distributeDayAdd(food, g);
+    } else {
+      setState(() => trackedFoods.add(e));
+    }
     _updateMealTotals();
     _saveAppState();
     _showBlessing();
@@ -7146,6 +7216,8 @@ class _MainScreenState extends State<MainScreen> {
           }
         } catch (_) {}
       }
+      // Gesamtmahlzeit gibt es nicht mehr → alte Zusammenlegungen auflösen.
+      _mergedMealsByDay.clear();
 
       final shopRaw = prefs.getString(_kShoppingListsKey);
       if (shopRaw != null && shopRaw.isNotEmpty) {
@@ -7644,6 +7716,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "day_fill_title2": "Tag auffüllen",
+      "day_fill_explain": "Einfach weiter tracken – wird automatisch verteilt: zuerst die angefangene Mahlzeit bis zur Zielmitte auffüllen, der Rest geht in die nächste (z. B. Post-Workout → Hauptmahlzeit → Abendessen → Snacks).",
+      "day_fill_split_snack": "Verteilt: {list}",
       "bal_today": "Heute",
       "bal_eaten": "gegessen",
       "bal_target_range": "Zielbereich kcal",
@@ -8841,6 +8916,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "day_fill_title2": "Fill the day",
+      "day_fill_explain": "Just keep tracking – it's split automatically: first the started meal up to its target, the rest goes to the next one (e.g. post-workout → main meal → dinner → snacks).",
+      "day_fill_split_snack": "Split: {list}",
       "bal_today": "Today",
       "bal_eaten": "eaten",
       "bal_target_range": "target range kcal",
@@ -18732,7 +18810,8 @@ class _MainScreenState extends State<MainScreen> {
             titleTrailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_dayOverviewOpen)
+                // Gesamtmahlzeit ersetzt durch „Tag auffüllen“ in der Tagesübersicht.
+                if (_dayOverviewOpen && false)
                   OutlinedButton.icon(
                     onPressed: _showKcalMergeOverviewDialog,
                     style: OutlinedButton.styleFrom(
@@ -26370,6 +26449,7 @@ class _MainScreenState extends State<MainScreen> {
     _pendingTrackFillApply = null;
     unawaited(_openFoodPicker(meal, fillTag: tag).whenComplete(() {
       _fillDayMode = false;
+      _dayAddMode = false;
     }));
   }
 
