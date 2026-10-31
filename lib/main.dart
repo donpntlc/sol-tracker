@@ -7408,6 +7408,18 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _saveAppState() async {
     final prefs = await SharedPreferences.getInstance();
+    // SOL-GYM „Gesamt“ liest den Bedarf von hier (gleiche Rechnung wie PREPIT).
+    try {
+      await prefs.setString(
+        "sol_gym_bridge_v1",
+        jsonEncode({
+          "maint": _maintenanceKcalFromBody().round(),
+          "goal": goalCalories.round(),
+          "mode": nutritionMode,
+          "at": dateKeyFromDate(DateTime.now()),
+        }),
+      );
+    } catch (_) {}
     await prefs.setString(
       _kFoodsKey,
       jsonEncode(foodDatabase.map((f) => f.toMap()).toList()),
