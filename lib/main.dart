@@ -4194,7 +4194,7 @@ class _MainScreenState extends State<MainScreen> {
                             Food? hit;
                             if (fetch.barcode.isNotEmpty) {
                               for (final f in foodDatabase) {
-                                if (f.offBarcode == fetch.barcode) {
+                                if (_sameBarcode(f.offBarcode, fetch.barcode)) {
                                   hit = f;
                                   break;
                                 }
@@ -4405,6 +4405,13 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Menge wählen (Portionen, Gramm, Füllen) → hinzufügen / vormerken. true = hinzugefügt.
+  /// Barcodes gleich? (führende Nullen egal: UPC-A ↔ EAN-13)
+  bool _sameBarcode(String? a, String? b) {
+    if (a == null || b == null || a.isEmpty || b.isEmpty) return false;
+    String n(String x) => x.replaceAll(RegExp(r'[^0-9]'), '').replaceFirst(RegExp(r'^0+'), '');
+    return n(a) == n(b);
+  }
+
   /// roh ↔ gekocht: passender Zwilling (z. B. „Reis (roh)“ ↔ „Reis (gekocht)“).
   Food? _cookedRawSibling(Food f) {
     final n = f.name;
@@ -7716,6 +7723,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "barcode_linked_existing": "Barcode mit „{n}“ verknüpft – wird beim nächsten Scan direkt erkannt.",
       "barcode_live_hint": "Barcode in den Rahmen halten",
       "barcode_live_other": "Foto / eintippen",
       "barcode_live_denied": "Kein Kamerazugriff – unten „Foto / eintippen“ nutzen oder Kamera in den Einstellungen erlauben.",
@@ -8919,6 +8927,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "barcode_linked_existing": "Barcode linked to “{n}” – recognised directly next time.",
       "barcode_live_hint": "Hold the barcode inside the frame",
       "barcode_live_other": "Photo / type",
       "barcode_live_denied": "No camera access – use “Photo / type” below or allow the camera in settings.",
@@ -16826,7 +16835,7 @@ class _MainScreenState extends State<MainScreen> {
     final code = fetch.barcode;
     Food? hit;
     for (final f in foodDatabase) {
-      if (code.isNotEmpty && f.offBarcode == code) {
+      if (code.isNotEmpty && _sameBarcode(f.offBarcode, code)) {
         hit = f;
         break;
       }
@@ -17304,6 +17313,20 @@ class _MainScreenState extends State<MainScreen> {
                   return;
                 }
                 final byName = _findUserFoodByNormalizedName(nCtrl.text.trim());
+                // Gleiches Produkt schon da, aber ohne Barcode → einfach verknüpfen.
+                if (byName != null &&
+                    r.barcode.isNotEmpty &&
+                    (byName.offBarcode == null || byName.offBarcode!.isEmpty)) {
+                  setState(() => byName.offBarcode = r.barcode);
+                  _saveAppState();
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                        content: Text(tFmt("barcode_linked_existing",
+                            {"n": byName.name}))));
+                    Navigator.pop(ctx, byName);
+                  }
+                  return;
+                }
                 if (byName != null) {
                   if (!await _confirmDuplicateUserFoodName(byName)) {
                     return;
@@ -18205,7 +18228,7 @@ class _MainScreenState extends State<MainScreen> {
   Food? _findUserFoodByBarcode(String code) {
     if (code.isEmpty) return null;
     for (final f in foodDatabase) {
-      if (!f.isDefault && f.offBarcode == code) {
+      if (!f.isDefault && _sameBarcode(f.offBarcode, code)) {
         return f;
       }
     }
@@ -18216,7 +18239,7 @@ class _MainScreenState extends State<MainScreen> {
   Food? _findAnyFoodByBarcodeInDatabase(String code) {
     if (code.isEmpty) return null;
     for (final f in foodDatabase) {
-      if (f.offBarcode == code) {
+      if (_sameBarcode(f.offBarcode, code)) {
         return f;
       }
     }
@@ -27096,7 +27119,7 @@ class _MainScreenState extends State<MainScreen> {
                             final code = fetch.barcode;
                             Food? hit;
                             for (final f in foodDatabase) {
-                              if (code.isNotEmpty && f.offBarcode == code) {
+                              if (code.isNotEmpty && _sameBarcode(f.offBarcode, code)) {
                                 hit = f;
                                 break;
                               }
