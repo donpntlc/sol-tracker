@@ -3865,7 +3865,7 @@ class _MainScreenState extends State<MainScreen> {
   String _pickerCat = "Alle";
   String _pickerMode = "Alle"; // Alle | Diät | Aufbau
   String _pickerSort = "freq"; // freq | az | kcalUp | kcalDown | macroDown
-  bool _pickerPer100 = false; // false = Portion/Menge, true = pro 100 g
+  bool _pickerPer100 = true; // false = Portion/Menge, true = pro 100 g
 
   Map<String, int> _foodUsageCounts() {
     final m = <String, int>{};
@@ -3893,6 +3893,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _openFoodPicker(String meal, {String? fillTag}) async {
+    _pickerPer100 = true; // beim Öffnen immer pro 100 g
     var q = "";
     final usage = _foodUsageCounts();
     String norm(String x) => x
@@ -19876,7 +19877,10 @@ class _MainScreenState extends State<MainScreen> {
               initialChildSize: 0.78,
               minChildSize: 0.38,
               maxChildSize: 0.94,
-              builder: (ctx, scrollController) {
+              // Live: jede Änderung (hinzufügen, löschen, bearbeiten) sofort zeigen.
+              builder: (ctx, scrollController) => ValueListenableBuilder<int>(
+                valueListenable: _liveRev,
+                builder: (ctx, _, __) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -19953,7 +19957,7 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ],
                 );
-              },
+              }),
             );
           },
         );
