@@ -4037,12 +4037,26 @@ class _MainScreenState extends State<MainScreen> {
         _ => f.calories,
       };
 
-  /// Diät: geringste Dichte oben · Aufbau: höchste Dichte oben.
+  /// Diät: wenigste kcal pro g Makro oben (bei Gleichstand weniger kcal) ·
+  /// Aufbau: meiste Makros pro 100 g oben. Ohne Makro-Kategorie: nach kcal.
   int _densityCompare(Food a, Food b, String cat, String mode) {
-    final c = _densityFor(a, cat).compareTo(_densityFor(b, cat));
-    if (c != 0) return mode == "Aufbau" ? -c : c;
+    final hasMacro = const ["Carbs", "Protein", "Fett", "Ballaststoffe"].contains(cat);
+    if (mode == "Diät" && hasMacro) {
+      double r(Food x) {
+        final m = _densityFor(x, cat);
+        return m >= 1 ? (x.calories / m * 10).roundToDouble() : 1e9 + x.calories;
+      }
+      final c = r(a).compareTo(r(b));
+      if (c != 0) return c;
+      final k = a.calories.compareTo(b.calories);
+      if (k != 0) return k;
+    } else {
+      final c = _densityFor(a, cat).compareTo(_densityFor(b, cat));
+      if (c != 0) return mode == "Aufbau" ? -c : c;
+    }
     return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   }
+
 
   Future<void> _openFoodPicker(String meal, {String? fillTag}) async {
     _pickerPer100 = true; // beim Öffnen immer pro 100 g
@@ -4147,8 +4161,12 @@ class _MainScreenState extends State<MainScreen> {
                   final m = macroOf(b).compareTo(macroOf(a));
                   return m != 0 ? m : byName(a, b);
                 case "macroUp":
-                  final m2 = kcalPerMacro(a).compareTo(kcalPerMacro(b));
-                  return m2 != 0 ? m2 : byName(a, b);
+                  // Gleich gute Quelle (auf 0,1 kcal/g gerundet) → weniger kcal / 100 g zuerst.
+                  double r(Food x) => (kcalPerMacro(x) * 10).roundToDouble();
+                  final m2 = r(a).compareTo(r(b));
+                  if (m2 != 0) return m2;
+                  final k2 = a.calories.compareTo(b.calories);
+                  return k2 != 0 ? k2 : byName(a, b);
                 default:
                   final u = (usage[b.name] ?? 0).compareTo(usage[a.name] ?? 0);
                   return u != 0 ? u : byName(a, b);
@@ -16550,8 +16568,8 @@ class _MainScreenState extends State<MainScreen> {
       final ma = dbMacro(a), mb = dbMacro(b);
       if (databaseTypeFilter == "Diät" && ma != null && mb != null) {
         // Diät + Quelle gewählt: wenigste kcal pro 1 g dieses Makros oben.
-        final ka = ma >= 1 ? a.calories / ma : 1e9 + a.calories;
-        final kb = mb >= 1 ? b.calories / mb : 1e9 + b.calories;
+        final ka = ma >= 1 ? (a.calories / ma * 10).roundToDouble() : 1e9 + a.calories;
+        final kb = mb >= 1 ? (b.calories / mb * 10).roundToDouble() : 1e9 + b.calories;
         final c = ka.compareTo(kb);
         if (c != 0) return c;
       }
