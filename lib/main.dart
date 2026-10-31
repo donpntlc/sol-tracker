@@ -5159,6 +5159,141 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// Verlauf (Gewicht seit Phasenstart, mind. 4 Wochen) + Plan-Linie bis Ziel.
+  Widget _phaseGoalChart({required double target, DateTime? eta}) {
+    const gold = Color(0xFFC9A24A);
+    final muted = context.sol.muted;
+    final today = _dateOnlyLocal(DateTime.now());
+    var from = today.subtract(const Duration(days: 28));
+    final st = phaseGoal?["start"];
+    if (st != null) {
+      try {
+        final d = _dateOnlyLocal(dateFromKey(st.toString()));
+        if (d.isBefore(from)) from = d;
+      } catch (_) {}
+    }
+    final pts = <MapEntry<DateTime, double>>[];
+    weightHistory.forEach((k, v) {
+      try {
+        final d = dateFromKey(k);
+        if (!d.isBefore(from) && !d.isAfter(today)) pts.add(MapEntry(d, v.kg));
+      } catch (_) {}
+    });
+    pts.sort((a, b) => a.key.compareTo(b.key));
+    if (pts.isEmpty) return const SizedBox.shrink();
+    final first = pts.first.key;
+    double x(DateTime d) => d.difference(first).inDays.toDouble();
+    final hist = [for (final p in pts) FlSpot(x(p.key), p.value)];
+    final cur = currentWeightKg;
+    final end = eta ?? today;
+    final plan = [FlSpot(x(today), cur), FlSpot(x(end), target)];
+    final ys = [...pts.map((e) => e.value), target, cur];
+    final minY = (ys.reduce(math.min) - 1).floorToDouble();
+    final maxY = (ys.reduce(math.max) + 1).ceilToDouble();
+    final maxX = math.max(1.0, x(end));
+    String dl(DateTime d) => "${d.day}.${d.month}.";
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 10, 12, 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: muted.withValues(alpha: 0.25)),
+      ),
+      child: SizedBox(
+        height: 150,
+        child: LineChart(
+          LineChartData(
+            minX: 0,
+            maxX: maxX,
+            minY: minY,
+            maxY: maxY,
+            lineTouchData: const LineTouchData(enabled: false),
+            borderData: FlBorderData(show: false),
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              horizontalInterval: ((maxY - minY) / 3).clamp(0.5, 100),
+              getDrawingHorizontalLine: (_) =>
+                  FlLine(color: muted.withValues(alpha: 0.15), strokeWidth: 1),
+            ),
+            titlesData: FlTitlesData(
+              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 34,
+                  interval: ((maxY - minY) / 3).clamp(0.5, 100),
+                  getTitlesWidget: (v, m) => SideTitleWidget(
+                    meta: m,
+                    space: 4,
+                    child: Text(v.toStringAsFixed(0),
+                        style: TextStyle(color: muted, fontSize: 10)),
+                  ),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 20,
+                  interval: maxX,
+                  getTitlesWidget: (v, m) => SideTitleWidget(
+                    meta: m,
+                    space: 4,
+                    child: Text(dl(first.add(Duration(days: v.round()))),
+                        style: TextStyle(color: muted, fontSize: 10)),
+                  ),
+                ),
+              ),
+            ),
+            extraLinesData: ExtraLinesData(horizontalLines: [
+              HorizontalLine(
+                y: target,
+                color: gold.withValues(alpha: 0.8),
+                strokeWidth: 1.2,
+                dashArray: const [6, 5],
+                label: HorizontalLineLabel(
+                  show: true,
+                  alignment: Alignment.topLeft,
+                  style: const TextStyle(
+                      color: gold, fontSize: 10.5, fontWeight: FontWeight.w700),
+                  labelResolver: (_) => "${t("ring_goal")} ${_fmtKgGoal(target)} kg",
+                ),
+              ),
+            ]),
+            lineBarsData: [
+              // Plan: heute → Ziel (gestrichelt)
+              LineChartBarData(
+                spots: plan,
+                color: muted.withValues(alpha: 0.8),
+                barWidth: 1.6,
+                dashArray: const [4, 4],
+                dotData: FlDotData(
+                  show: true,
+                  checkToShowDot: (s, d) => s.x == plan.last.x,
+                  getDotPainter: (s, p, d, i) => FlDotCirclePainter(
+                      radius: 3, color: gold, strokeWidth: 0),
+                ),
+              ),
+              // Verlauf (echte Messungen)
+              LineChartBarData(
+                spots: hist,
+                color: gold,
+                barWidth: 2.2,
+                dotData: FlDotData(
+                  show: true,
+                  checkToShowDot: (s, d) => s.x == hist.last.x,
+                  getDotPainter: (s, p, d, i) => FlDotCirclePainter(
+                      radius: 3.5, color: gold, strokeWidth: 0),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openPhaseGoalDialog() async {
     final g = phaseGoal;
     final curW = currentWeightKg;
@@ -5212,10 +5347,12 @@ class _MainScreenState extends State<MainScreen> {
           }
           String preview = "";
           String warn = "";
+          DateTime? etaForChart;
           if (kg >= 0.1 && kc > 0) {
             final total = kg * 7000;
             final days = (total / kc).ceil();
             final eta = today.add(Duration(days: days));
+            etaForChart = eta;
             preview = tFmt("phase_goal_preview2", {
               "dir": bulk ? "+" : "−",
               "kg": _fmtKgGoal(kg),
@@ -5268,7 +5405,10 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       onChanged: (_) => setL(() {}),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                    // Kleiner Chart: bisheriger Verlauf + geplanter Weg zum Ziel.
+                    _phaseGoalChart(target: tw, eta: etaForChart),
+                    const SizedBox(height: 12),
                     Text(t("phase_goal_tempo"),
                         style: const TextStyle(
                             fontSize: 12,
