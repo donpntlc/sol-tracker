@@ -19654,8 +19654,6 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _aggressiveModeStrip()),
           if (phaseGoal != null)
             SliverToBoxAdapter(child: _phaseGoalStrip()),
-          if (_showStepsCard)
-            SliverToBoxAdapter(child: _cutDayStepsCard()),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
@@ -19795,6 +19793,8 @@ class _MainScreenState extends State<MainScreen> {
           ),
             ),
           ),
+          if (_showStepsCard)
+            SliverToBoxAdapter(child: _cutDayStepsCard()),
           if (overviewRingStyle)
             SliverToBoxAdapter(
               child: Padding(
