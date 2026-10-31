@@ -7447,6 +7447,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_pct_intro": "Wie viel % deines Tagesziels in diese Mahlzeit gehen. Ziel = goldener Strich im Balken, Von–Bis = erlaubter Bereich.",
+      "meal_pct_free": "noch frei: {p} %",
+      "meal_pct_from": "Von",
+      "meal_pct_to": "Bis",
+      "meal_pct_target": "Ziel",
+      "meal_pct_kcal_target": "ZIEL DIESER MAHLZEIT",
+      "meal_pct_invalid": "{m}: Von ≤ Ziel ≤ Bis (0–100 %) prüfen.",
       "picker_sort_macro_up": "Wenigste KH/P/F (Diät)",
       "tracked_total_label": "Gesamt",
       "tracked_items_label": "Einzeln ({n})",
@@ -8624,6 +8631,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_pct_intro": "How many % of your daily target go into this meal. Target = gold mark on the bar, From–To = allowed range.",
+      "meal_pct_free": "still free: {p} %",
+      "meal_pct_from": "From",
+      "meal_pct_to": "To",
+      "meal_pct_target": "Target",
+      "meal_pct_kcal_target": "MEAL TARGET",
+      "meal_pct_invalid": "{m}: check From ≤ Target ≤ To (0–100 %).",
       "picker_sort_macro_up": "Fewest C/P/F (diet)",
       "tracked_total_label": "Total",
       "tracked_items_label": "Items ({n})",
@@ -22177,482 +22191,271 @@ class _MainScreenState extends State<MainScreen> {
 
   void editMealPercent(String meal) {
     _fillMissingMealDayMacroBandEntries();
-
     final gE0 = effectiveMacroGoalsForDay(selectedDayKey);
-    final gP = gE0.protein;
-    final gC = gE0.carbs;
-    final gF = gE0.fat;
+    const macros = ["protein", "carbs", "fat"];
+    double dayG(String m) =>
+        m == "protein" ? gE0.protein : (m == "carbs" ? gE0.carbs : gE0.fat);
+    String fmt(double x) =>
+        (x - x.roundToDouble()).abs() < 0.05 ? x.round().toString() : x.toStringAsFixed(1);
+    double? parse(String x) => double.tryParse(x.trim().replaceAll(",", "."));
 
-    final p = TextEditingController(
-      text: _initMealMacroInputLine(meal, "protein", gGoal: gP),
-    );
-    final c = TextEditingController(
-      text: _initMealMacroInputLine(meal, "carbs", gGoal: gC),
-    );
-    final f = TextEditingController(
-      text: _initMealMacroInputLine(meal, "fat", gGoal: gF),
-    );
-
-    var localPpP = _advancedBandPpFor(meal, "protein");
-    var localPpC = _advancedBandPpFor(meal, "carbs");
-    var localPpF = _advancedBandPpFor(meal, "fat");
-
-    double sumOtherPercent(String macroKey) {
-      double sum = 0;
-      mealMacros.forEach((m, values) {
-        if (m != meal) {
-          sum += values[macroKey] ?? 0;
-        }
+    // Startwerte: Ziel (= goldener Strich) und Bereich Von–Bis in % vom Tagesziel.
+    final ziel = <String, TextEditingController>{};
+    final von = <String, TextEditingController>{};
+    final bis = <String, TextEditingController>{};
+    for (final m in macros) {
+      final c = mealMacros[meal]![m] ?? 0;
+      final band = _mealDayMacroBandPct(meal, m);
+      ziel[m] = TextEditingController(text: fmt(c));
+      von[m] = TextEditingController(text: fmt(band.minPct));
+      bis[m] = TextEditingController(text: fmt(band.maxPct));
+    }
+    // Abstand Von/Bis zum Ziel — bleibt gleich, wenn das Ziel geändert wird.
+    final offLo = <String, double>{};
+    final offHi = <String, double>{};
+    for (final m in macros) {
+      final z = mealMacros[meal]![m] ?? 0;
+      offLo[m] = (double.tryParse(von[m]!.text) ?? z) - z;
+      offHi[m] = (double.tryParse(bis[m]!.text) ?? z) - z;
+    }
+    double freePct(String m) {
+      var sum = 0.0;
+      mealMacros.forEach((k, v) {
+        if (k != meal) sum += v[m] ?? 0;
       });
-      return sum;
+      return 100 - sum;
     }
 
-    double gramsFromPercent(double percent, String macroKey) {
-      if (macroKey == "protein") return gP * percent / 100.0;
-      if (macroKey == "carbs") return gC * percent / 100.0;
-      return gF * percent / 100.0;
-    }
-
-    double currentCenterForFree(
-        String macro, TextEditingController ctrl, double gg) {
-      final pa = _parseMealMacroLine(ctrl.text, gg);
-      if (pa != null) {
-        return pa.centerPct;
-      }
-      return mealMacros[meal]![macro]!;
-    }
+    String label(String m) =>
+        m == "protein" ? t("protein") : (m == "carbs" ? t("carbs") : t("fat"));
 
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          const bandGramStyle = TextStyle(
-            fontSize: 12,
-            color: Color(0xFFB0B0A8),
-            fontWeight: FontWeight.w500,
-          );
+        builder: (context, setD) {
+          const gold = Color(0xFFC9A24A);
+          final muted = context.sol.muted;
+          final on = context.sol.onCard;
 
-          String gramSubline(
-            TextEditingController ctrl,
-            String mk,
-            double gg, {
-            required double localPp,
-          }) {
-            final pa = _parseMealMacroLine(ctrl.text, gg);
-            if (pa == null) {
-              return "";
-            }
-            if (nutritionMode == "Advanced" && !pa.isRange) {
-              final c = pa.centerPct.clamp(0.0, 100.0);
-              final pp = localPp.clamp(0.5, 25.0);
-              final lo = (c - pp).clamp(0.0, 100.0);
-              final hi = (c + pp).clamp(0.0, 100.0);
-              final g1 = gramsFromPercent(lo, mk);
-              final g2 = gramsFromPercent(hi, mk);
-              return "≈ ${_fmtAdv2(g1)}–${_fmtAdv2(g2)} g (${t("meal_macro_grams_daily_share")})";
-            }
-            if (pa.isRange) {
-              final g1 = gramsFromPercent(pa.minPct!.clamp(0, 100), mk);
-              final g2 = gramsFromPercent(pa.maxPct!.clamp(0, 100), mk);
-              return "≈ ${_fmtAdv2(g1)}–${_fmtAdv2(g2)} g (${t("meal_macro_grams_daily_share")})";
-            }
-            return "≈ ${_fmtAdv2(gramsFromPercent(pa.centerPct.clamp(0, 200), mk))} g (${t("meal_macro_grams_daily_share")})";
-          }
+          double v(Map<String, TextEditingController> mp, String m) =>
+              parse(mp[m]!.text) ?? 0;
+          double kcalOf(double pPct, double cPct, double fPct) =>
+              gE0.protein * pPct / 100 * 4.1 +
+              gE0.carbs * cPct / 100 * 4.1 +
+              gE0.fat * fPct / 100 * 9.3;
+          final kZiel = kcalOf(v(ziel, "protein"), v(ziel, "carbs"), v(ziel, "fat"));
+          final kLo = kcalOf(v(von, "protein"), v(von, "carbs"), v(von, "fat"));
+          final kHi = kcalOf(v(bis, "protein"), v(bis, "carbs"), v(bis, "fat"));
 
-          Widget macroSliderFeedback(
-            TextEditingController ctrl,
-            double gg,
-            String mk,
-            double localPp,
-          ) {
-            if (nutritionMode != "Advanced") {
-              return const SizedBox.shrink();
-            }
-            final pa = _parseMealMacroLine(ctrl.text, gg);
-            if (pa == null) {
-              return const SizedBox.shrink();
-            }
-            if (pa.isRange) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 2, bottom: 4),
-                child: Text(
-                  t("meal_macro_slider_no_buffer_for_explicit_range"),
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    color: Color(0xFF7A7A75),
-                    height: 1.2,
+          Widget numField(TextEditingController ctrl, String caption, String m,
+              {bool main = false, ValueChanged<String>? onChanged}) {
+            final g = dayG(m) * (parse(ctrl.text) ?? 0) / 100;
+            return Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(caption,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: main ? gold : muted)),
+                  const SizedBox(height: 3),
+                  TextField(
+                    controller: ctrl,
+                    textAlign: TextAlign.center,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: main ? gold : on),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      suffixText: "%",
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                            color: main ? gold : muted.withValues(alpha: 0.5),
+                            width: main ? 1.6 : 1.0),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: gold, width: 1.8),
+                      ),
+                    ),
+                    onChanged: (x) {
+                      onChanged?.call(x);
+                      setD(() {});
+                    },
                   ),
-                ),
-              );
-            }
-            final c = pa.centerPct.clamp(0.0, 100.0);
-            final pp = localPp.clamp(0.5, 25.0);
-            final lo = (c - pp).clamp(0.0, 100.0);
-            final hi = (c + pp).clamp(0.0, 100.0);
-            return Padding(
-              padding: const EdgeInsets.only(top: 2, bottom: 4),
-              child: Text(
-                tFmt("meal_macro_slider_band_live", {
-                  "lo": _fmtAdv2(lo),
-                  "hi": _fmtAdv2(hi),
-                  "g1": _fmtAdv2(gramsFromPercent(lo, mk)),
-                  "g2": _fmtAdv2(gramsFromPercent(hi, mk)),
-                }),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF9CCC9C),
-                  fontWeight: FontWeight.w600,
-                ),
+                  const SizedBox(height: 3),
+                  Text("${g.round()} g",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: main ? gold : muted)),
+                ],
               ),
             );
           }
 
-          final pOther = sumOtherPercent("protein");
-          final cOther = sumOtherPercent("carbs");
-          final fOther = sumOtherPercent("fat");
-
-          final pFree = 100 - pOther;
-          final cFree = 100 - cOther;
-          final fFree = 100 - fOther;
-
-          final pCur = currentCenterForFree("protein", p, gP);
-          final cCur = currentCenterForFree("carbs", c, gC);
-          final fCur = currentCenterForFree("fat", f, gF);
-
-          final gsP = gramSubline(p, "protein", gP, localPp: localPpP);
-          final gsC = gramSubline(c, "carbs", gC, localPp: localPpC);
-          final gsF = gramSubline(f, "fat", gF, localPp: localPpF);
-
-          Widget freeText(String label, double freePct, String macro) {
-            final isOver = (macro == "protein" && pCur > pFree) ||
-                (macro == "carbs" && cCur > cFree) ||
-                (macro == "fat" && fCur > fFree);
-            return Text(
-              "$label ${t("free_suffix")}: ${_fmtAdv2(freePct.clamp(0, 200))}% (${_fmtAdv2(gramsFromPercent(freePct.clamp(0, 100), macro))} g)",
-              style: TextStyle(
-                color: isOver ? Colors.red : Colors.green,
-                fontWeight: FontWeight.w600,
+          Widget macroCard(String m) {
+            final free = freePct(m);
+            final over = v(ziel, m) > free + 0.01;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: muted.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Text(label(m),
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: on)),
+                      const Spacer(),
+                      Text(
+                        tFmt("meal_pct_free", {"p": fmt(free.clamp(0, 100))}),
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: over ? const Color(0xFFA84A4A) : muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      numField(von[m]!, t("meal_pct_from"), m,
+                          onChanged: (x) {
+                        final n = parse(x);
+                        if (n != null) offLo[m] = n - v(ziel, m);
+                      }),
+                      const SizedBox(width: 8),
+                      // Ziel ändern verschiebt Von/Bis mit (gleiche Breite).
+                      numField(ziel[m]!, t("meal_pct_target"), m, main: true,
+                          onChanged: (x) {
+                        final nz = parse(x);
+                        if (nz == null) return;
+                        final lo = (nz + offLo[m]!).clamp(0.0, 100.0);
+                        final hi = (nz + offHi[m]!).clamp(0.0, 100.0);
+                        von[m]!.text = fmt(lo);
+                        bis[m]!.text = fmt(hi);
+                      }),
+                      const SizedBox(width: 8),
+                      numField(bis[m]!, t("meal_pct_to"), m,
+                          onChanged: (x) {
+                        final n = parse(x);
+                        if (n != null) offHi[m] = n - v(ziel, m);
+                      }),
+                    ],
+                  ),
+                ],
               ),
             );
           }
 
           return AlertDialog(
-            title: Text(
-                "${_displayMealName(meal)} ${t("meal_macros_title_suffix")}"),
+            title: Text(_displayMealName(meal)),
             content: _solDialogConstrainedBody(
               context,
               Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    t("meal_macro_day_share_hint"),
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFFC8C4BC), height: 1.3),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    t("meal_macro_combined_input_hint"),
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF9E9A90), height: 1.3),
-                  ),
-                  if (nutritionMode == "Advanced") ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      t("meal_macro_adv_buffer_title"),
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  Text(t("meal_pct_intro"),
+                      style: TextStyle(fontSize: 12.5, color: muted, height: 1.35)),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: gold.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: gold.withValues(alpha: 0.5)),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      t("meal_macro_adv_buffer_body"),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF9E9A90),
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      t("meal_macro_adv_buffer_p"),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: Color(0xFFC8C4BC),
-                      ),
-                    ),
-                    Slider(
-                      value: localPpP.clamp(0.5, 25.0),
-                      min: 0.5,
-                      max: 25.0,
-                      label: _fmtAdv2(localPpP.clamp(0.5, 25.0)),
-                      onChanged: (v) {
-                        setDialogState(() {
-                          localPpP = v;
-                        });
-                      },
-                    ),
-                    macroSliderFeedback(p, gP, "protein", localPpP),
-                    Text(
-                      t("meal_macro_adv_buffer_c"),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: Color(0xFFC8C4BC),
-                      ),
-                    ),
-                    Slider(
-                      value: localPpC.clamp(0.5, 25.0),
-                      min: 0.5,
-                      max: 25.0,
-                      label: _fmtAdv2(localPpC.clamp(0.5, 25.0)),
-                      onChanged: (v) {
-                        setDialogState(() {
-                          localPpC = v;
-                        });
-                      },
-                    ),
-                    macroSliderFeedback(c, gC, "carbs", localPpC),
-                    Text(
-                      t("meal_macro_adv_buffer_f"),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: Color(0xFFC8C4BC),
-                      ),
-                    ),
-                    Slider(
-                      value: localPpF.clamp(0.5, 25.0),
-                      min: 0.5,
-                      max: 25.0,
-                      label: _fmtAdv2(localPpF.clamp(0.5, 25.0)),
-                      onChanged: (v) {
-                        setDialogState(() {
-                          localPpF = v;
-                        });
-                      },
-                    ),
-                    macroSliderFeedback(f, gF, "fat", localPpF),
-                    Builder(
-                      builder: (ctx) {
-                        final pr0 = _parseMealMacroLine(p.text, gP);
-                        final cr0 = _parseMealMacroLine(c.text, gC);
-                        final fr0 = _parseMealMacroLine(f.text, gF);
-                        if (pr0 == null || cr0 == null || fr0 == null) {
-                          return const SizedBox.shrink();
-                        }
-                        final pVal0 = pr0.centerPct;
-                        final cVal0 = cr0.centerPct;
-                        final fVal0 = fr0.centerPct;
-                        final ppP0 = localPpP.clamp(0.5, 25.0);
-                        final ppC0 = localPpC.clamp(0.5, 25.0);
-                        final ppF0 = localPpF.clamp(0.5, 25.0);
-                        double pLo0, pHi0, cLo0, cHi0, fLo0, fHi0;
-                        if (pr0.isRange) {
-                          pLo0 = pr0.minPct!;
-                          pHi0 = pr0.maxPct!;
-                        } else {
-                          pLo0 = (pVal0 - ppP0).clamp(0.0, 100.0);
-                          pHi0 = (pVal0 + ppP0).clamp(0.0, 100.0);
-                        }
-                        if (cr0.isRange) {
-                          cLo0 = cr0.minPct!;
-                          cHi0 = cr0.maxPct!;
-                        } else {
-                          cLo0 = (cVal0 - ppC0).clamp(0.0, 100.0);
-                          cHi0 = (cVal0 + ppC0).clamp(0.0, 100.0);
-                        }
-                        if (fr0.isRange) {
-                          fLo0 = fr0.minPct!;
-                          fHi0 = fr0.maxPct!;
-                        } else {
-                          fLo0 = (fVal0 - ppF0).clamp(0.0, 100.0);
-                          fHi0 = (fVal0 + ppF0).clamp(0.0, 100.0);
-                        }
-                        if (pLo0 > pHi0 ||
-                            cLo0 > cHi0 ||
-                            fLo0 > fHi0) {
-                          return const SizedBox.shrink();
-                        }
-                        final kr0 = _kcalFromMacroPctBands(
-                          pLo: pLo0,
-                          pHi: pHi0,
-                          cLo: cLo0,
-                          cHi: cHi0,
-                          fLo: fLo0,
-                          fHi: fHi0,
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 2, bottom: 6),
-                          child: Text(
-                            tFmt("meal_macro_kcal_band_preview", {
-                              "lo": kr0.minKcal.toStringAsFixed(0),
-                              "hi": kr0.maxKcal.toStringAsFixed(0),
-                            }),
+                    child: Row(
+                      children: [
+                        Text(t("meal_pct_kcal_target"),
                             style: const TextStyle(
-                              fontSize: 12.5,
-                              color: Color(0xFFFFB74D),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        );
-                      },
+                                color: gold,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800)),
+                        const Spacer(),
+                        Text("${kZiel.round()} kcal",
+                            style: const TextStyle(
+                                color: gold,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800)),
+                        Text("  (${kLo.round()}–${kHi.round()})",
+                            style: TextStyle(color: muted, fontSize: 12)),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 8),
-                  freeText(t("protein"), pFree, "protein"),
-                  TextField(
-                    controller: p,
-                    decoration: _touchInputDecoration(
-                        "${t("protein")} · ${t("meal_macro_combined_label_suffix")}"),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setDialogState(() {}),
                   ),
-                  if (gsP.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2, bottom: 8),
-                      child: Text(gsP, style: bandGramStyle),
-                    )
-                  else
-                    const SizedBox(height: 8),
-                  freeText(t("carbs"), cFree, "carbs"),
-                  TextField(
-                    controller: c,
-                    decoration: _touchInputDecoration(
-                        "${t("carbs")} · ${t("meal_macro_combined_label_suffix")}"),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setDialogState(() {}),
-                  ),
-                  if (gsC.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2, bottom: 8),
-                      child: Text(gsC, style: bandGramStyle),
-                    )
-                  else
-                    const SizedBox(height: 8),
-                  freeText(t("fat"), fFree, "fat"),
-                  TextField(
-                    controller: f,
-                    decoration: _touchInputDecoration(
-                        "${t("fat")} · ${t("meal_macro_combined_label_suffix")}"),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setDialogState(() {}),
-                  ),
-                  if (gsF.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2, bottom: 0),
-                      child: Text(gsF, style: bandGramStyle),
-                    ),
+                  const SizedBox(height: 12),
+                  for (final m in macros) macroCard(m),
                 ],
               ),
             ),
             actions: [
               TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t("cancel")),
+              ),
+              FilledButton(
                 onPressed: () {
-                  final ppP = localPpP.clamp(0.5, 25.0);
-                  final ppC = localPpC.clamp(0.5, 25.0);
-                  final ppF = localPpF.clamp(0.5, 25.0);
-                  final pr = _parseMealMacroLine(p.text, gP);
-                  final cr = _parseMealMacroLine(c.text, gC);
-                  final fr = _parseMealMacroLine(f.text, gF);
-                  if (pr == null || cr == null || fr == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(t("meal_macro_parse_invalid")),
-                      ),
-                    );
-                    return;
-                  }
-
-                  final pVal = pr.centerPct;
-                  final cVal = cr.centerPct;
-                  final fVal = fr.centerPct;
-
-                  if (pVal > pFree || cVal > cFree || fVal > fFree) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(t("distribution_too_high")),
-                      ),
-                    );
-                    return;
-                  }
-
-                  bool bandOk(double lo, double hi) {
-                    if (lo < 0 || lo > 100 || hi < 0 || hi > 100) {
-                      return false;
+                  final vals = <String, List<double>>{};
+                  for (final m in macros) {
+                    final z = parse(ziel[m]!.text);
+                    final lo = parse(von[m]!.text);
+                    final hi = parse(bis[m]!.text);
+                    if (z == null || lo == null || hi == null ||
+                        lo < 0 || hi > 100 || lo > z || z > hi) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(tFmt("meal_pct_invalid", {"m": label(m)}))));
+                      return;
                     }
-                    return lo <= hi;
+                    if (z > freePct(m) + 0.01) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(t("distribution_too_high"))));
+                      return;
+                    }
+                    vals[m] = [_round2(lo), _round2(z), _round2(hi)];
                   }
-
-                  double pLo, pHi, cLo, cHi, fLo, fHi;
-                  if (pr.isRange) {
-                    pLo = pr.minPct!;
-                    pHi = pr.maxPct!;
-                  } else {
-                    pLo = (pVal - ppP).clamp(0.0, 100.0);
-                    pHi = (pVal + ppP).clamp(0.0, 100.0);
-                  }
-                  if (cr.isRange) {
-                    cLo = cr.minPct!;
-                    cHi = cr.maxPct!;
-                  } else {
-                    cLo = (cVal - ppC).clamp(0.0, 100.0);
-                    cHi = (cVal + ppC).clamp(0.0, 100.0);
-                  }
-                  if (fr.isRange) {
-                    fLo = fr.minPct!;
-                    fHi = fr.maxPct!;
-                  } else {
-                    fLo = (fVal - ppF).clamp(0.0, 100.0);
-                    fHi = (fVal + ppF).clamp(0.0, 100.0);
-                  }
-
-                  if (!bandOk(pLo, pHi) || !bandOk(cLo, cHi) || !bandOk(fLo, fHi)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(t("meal_macro_save_invalid_band")),
-                      ),
-                    );
-                    return;
-                  }
-
-                  pLo = _round2(pLo);
-                  pHi = _round2(pHi);
-                  cLo = _round2(cLo);
-                  cHi = _round2(cHi);
-                  fLo = _round2(fLo);
-                  fHi = _round2(fHi);
-
                   setState(() {
-                    advancedMealMacroBandPp = _round2(
-                        ((ppP + ppC + ppF) / 3.0).clamp(0.5, 25.0));
                     advancedMealMacroBandPpByMeal[meal] = {
-                      "protein": _round2(ppP),
-                      "carbs": _round2(ppC),
-                      "fat": _round2(ppF),
+                      for (final m in macros)
+                        m: _round2(((vals[m]![2] - vals[m]![0]) / 2).clamp(0.5, 25.0)),
                     };
-                    mealMacros[meal]!["protein"] = _round2(pVal);
-                    mealMacros[meal]!["carbs"] = _round2(cVal);
-                    mealMacros[meal]!["fat"] = _round2(fVal);
                     mealDayMacroBands.putIfAbsent(meal, () => {});
-                    final row = mealDayMacroBands[meal]!;
-                    row["protein"] = [pLo, pHi];
-                    row["carbs"] = [cLo, cHi];
-                    row["fat"] = [fLo, fHi];
+                    for (final m in macros) {
+                      mealMacros[meal]![m] = vals[m]![1];
+                      mealDayMacroBands[meal]![m] = [vals[m]![0], vals[m]![2]];
+                    }
                   });
                   _saveAppState();
                   Navigator.pop(context);
                 },
                 child: Text(t("save")),
-              )
+              ),
             ],
           );
         },
       ),
     );
   }
+
 
   void _openSettingsMealPickerForEditMealPercent() {
     if (nutritionMode != "Advanced") {
