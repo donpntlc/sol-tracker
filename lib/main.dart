@@ -7644,6 +7644,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "shop_add_single": "Auf die Einkaufsliste",
       "raw_label": "Roh",
       "cooked_label": "Gekocht",
       "meal_pct_intro": "Wie viel % deines Tagesziels in diese Mahlzeit gehen. Ziel = goldener Strich im Balken, Von–Bis = erlaubter Bereich.",
@@ -8830,6 +8831,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "shop_add_single": "Add to shopping list",
       "raw_label": "Raw",
       "cooked_label": "Cooked",
       "meal_pct_intro": "How many % of your daily target go into this meal. Target = gold mark on the bar, From–To = allowed range.",
@@ -11187,11 +11189,18 @@ class _MainScreenState extends State<MainScreen> {
                       Navigator.of(ctx).pop();
                       await Future<void>.delayed(Duration.zero);
                       if (mounted) {
-                        await _showRecipeToShoppingSheet(food);
+                        // Rezept: alle Zutaten · Lebensmittel: nur dieses eine.
+                        if (food.isRecipe && food.ingredients.isNotEmpty) {
+                          await _showRecipeToShoppingSheet(food);
+                        } else {
+                          await _showFoodToShoppingSheet(food);
+                        }
                       }
                     },
                     icon: const Icon(Icons.shopping_cart_outlined),
-                    label: Text(t("shop_add_recipe")),
+                    label: Text(food.isRecipe && food.ingredients.isNotEmpty
+                        ? t("shop_add_recipe")
+                        : t("shop_add_single")),
                   ),
                 ),
                 const Divider(height: 1, color: Color(0xFF2A2A2A)),
