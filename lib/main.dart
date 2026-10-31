@@ -28509,6 +28509,8 @@ class _MainScreenState extends State<MainScreen> {
     if (!mounted) return;
     final k = dateKeyFromDate(DateTime.now());
     if (weightHistory.containsKey(k)) return;
+    // Morgen-Abfrage lief heute schon / läuft gerade → nicht nochmal fragen.
+    if (_weightDialogOpen || _lastAutoWeightPromptDay == k) return;
     final prefs = await SharedPreferences.getInstance();
     Map<String, int> m = {};
     final raw = prefs.getString(_kWeightOpenCountByDayKey);
@@ -28526,6 +28528,7 @@ class _MainScreenState extends State<MainScreen> {
     m[k] = c + 1;
     await prefs.setString(_kWeightOpenCountByDayKey, jsonEncode(m));
     if (!mounted) return;
+    if (_weightDialogOpen || weightHistory.containsKey(k)) return;
     await _openWeightDialog(forDayKey: k);
   }
 
@@ -28832,7 +28835,20 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  bool _weightDialogOpen = false;
+
   Future<void> _openWeightDialog({String? forDayKey}) async {
+    // Nie zwei Gewichts-Fenster übereinander (Morgen-Abfrage + Start-Hinweis).
+    if (_weightDialogOpen) return;
+    _weightDialogOpen = true;
+    try {
+      await _openWeightDialogImpl(forDayKey: forDayKey);
+    } finally {
+      _weightDialogOpen = false;
+    }
+  }
+
+  Future<void> _openWeightDialogImpl({String? forDayKey}) async {
     final String dayKey;
     if (forDayKey != null) {
       dayKey = forDayKey;
