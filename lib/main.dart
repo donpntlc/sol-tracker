@@ -7644,6 +7644,16 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "bal_today": "Heute",
+      "bal_eaten": "gegessen",
+      "bal_target_range": "Zielbereich kcal",
+      "bal_volume": "Volumen",
+      "bal_last7": "Letzte 7 Tage",
+      "bal_avg_eaten": "Ø gegessen / Tag",
+      "bal_avg_deficit": "Ø Defizit / Tag",
+      "bal_avg_weight": "Ø Gewicht",
+      "bal_week_change": "Veränderung diese Woche",
+      "bal_model_line": "Rechnerisch: {k} kcal Defizit in 7 Tagen ≈ {dir}{kg} kg (7000 kcal ≈ 1 kg). Die Waage schwankt durch Wasser – auf Wochensicht achten.",
       "shop_add_single": "Auf die Einkaufsliste",
       "raw_label": "Roh",
       "cooked_label": "Gekocht",
@@ -8831,6 +8841,16 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "bal_today": "Today",
+      "bal_eaten": "eaten",
+      "bal_target_range": "target range kcal",
+      "bal_volume": "Volume",
+      "bal_last7": "Last 7 days",
+      "bal_avg_eaten": "Ø eaten / day",
+      "bal_avg_deficit": "Ø deficit / day",
+      "bal_avg_weight": "Ø weight",
+      "bal_week_change": "Change this week",
+      "bal_model_line": "In theory: {k} kcal deficit in 7 days ≈ {dir}{kg} kg (7000 kcal ≈ 1 kg). The scale swings with water – look at the weekly trend.",
       "shop_add_single": "Add to shopping list",
       "raw_label": "Raw",
       "cooked_label": "Cooked",
@@ -28501,98 +28521,167 @@ class _MainScreenState extends State<MainScreen> {
       builder: (dCtx) {
         return StatefulBuilder(
           builder: (context, setD) {
+            const gold = Color(0xFFC9A24A);
+            final muted = context.sol.muted;
+            final on = context.sol.onCard;
+            Widget secTitle(String x, {bool first = false}) => Padding(
+                  padding: EdgeInsets.only(top: first ? 0 : 16, bottom: 8),
+                  child: Text(x.toUpperCase(),
+                      style: const TextStyle(
+                          color: gold,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1)),
+                );
+            Widget tile(String v, String l) => Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: muted.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(v,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: on,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 2),
+                        Text(l,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: muted, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                );
+            final dd = dateFromKey(selectedDayKey);
             return AlertDialog(
-              title: Text("${t("day_balance_prefix")} $selectedDayKey"),
+              title: Text("${t("day_balance_prefix")} · ${dd.day}.${dd.month}.${dd.year}"),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _dayBalanceSectionTitle(t("day_balance_sec_today"),
-                        isFirst: true),
-                    _dayBalanceKpiRow(
-                      t("calories"),
-                      "${totalCalories.toStringAsFixed(0)} / ${_fmtRangeKcal(rangeDay.minKcal, rangeDay.maxKcal)}",
+                    // ── Heute ──
+                    secTitle(t("bal_today"), first: true),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      decoration: BoxDecoration(
+                        color: gold.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: gold.withValues(alpha: 0.5)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("${_fmtThousands(totalCalories)} kcal",
+                                  style: const TextStyle(
+                                      color: gold,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800)),
+                              Text(t("bal_eaten"),
+                                  style: TextStyle(color: muted, fontSize: 11.5)),
+                            ],
+                          ),
+                          const Spacer(),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                  "${_fmtThousands(rangeDay.minKcal)}–${_fmtThousands(rangeDay.maxKcal)}",
+                                  style: TextStyle(
+                                      color: on,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700)),
+                              Text(t("bal_target_range"),
+                                  style: TextStyle(color: muted, fontSize: 11.5)),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                    _dayBalanceKpiRow(
-                      t("volume_day_kpi"),
-                      "${_fmtGramsKpi(totalGrams)} g",
-                    ),
-                    _dayBalanceKpiRow(
-                      t("protein"),
-                      "${totalProtein.toStringAsFixed(0)} g",
-                    ),
-                    _dayBalanceKpiRow(
-                      t("carbs"),
-                      "${totalCarbs.toStringAsFixed(0)} g",
-                    ),
-                    _dayBalanceKpiRow(
-                      t("fat"),
-                      "${totalFat.toStringAsFixed(0)} g",
-                    ),
-                    _dayBalanceSectionTitle(t("day_balance_sec_weight")),
-                    if (dayWeight != null)
-                      _dayBalanceKpiRow(
-                        t("weight"),
-                        _weightKpiLine(dayWeight),
-                        valueWeight: FontWeight.w600,
-                      )
-                    else
-                      _dayBalanceKpiRow(t("weight"), "—",
-                          valueWeight: FontWeight.normal),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      tile("${totalProtein.round()} g", t("protein")),
+                      const SizedBox(width: 6),
+                      tile("${totalCarbs.round()} g", t("carbs")),
+                      const SizedBox(width: 6),
+                      tile("${totalFat.round()} g", t("fat")),
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      tile("${_fmtGramsKpi(totalGrams)} g", t("bal_volume")),
+                      const SizedBox(width: 6),
+                      tile(dayWeight == null ? "—" : "${dayWeight.kg.toStringAsFixed(1)} kg",
+                          t("weight")),
+                    ]),
                     if (dayWeight != null && dayWeight.hasFormImage)
-                      _weightFormImagePreview(
-                        path: dayWeight.formImagePath,
-                        b64: dayWeight.formImageB64,
-                        maxHeight: 140,
-                        onTap: () => _showWeightFormImageFullscreen(
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: _weightFormImagePreview(
                           path: dayWeight.formImagePath,
                           b64: dayWeight.formImageB64,
+                          maxHeight: 140,
+                          onTap: () => _showWeightFormImageFullscreen(
+                            path: dayWeight.formImagePath,
+                            b64: dayWeight.formImageB64,
+                          ),
                         ),
                       ),
-                    _dayBalanceSectionTitle(t("day_balance_sec_calendar")),
-                    _dayBalanceHintLine(t("day_balance_cw_sub")),
-                    _dayBalanceKpiRow(
-                      t("day_balance_cw_row_label"),
-                      wDeltaDisplay == null
-                          ? "—"
-                          : "${wDeltaDisplay >= 0 ? "+" : ""}${wDeltaDisplay.toStringAsFixed(1)} kg",
-                    ),
-                    _dayBalanceSectionTitle(t("day_balance_sec_rolling7")),
-                    _dayBalanceHintLine(t("week_rollup_subtitle")),
-                    _dayBalanceKpiRow(
-                      _balanceRowLabel(t("week_rollup_intake_l")),
-                      "${weekRoll.avgEatenKcal.toStringAsFixed(0)} kcal",
-                    ),
-                    if (weekRoll.goalDayCount > 0 &&
-                        weekRoll.avgDeficitPerDay != null) ...[
-                      _dayBalanceKpiRow(
-                        _balanceRowLabel(t("week_rollup_deficit_day_l")),
-                        "${weekRoll.avgDeficitPerDay!.toStringAsFixed(0)} kcal/Tag",
-                      ),
-                      _dayBalanceKpiRow(
-                        _balanceRowLabel(t("week_rollup_deficit_sum_l")),
-                        "${weekRoll.totalDeficitKcal.toStringAsFixed(0)} kcal",
+                    // ── Letzte 7 Tage ──
+                    secTitle(t("bal_last7")),
+                    Row(children: [
+                      tile("${_fmtThousands(weekRoll.avgEatenKcal)} kcal", t("bal_avg_eaten")),
+                      const SizedBox(width: 6),
+                      tile(
+                          weekRoll.goalDayCount > 0 && weekRoll.avgDeficitPerDay != null
+                              ? "${_fmtThousands(weekRoll.avgDeficitPerDay!)} kcal"
+                              : "—",
+                          t("bal_avg_deficit")),
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      tile(
+                          weekRoll.avgWeight == null
+                              ? "—"
+                              : "${weekRoll.avgWeight!.toStringAsFixed(1)} kg",
+                          t("bal_avg_weight")),
+                      const SizedBox(width: 6),
+                      tile(
+                          wDeltaDisplay == null
+                              ? "—"
+                              : "${wDeltaDisplay >= 0 ? "+" : "−"}${wDeltaDisplay.abs().toStringAsFixed(1)} kg",
+                          t("bal_week_change")),
+                    ]),
+                    // ── Einordnung (kurz) ──
+                    if (weekRoll.goalDayCount > 0) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.03),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: muted.withValues(alpha: 0.25)),
+                        ),
+                        child: Text(
+                          tFmt("bal_model_line", {
+                            "k": _fmtThousands(weekRoll.totalDeficitKcal.abs()),
+                            "dir": weekRoll.totalDeficitKcal >= 0 ? "−" : "+",
+                            "kg": (weekRoll.totalDeficitKcal.abs() / 7000).toStringAsFixed(1),
+                          }),
+                          style: TextStyle(color: muted, fontSize: 12, height: 1.4),
+                        ),
                       ),
                     ],
-                    _dayBalanceKpiRow(
-                      _balanceRowLabel(t("week_rollup_target_band_l")),
-                      tFmt("week_rollup_target_band_v", {
-                        "lo": weekRoll.bandLo.toStringAsFixed(0),
-                        "hi": weekRoll.bandHi.toStringAsFixed(0),
-                        "mid": weekRoll.meanGoalKcal.toStringAsFixed(0),
-                      }),
-                    ),
-                    if (weekRoll.avgWeight != null)
-                      _dayBalanceKpiRow(
-                        _balanceRowLabel(t("week_rollup_w_avg_l")),
-                        "${weekRoll.avgWeight!.toStringAsFixed(1)} kg · n=${weekRoll.weightLogCount}",
-                      ),
-                    _dayBalanceSectionTitle(t("day_balance_sec_context")),
-                    _buildWeekTheoryBlock(
-                      totalDeficitKcal: weekRoll.totalDeficitKcal,
-                      weeklyDeltaKg: wDeltaDisplay,
-                    ),
                     const SizedBox(height: 12),
                     const Divider(height: 1),
                     const SizedBox(height: 8),
