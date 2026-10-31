@@ -10308,18 +10308,18 @@ class _MainScreenState extends State<MainScreen> {
         imagePath: "assets/recipes/magerquark_shake.png",
         basePortionGrams: 395,
         portionHint:
-            "Eine Portion: 250 g Magerquark (fertig ~395 g, 189 kcal). Doppelte Portion: 500 g Magerquark (fertig ~790 g, 378 kcal) — Beeren, Wasser usw. wie angegeben verdoppeln.",
+            "Geheimtipp: Shake mit Eiswürfeln strecken – mehr Volumen, gleiche kcal.\n\nEine Portion: 250 g Magerquark (fertig ~395 g, 189 kcal). Doppelte Portion: 500 g Magerquark (fertig ~790 g, 378 kcal) — Beeren, Wasser usw. wie angegeben verdoppeln.",
         ingredients: [
           "250 g Magerquark = 1 Portion · für die doppelte Portion: 500 g Magerquark",
           "40 g TK-Beerenmischung (1 Portion) bzw. 80 g (doppelte Portion)",
           "100 ml Wasser (1 Portion) bzw. 200 ml (doppelte Portion)",
           "Süßungsmittel nach Geschmack",
-          "Cut-Geheimtipp: Eiswürfel mit dazu für mehr Volumen & Sättigung",
+          "Geheimtipp: Eiswürfel hinzufügen – streckt den Shake, mehr Volumen & Sättigung",
         ],
         instructions: [
           "1 Portion = 250 g Magerquark; alles doppelt wiegen, wenn du 500 g Magerquark nimmst (doppelte Portion).",
           "TK-Beeren mit Wasser und Süßungsmittel in den Mixer geben.",
-          "Im Cut: Eiswürfel mit dazu — gibt deutlich mehr Volumen und sättigt besser.",
+          "Geheimtipp: Eiswürfel mit in den Mixer – gibt deutlich mehr Volumen und sättigt besser.",
           "Kurz mixen bis cremig.",
           "Magerquark dazugeben und nochmal kurz untermixen — fertig.",
         ],
