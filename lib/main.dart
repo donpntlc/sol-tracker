@@ -2552,9 +2552,21 @@ class _MainScreenState extends State<MainScreen> {
     } catch (_) {}
   }
 
+  /// Alte Namen (vor roh/gekocht-Aufteilung) → neue Namen.
+  static const Map<String, String> _kRenamedFoods = {
+    "Reis": "Reis (roh)",
+    "Nudeln (Weizen)": "Nudeln (roh)",
+    "Kartoffel": "Kartoffel (roh)",
+    "Süßkartoffel": "Süßkartoffel (roh)",
+    "Hähnchen Brust": "Hähnchenbrust (gekocht)",
+    "Rindfleisch": "Rindfleisch (gekocht)",
+    "Lachs": "Lachs (gekocht)",
+  };
+
   Food? _foodByName(String name) {
+    final n = _kRenamedFoods[name] ?? name;
     for (final f in foodDatabase) {
-      if (f.name == name) return f;
+      if (f.name == n) return f;
     }
     return null;
   }
@@ -2563,10 +2575,10 @@ class _MainScreenState extends State<MainScreen> {
   List<Map<String, dynamic>> get _solMealTemplates {
     const raw = [
       ["SOL · Magerquark-Shake + Haferflocken", "Magerquark Proteinshake", "Haferflocken"],
-      ["SOL · Hähnchen, Reis & Olivenöl", "Hähnchen Brust", "Reis", "Olivenöl"],
+      ["SOL · Hähnchen, Reis & Olivenöl", "Hähnchenbrust (roh)", "Reis (roh)", "Olivenöl"],
       ["SOL · Skyr, Haferflocken & Erdnussbutter", "Skyr", "Haferflocken", "Erdnussbutter"],
-      ["SOL · Eier & Kartoffeln", "Eier", "Kartoffel", "Magerquark"],
-      ["SOL · Lachs & Süßkartoffel", "Lachs", "Süßkartoffel"],
+      ["SOL · Eier & Kartoffeln", "Eier", "Kartoffel (roh)", "Magerquark"],
+      ["SOL · Lachs & Süßkartoffel", "Lachs (gekocht)", "Süßkartoffel (roh)"],
       ["SOL · Protein Shake + Banane", "Protein Shake", "Banane (ohne Schale)"],
     ];
     final out = <Map<String, dynamic>>[];
@@ -3644,18 +3656,18 @@ class _MainScreenState extends State<MainScreen> {
     "Haferflocken": "haferflocken",
     "Banane (mit Schale)": "banane",
     "Cornflakes (ungesüßt)": "cornflakes",
-    "Kartoffel": "kartoffel",
+    "Kartoffel (roh)": "kartoffel",
     "Grieß-Hafer-Instantbrei (süß, 2–3 min)": "griess_hafer_brei",
-    "Reis": "reis",
+    "Reis (roh)": "reis",
     "Weizengrieß": "weizengriess",
     "Datteln": "datteln",
-    "Süßkartoffel": "suesskartoffel",
-    "Nudeln (Weizen)": "nudeln",
+    "Süßkartoffel (roh)": "suesskartoffel",
+    "Nudeln (roh)": "nudeln",
     "Banane (ohne Schale)": "banane",
-    "Hähnchen Brust": "haehnchenbrust",
+    "Hähnchenbrust (roh)": "haehnchenbrust",
     "Protein Shake": "protein_shake",
-    "Rindfleisch": "rindfleisch",
-    "Lachs": "lachs",
+    "Rindfleisch (gekocht)": "rindfleisch",
+    "Lachs (gekocht)": "lachs",
     "Eier": "eier",
     "Seitan": "seitan",
     "EAAs": "eaas",
@@ -3715,6 +3727,28 @@ class _MainScreenState extends State<MainScreen> {
     "Apfel (mit Schale, Mittelwert)": "apfel",
     "Heidelbeeren": "heidelbeeren",
     "Bohnen (grün, gekocht)": "gruene_bohnen",
+    "Reis (gekocht)": "reis",
+    "Nudeln (gekocht)": "nudeln",
+    "Kartoffel (gekocht)": "kartoffel",
+    "Süßkartoffel (gekocht)": "suesskartoffel",
+    "Brauner Reis (roh)": "brauner_reis",
+    "Vollkornnudeln (roh)": "vollkornnudeln",
+    "Quinoa (roh)": "quinoa",
+    "Buchweizen (roh)": "buchweizen",
+    "Couscous (roh)": "couscous",
+    "Linsen (roh)": "linsen",
+    "Kichererbsen (roh)": "kichererbsen",
+    "Kürbis (roh)": "kuerbis",
+    "Hähnchenbrust (gekocht)": "haehnchenbrust",
+    "Rindfleisch (roh)": "rindfleisch",
+    "Lachs (roh)": "lachs",
+    "Putenbrust (roh)": "putenbrust",
+    "Schellfisch (roh)": "schellfisch",
+    "Faschiertes mager (Rind, roh)": "hackfleisch",
+    "Shrimps (roh)": "shrimps",
+    "Thunfisch-Steak (roh)": "thunfisch_steak",
+    "Rosenkohl (roh)": "rosenkohl",
+    "Bohnen (grün, roh)": "gruene_bohnen",
     // FOOD_IMAGES_END
   };
 
@@ -3741,8 +3775,10 @@ class _MainScreenState extends State<MainScreen> {
     "Apfel (mit Schale, Mittelwert)": [("Klein", 150), ("Mittel", 182), ("Groß", 223)],
     "Banane (ohne Schale)": [("Klein", 101), ("Mittel", 118), ("Groß", 136)],
     "Banane (mit Schale)": [("Klein", 158), ("Mittel", 184), ("Groß", 213)],
-    "Kartoffel": [("Klein", 100), ("Mittel", 170), ("Groß", 300)],
-    "Süßkartoffel": [("Klein", 130), ("Mittel", 200), ("Groß", 300)],
+    "Kartoffel (roh)": [("Klein", 100), ("Mittel", 170), ("Groß", 300)],
+    "Kartoffel (gekocht)": [("Klein", 100), ("Mittel", 170), ("Groß", 300)],
+    "Süßkartoffel (roh)": [("Klein", 130), ("Mittel", 200), ("Groß", 300)],
+    "Süßkartoffel (gekocht)": [("Klein", 110), ("Mittel", 170), ("Groß", 260)],
     "Birne": [("Klein", 140), ("Mittel", 180), ("Groß", 230)],
     "Kiwi": [("1 Stück", 75)],
     "Mango": [("½ Mango", 100), ("1 Mango", 200)],
@@ -3774,13 +3810,20 @@ class _MainScreenState extends State<MainScreen> {
     "Magerquark": [("½ Becher", 125), ("1 Becher", 250), ("1 Becher groß", 500)],
     "Hüttenkäse (0.2% Fett)": [("1 Becher", 200)],
     "Joghurt (griechisch, 2% Fett)": [("1 Becher", 150)],
-    "Hähnchen Brust": [("1 Filet", 150)],
-    "Putenbrust (gekocht)": [("1 Portion", 150)],
-    "Lachs": [("1 Filet", 125)],
-    "Reis": [("1 Portion", 150)],
-    "Brauner Reis (gekocht)": [("1 Portion", 150)],
-    "Nudeln (Weizen)": [("1 Portion", 200)],
-    "Vollkornnudeln (gekocht)": [("1 Portion", 200)],
+    "Hähnchenbrust (roh)": [("1 Filet", 170)],
+    "Hähnchenbrust (gekocht)": [("1 Filet", 130)],
+    "Putenbrust (gekocht)": [("1 Portion", 130)],
+    "Putenbrust (roh)": [("1 Portion", 170)],
+    "Lachs (gekocht)": [("1 Filet", 100)],
+    "Lachs (roh)": [("1 Filet", 125)],
+    "Reis (roh)": [("1 Portion", 75)],
+    "Reis (gekocht)": [("1 Portion", 200)],
+    "Brauner Reis (gekocht)": [("1 Portion", 200)],
+    "Brauner Reis (roh)": [("1 Portion", 75)],
+    "Nudeln (roh)": [("1 Portion", 100)],
+    "Nudeln (gekocht)": [("1 Portion", 230)],
+    "Vollkornnudeln (gekocht)": [("1 Portion", 230)],
+    "Vollkornnudeln (roh)": [("1 Portion", 100)],
     "Thunfisch (Dose, im eigenen Saft, abgetropft)": [("1 Dose", 130)],
     "Erdbeeren": [("1 Handvoll", 80), ("1 Schale", 250)],
     "Heidelbeeren": [("1 Handvoll", 50), ("1 Schale", 125)],
@@ -9551,7 +9594,7 @@ class _MainScreenState extends State<MainScreen> {
         carbKind: "komplex",
       ),
       Food(
-        name: "Kartoffel",
+        name: "Kartoffel (roh)",
         protein: 2,
         carbs: 17,
         sugar: 0.8,
@@ -9580,7 +9623,7 @@ class _MainScreenState extends State<MainScreen> {
             "Heißes Wasser/Milch aufgießen, kurz quellen — süß, kaum salzig. Kcal/100 g ähnlich wie Kartoffel, Geschmack eher Grieß/Milchreis/Hafer/Flakes.",
       ),
       Food(
-        name: "Reis",
+        name: "Reis (roh)",
         protein: 7,
         carbs: 78,
         sugar: 0.1,
@@ -9629,7 +9672,7 @@ class _MainScreenState extends State<MainScreen> {
         extraCategories: const ["Obst"],
       ),
       Food(
-        name: "Süßkartoffel",
+        name: "Süßkartoffel (roh)",
         protein: 1.6,
         carbs: 20,
         sugar: 4.2,
@@ -9642,7 +9685,7 @@ class _MainScreenState extends State<MainScreen> {
         extraCategories: const ["Gemüse"],
       ),
       Food(
-        name: "Nudeln (Weizen)",
+        name: "Nudeln (roh)",
         protein: 12,
         carbs: 71,
         sugar: 1.1,
@@ -9699,12 +9742,12 @@ class _MainScreenState extends State<MainScreen> {
         imagePath: "assets/recipes/magerquark_basic.png",
       ),
       Food(
-        name: "Hähnchen Brust",
-        protein: 31,
+        name: "Hähnchenbrust (roh)",
+        protein: 23,
         carbs: 0,
         sugar: 0,
         fiber: 0,
-        fat: 3.6,
+        fat: 1.5,
         category: "Protein",
         type: "Diät (Viel Volumen)",
         isDefault: true,
@@ -9721,7 +9764,7 @@ class _MainScreenState extends State<MainScreen> {
         isDefault: true,
       ),
       Food(
-        name: "Rindfleisch",
+        name: "Rindfleisch (gekocht)",
         protein: 26,
         carbs: 0,
         sugar: 0,
@@ -9732,7 +9775,7 @@ class _MainScreenState extends State<MainScreen> {
         isDefault: true,
       ),
       Food(
-        name: "Lachs",
+        name: "Lachs (gekocht)",
         protein: 25,
         carbs: 0,
         sugar: 0,
