@@ -1677,6 +1677,7 @@ class _MainScreenState extends State<MainScreen> {
   static const String _kCutExtraStepsAdditionalByDayKey =
       "cut_extra_steps_additional_by_day_v1";
   static const String _kStepSyncEnabledKey = "step_sync_enabled_v1";
+  static const String _kAdvancedShowStepsKey = "advanced_show_steps_v1";
   static const String _kLastDeviationWarningKey = "last_deviation_warning_v1";
   static const String _kMealGroupOrderKey = "meal_group_order_v1";
   static const String _kWeekStartWeekdayKey = "week_start_weekday_v1";
@@ -1769,6 +1770,11 @@ class _MainScreenState extends State<MainScreen> {
   Map<String, int> cutExtraStepsByDay = {};
   Map<String, int> cutExtraStepsAdditionalByDay = {};
   bool stepSyncEnabled = false;
+  /// Advanced: Schritte-Karte freiwillig zeigen (wie im Aggressiv Cut).
+  bool advancedShowSteps = false;
+  bool get _showStepsCard =>
+      nutritionMode == "Diät" ||
+      (nutritionMode == "Advanced" && advancedShowSteps);
   int syncedStepsForSelectedDay = 0;
   Health? _healthInstance;
   Health get _health => _healthInstance ??= Health();
@@ -6923,6 +6929,7 @@ class _MainScreenState extends State<MainScreen> {
     final savedCutAdditionalByDay =
         prefs.getString(_kCutExtraStepsAdditionalByDayKey);
     final savedStepSyncEnabled = prefs.getBool(_kStepSyncEnabledKey);
+    final savedAdvShowSteps = prefs.getBool(_kAdvancedShowStepsKey);
     final savedMealKcalUi = prefs.getString(_kMealKcalUiModeKey);
     final savedAdvMealBandPp = prefs.getDouble(_kAdvancedMealMacroBandPpKey);
     final savedAdvBandByMeal = prefs.getString(_kAdvancedMealMacroBandPpByMealKey);
@@ -7061,6 +7068,7 @@ class _MainScreenState extends State<MainScreen> {
           }
         } catch (_) {}
       }
+      if (savedAdvShowSteps != null) advancedShowSteps = savedAdvShowSteps;
       if (savedStepSyncEnabled != null) {
         stepSyncEnabled = savedStepSyncEnabled;
       } else if (!kIsWeb && Platform.isIOS) {
@@ -7461,6 +7469,7 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString(_kCutExtraStepsAdditionalByDayKey,
         jsonEncode(cutExtraStepsAdditionalByDay));
     await prefs.setBool(_kStepSyncEnabledKey, stepSyncEnabled);
+    await prefs.setBool(_kAdvancedShowStepsKey, advancedShowSteps);
     if (lastDeviationWarningKey != null) {
       await prefs.setString(
           _kLastDeviationWarningKey, lastDeviationWarningKey!);
@@ -7768,12 +7777,12 @@ class _MainScreenState extends State<MainScreen> {
       "settings_last_meal_track_prompt": "Frage vor dem Tracken",
       "settings_last_meal_track_prompt_sub":
           "Wenn eingeschaltet: vor dem ersten Eintrag (Food, Generator, KI) an dieser Mahlzeit nach Makro-Band vs. Tages-Rest fragen. Aus = direkt mit Makro-Band.",
-      "last_meal_kcal_prompt_title": "Kcal: letzte Mahlzeit heute",
+      "last_meal_kcal_prompt_title": "Letzte Mahlzeit: wie viel?",
       "last_meal_kcal_prompt_body":
-          "Nur dein Makro-Band (Ziel-Verteilung) — oder Tages-Restkcal nach den anderen Mahlzeiten? Optional: geplanten Snack-Anteil reservieren.",
-      "last_meal_kcal_mode_macro": "Makro-Spanne (Ziel-Verteilung, wie bisher)",
-      "last_meal_kcal_mode_remainder": "Tages-Rest (Tageskcal abzüglich anderer Mahlzeiten / Snack-Reserve)",
-      "last_meal_kcal_reserve_snacks": "Für Snacks den geplanten Anteil (Band) vorsorglich offen lassen",
+          "Wie viele kcal soll die letzte Mahlzeit heute bekommen?",
+      "last_meal_kcal_mode_macro": "Normaler Anteil dieser Mahlzeit",
+      "last_meal_kcal_mode_remainder": "Alles, was vom Tag noch übrig ist",
+      "last_meal_kcal_reserve_snacks": "Etwas für Snacks übrig lassen",
       "meal_kcal_simple_target": "Zielmitte: {k} kcal",
       "meal_kcal_simple_bar_min": "Untergrenze",
       "meal_kcal_simple_bar_max": "Obergrenze",
@@ -7836,7 +7845,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_live_other": "Foto / eintippen",
       "barcode_live_denied": "Kein Kamerazugriff – unten „Foto / eintippen“ nutzen oder Kamera in den Einstellungen erlauben.",
       "day_fill_title2": "Tag auffüllen",
-      "day_fill_explain": "Einfach weiter tracken – wird automatisch verteilt: zuerst die angefangene Mahlzeit bis zur Zielmitte auffüllen, der Rest geht in die nächste (z. B. Post-Workout → Hauptmahlzeit → Abendessen → Snacks).",
+      "day_fill_explain": "Einfach weiter tracken. Die App füllt zuerst die angefangene Mahlzeit auf, der Rest kommt in die nächste.",
       "day_fill_split_snack": "Verteilt: {list}",
       "bal_today": "Heute",
       "bal_eaten": "gegessen",
@@ -8978,12 +8987,12 @@ class _MainScreenState extends State<MainScreen> {
       "settings_last_meal_track_prompt": "Ask before logging",
       "settings_last_meal_track_prompt_sub":
           "When on: before the first add (food, generator, AI) for that meal, choose macro band vs. day remainder. Off = always use the macro band.",
-      "last_meal_kcal_prompt_title": "Last meal kcal for today",
+      "last_meal_kcal_prompt_title": "Last meal: how much?",
       "last_meal_kcal_prompt_body":
-          "Use your macro band from the split, or the rest of the day after other meals? You can also reserve a snack share.",
-      "last_meal_kcal_mode_macro": "Macro band (target split, as before)",
-      "last_meal_kcal_mode_remainder": "Day remainder (day kcal minus other meals / snack reserve)",
-      "last_meal_kcal_reserve_snacks": "Keep the planned snack band (mid) open for Snacks",
+          "How many kcal should the last meal of today get?",
+      "last_meal_kcal_mode_macro": "Normal share of this meal",
+      "last_meal_kcal_mode_remainder": "Everything left for the day",
+      "last_meal_kcal_reserve_snacks": "Keep some for snacks",
       "meal_kcal_simple_target": "Target center: {k} kcal",
       "meal_kcal_simple_bar_min": "Lower",
       "meal_kcal_simple_bar_max": "Upper",
@@ -9045,7 +9054,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_live_other": "Photo / type",
       "barcode_live_denied": "No camera access – use “Photo / type” below or allow the camera in settings.",
       "day_fill_title2": "Fill the day",
-      "day_fill_explain": "Just keep tracking – it's split automatically: first the started meal up to its target, the rest goes to the next one (e.g. post-workout → main meal → dinner → snacks).",
+      "day_fill_explain": "Just keep tracking. The app fills the started meal first, the rest goes to the next one.",
       "day_fill_split_snack": "Split: {list}",
       "bal_today": "Today",
       "bal_eaten": "eaten",
@@ -18955,7 +18964,7 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _aggressiveModeStrip()),
           if (phaseGoal != null)
             SliverToBoxAdapter(child: _phaseGoalStrip()),
-          if (nutritionMode == "Diät")
+          if (_showStepsCard)
             SliverToBoxAdapter(child: _cutDayStepsCard()),
           SliverToBoxAdapter(
             child: Padding(
@@ -22175,6 +22184,20 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 if (nutritionMode == "Advanced") ...[
                   const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Schritte anzeigen"),
+                    subtitle: const Text(
+                      "Schritte-Karte im Tracking, wie im Aggressiv Cut.",
+                      style: TextStyle(fontSize: 12, color: Colors.white60),
+                    ),
+                    value: advancedShowSteps,
+                    onChanged: (v) {
+                      setState(() => advancedShowSteps = v);
+                      _saveAppState();
+                    },
+                  ),
                   const Divider(height: 1),
                   const SizedBox(height: 8),
                   Text(
