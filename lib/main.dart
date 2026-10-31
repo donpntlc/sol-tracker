@@ -4121,6 +4121,12 @@ class _MainScreenState extends State<MainScreen> {
                 };
             int byName(Food a, Food b) =>
                 a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            // Diät: kcal pro 1 g des gewählten Makros (wenig = gute Quelle).
+            // Fast ohne dieses Makro (< 1 g / 100 g) → ans Ende.
+            double kcalPerMacro(Food f) {
+              final m = macroOf(f);
+              return m >= 1 ? f.calories / m : 1e9 + f.calories;
+            }
             list.sort((a, b) {
               // Ohne Kategorie-Makro: „KH/P/F“-Sortierung = kcal.
               final sortKey = macroKey.isEmpty
@@ -4139,7 +4145,7 @@ class _MainScreenState extends State<MainScreen> {
                   final m = macroOf(b).compareTo(macroOf(a));
                   return m != 0 ? m : byName(a, b);
                 case "macroUp":
-                  final m2 = macroOf(a).compareTo(macroOf(b));
+                  final m2 = kcalPerMacro(a).compareTo(kcalPerMacro(b));
                   return m2 != 0 ? m2 : byName(a, b);
                 default:
                   final u = (usage[b.name] ?? 0).compareTo(usage[a.name] ?? 0);
@@ -4161,7 +4167,10 @@ class _MainScreenState extends State<MainScreen> {
                   final fac = p.$2 / 100.0;
                   final mTxt = macroKey.isEmpty
                       ? ""
-                      : " · $macroLabel ${(macroOf(f) * fac).round()} g";
+                      : " · $macroLabel ${(macroOf(f) * fac).round()} g" +
+                          (_pickerSort == "macroUp" && macroOf(f) >= 1
+                              ? " · ${kcalPerMacro(f).toStringAsFixed(1)} kcal/g"
+                              : "");
                   return _pickerRow(
                     title: f.name,
                     sub: (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
@@ -4364,7 +4373,7 @@ class _MainScreenState extends State<MainScreen> {
                                 selected: _pickerMode == m,
                                 onSelected: (_) => setL(() {
                                   _pickerMode = m;
-                                  // Diät: geringste Dichte oben · Aufbau: höchste.
+                                  // Diät: wenigste kcal pro g Makro oben · Aufbau: meiste Makros.
                                   if (m == "Diät") _pickerSort = "macroUp";
                                   if (m == "Aufbau") _pickerSort = "macroDown";
                                   if (m == "Alle") _pickerSort = "freq";
@@ -7938,7 +7947,7 @@ class _MainScreenState extends State<MainScreen> {
       "meal_pct_target": "Ziel",
       "meal_pct_kcal_target": "ZIEL DIESER MAHLZEIT",
       "meal_pct_invalid": "{m}: Von ≤ Ziel ≤ Bis (0–100 %) prüfen.",
-      "picker_sort_macro_up": "Wenigste KH/P/F (Diät)",
+      "picker_sort_macro_up": "Wenigste kcal pro g KH/P/F (Diät)",
       "tracked_total_label": "Gesamt",
       "tracked_items_label": "Einzeln ({n})",
       "picker_fill_hint": "Füllen bis Zielmitte",
@@ -9183,7 +9192,7 @@ class _MainScreenState extends State<MainScreen> {
       "meal_pct_target": "Target",
       "meal_pct_kcal_target": "MEAL TARGET",
       "meal_pct_invalid": "{m}: check From ≤ Target ≤ To (0–100 %).",
-      "picker_sort_macro_up": "Fewest C/P/F (diet)",
+      "picker_sort_macro_up": "Fewest kcal per g C/P/F (diet)",
       "tracked_total_label": "Total",
       "tracked_items_label": "Items ({n})",
       "picker_fill_hint": "fill to target",
@@ -16503,8 +16512,23 @@ class _MainScreenState extends State<MainScreen> {
           matchesRecipeFlavor &&
           matchesPersonalRating;
     }).toList();
+    double? dbMacro(Food f) => switch (databaseCategoryFilter) {
+          "Carbs" => f.carbs,
+          "Protein" => f.protein,
+          "Fett" => f.fat,
+          "Ballaststoffe" => f.fiber,
+          _ => null,
+        };
     filteredFoods.sort((a, b) {
       final calCompare = a.calories.compareTo(b.calories);
+      final ma = dbMacro(a), mb = dbMacro(b);
+      if (databaseTypeFilter == "Diät" && ma != null && mb != null) {
+        // Diät + Quelle gewählt: wenigste kcal pro 1 g dieses Makros oben.
+        final ka = ma >= 1 ? a.calories / ma : 1e9 + a.calories;
+        final kb = mb >= 1 ? b.calories / mb : 1e9 + b.calories;
+        final c = ka.compareTo(kb);
+        if (c != 0) return c;
+      }
       if (databaseTypeFilter == "Diät" && calCompare != 0) {
         // Diät: mehr Volumen oben = weniger kcal pro 100g zuerst.
         return calCompare;
