@@ -7716,6 +7716,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "barcode_live_hint": "Barcode in den Rahmen halten",
+      "barcode_live_other": "Foto / eintippen",
+      "barcode_live_denied": "Kein Kamerazugriff – unten „Foto / eintippen“ nutzen oder Kamera in den Einstellungen erlauben.",
       "day_fill_title2": "Tag auffüllen",
       "day_fill_explain": "Einfach weiter tracken – wird automatisch verteilt: zuerst die angefangene Mahlzeit bis zur Zielmitte auffüllen, der Rest geht in die nächste (z. B. Post-Workout → Hauptmahlzeit → Abendessen → Snacks).",
       "day_fill_split_snack": "Verteilt: {list}",
@@ -8916,6 +8919,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "barcode_live_hint": "Hold the barcode inside the frame",
+      "barcode_live_other": "Photo / type",
+      "barcode_live_denied": "No camera access – use “Photo / type” below or allow the camera in settings.",
       "day_fill_title2": "Fill the day",
       "day_fill_explain": "Just keep tracking – it's split automatically: first the started meal up to its target, the rest goes to the next one (e.g. post-workout → main meal → dinner → snacks).",
       "day_fill_split_snack": "Split: {list}",
@@ -16711,12 +16717,25 @@ class _MainScreenState extends State<MainScreen> {
   /// Kamera-Scan + Open-Food-Facts-API. Kein Vorschau-Dialog.
   Future<_OffFetchResult?> _barcodeOpenFoodLookup() async {
     if (!mounted) return null;
-    final code = await showDialog<String>(
-      context: context,
-      builder: (ctx) => _BarcodeScanDialog(
-        t: t,
-      ),
-    );
+    String? code;
+    if (kIsWeb) {
+      // Kamera öffnet sofort und scannt live — Barcode einfach davor halten.
+      code = await liveScanBarcode({
+        "hint": t("barcode_live_hint"),
+        "cancel": t("cancel"),
+        "other": t("barcode_live_other"),
+        "denied": t("barcode_live_denied"),
+      });
+      if (code == null || !mounted) return null;
+    }
+    if (code == null || code == "__other__") {
+      code = await showDialog<String>(
+        context: context,
+        builder: (ctx) => _BarcodeScanDialog(
+          t: t,
+        ),
+      );
+    }
     if (code == null || !mounted) return null;
     _OffFetchResult emptyFor(String bc) => _OffFetchResult(
           barcode: bc,

@@ -8,3 +8,7 @@ Future<String?> decodeBarcodeFromPhoto(Uint8List bytes, String mime) =>
     _impl.decodeBarcodeFromPhoto(bytes, mime);
 
 bool barcodeLibLoaded() => _impl.barcodeLibLoaded();
+
+/// Live-Scan mit Kamera (Web). Code, '__other__' oder null.
+Future<String?> liveScanBarcode(Map<String, String> labels) =>
+    _impl.liveScanBarcode(labels);
