@@ -1332,6 +1332,17 @@ class MainScreen extends StatefulWidget {
 enum _DbPcfFrameKind { gray, solGold, userSoft }
 
 class _MainScreenState extends State<MainScreen> {
+  /// Zählt jede Änderung am Zustand hoch. Offene Fenster (z. B. die
+  /// Lebensmittel-Liste einer Mahlzeit) hören darauf und zeigen sofort den
+  /// aktuellen Stand, statt erst nach Schliessen und Öffnen.
+  final ValueNotifier<int> _liveRev = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _liveRev.value++;
+  }
+
   static const Color _proteinColor = Color(0xFFD2C2A7);
   static const Color _carbColor = Color(0xFFC7C7C7);
   static const Color _fatColor = Color(0xFFAAAAAA);
@@ -6448,6 +6459,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _geminiKeyCtrl?.dispose();
+    _liveRev.dispose();
     super.dispose();
   }
 
@@ -19946,7 +19958,10 @@ class _MainScreenState extends State<MainScreen> {
           initialChildSize: 0.5,
           minChildSize: 0.32,
           maxChildSize: 0.88,
-          builder: (ctx, scrollController) {
+          builder: (ctx, scrollController) => ValueListenableBuilder<int>(
+            valueListenable: _liveRev,
+            builder: (ctx, _, __) {
+            _updateMealTotals();
             final items = trackedFoods
                 .where((f) => f.meal == meal && f.dayKey == selectedDayKey)
                 .toList();
@@ -20124,7 +20139,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
               ],
             );
-          },
+          }),
         );
       },
     );
