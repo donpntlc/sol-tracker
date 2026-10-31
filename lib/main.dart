@@ -1592,6 +1592,44 @@ class _MainScreenState extends State<MainScreen> {
   double get goalCalories =>
       (goalProtein * 4.1) + (goalCarbs * 4.1) + (goalFat * 9.3);
 
+  // ───────────── Rest Day: KH in Pre-/Post-Workout halbiert ─────────────
+  static const String _kRestDaysKey = "rest_days_v1";
+  final Set<String> restDays = {};
+  bool isRestDay(String k) => restDays.contains(k) && !cheatDays.containsKey(k);
+  /// Faktor für die KH einer Mahlzeit am gewählten Tag (Pre/Post am Rest Day = ½).
+  double _restCarbFactor(String meal) => (isRestDay(selectedDayKey) &&
+          (meal == "Pre-Workout" || meal == "Post-Workout"))
+      ? 0.5
+      : 1.0;
+  /// Wie viele g KH der Rest Day am Tag streicht.
+  double _restCarbCutG(String k) {
+    if (!isRestDay(k)) return 0;
+    final pre = mealMacros["Pre-Workout"]?["carbs"] ?? 0;
+    final post = mealMacros["Post-Workout"]?["carbs"] ?? 0;
+    return goalCarbs * (pre + post) / 100.0 * 0.5;
+  }
+
+  Future<void> _toggleRestDay() async {
+    final k = selectedDayKey;
+    if (cheatDays.containsKey(k)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t("rest_day_cheat_conflict"))));
+      return;
+    }
+    setState(() {
+      if (!restDays.remove(k)) restDays.add(k);
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kRestDaysKey, jsonEncode(restDays.toList()..sort()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(restDays.contains(k)
+          ? tFmt("rest_day_on_snack", {"g": _restCarbCutG(k).round().toString()})
+          : t("rest_day_off_snack")),
+    ));
+  }
+
   Map<String, Map<String, double>> mealMacros = {
     "Pre-Workout": {"protein": 20, "carbs": 20, "fat": 5},
     "Post-Workout": {"protein": 25, "carbs": 30, "fat": 5},
@@ -1896,7 +1934,9 @@ class _MainScreenState extends State<MainScreen> {
     final goalG = macro == "protein"
         ? gE.protein
         : (macro == "carbs" ? gE.carbs : gE.fat);
-    final r = _mealDayMacroBandPct(meal, macro);
+    final r0 = _mealDayMacroBandPct(meal, macro);
+    final rf = macro == "carbs" ? _restCarbFactor(meal) : 1.0;
+    final r = (minPct: r0.minPct * rf, maxPct: r0.maxPct * rf);
     if (isSelectedDayCrashout) {
       return (
         minG: goalG * (r.minPct / 100.0),
@@ -1941,9 +1981,10 @@ class _MainScreenState extends State<MainScreen> {
             : 1.0);
     final info = cheatDays[selectedDayKey];
     if (info == null) {
+      final g = goalCalories - _restCarbCutG(selectedDayKey) * 4.1;
       return (
-        minKcal: goalCalories * (1 - tol),
-        maxKcal: goalCalories * (1 + tol),
+        minKcal: g * (1 - tol),
+        maxKcal: g * (1 + tol),
       );
     }
     if (info.isCrashout) {
@@ -1961,7 +2002,7 @@ class _MainScreenState extends State<MainScreen> {
     final goal = macro == "protein"
         ? goalProtein
         : macro == "carbs"
-            ? goalCarbs
+            ? goalCarbs - _restCarbCutG(selectedDayKey)
             : goalFat;
     final baseTol = nutritionMode == "Alltag"
         ? _dailyMacroTolerancePctAlltag
@@ -2178,7 +2219,12 @@ class _MainScreenState extends State<MainScreen> {
                       final cR = dailyMacroRange("carbs");
                       final fR = dailyMacroRange("fat");
                       final bGoal = _dayBaseGoalKcalForDisplay(selectedDayKey);
-                      final mGoals = effectiveMacroGoalsForDay(selectedDayKey);
+                      final mGoals0 = effectiveMacroGoalsForDay(selectedDayKey);
+                      final mGoals = (
+                        protein: mGoals0.protein,
+                        carbs: mGoals0.carbs - _restCarbCutG(selectedDayKey),
+                        fat: mGoals0.fat,
+                      );
                       final ratio =
                           bGoal > 0 ? (recK / bGoal).clamp(0.5, 1.5) : 1.0;
                       final recP = mGoals.protein * ratio;
@@ -2284,7 +2330,12 @@ class _MainScreenState extends State<MainScreen> {
     final isOverRange = kRange.maxKcal > 0 && eaten > kRange.maxKcal;
     final inRange = eaten >= kRange.minKcal && !isOverRange;
     final ratio = goal > 0 ? (eaten / goal) : 0.0;
-    final mg = effectiveMacroGoalsForDay(selectedDayKey);
+    final mg0 = effectiveMacroGoalsForDay(selectedDayKey);
+    final mg = (
+      protein: mg0.protein,
+      carbs: mg0.carbs - _restCarbCutG(selectedDayKey),
+      fat: mg0.fat,
+    );
 
     Widget side(String value, String label) => Column(
           mainAxisSize: MainAxisSize.min,
@@ -4607,7 +4658,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   double _dayGoalKcalForOverview() {
-    if (!isCheatDay(selectedDayKey)) return goalCalories;
+    if (!isCheatDay(selectedDayKey)) {
+      return goalCalories - _restCarbCutG(selectedDayKey) * 4.1;
+    }
     if (isSelectedDayCrashout) return goalCalories;
     final eff = effectiveGoalKcalForDay(selectedDayKey);
     return eff > 0 ? eff : goalCalories;
@@ -5282,7 +5335,7 @@ class _MainScreenState extends State<MainScreen> {
       final mm = mealMacros[m];
       if (mm == null) return 0;
       return g.protein * (mm["protein"] ?? 0) / 100.0 * 4.1 +
-          g.carbs * (mm["carbs"] ?? 0) / 100.0 * 4.1 +
+          g.carbs * (mm["carbs"] ?? 0) / 100.0 * 4.1 * _restCarbFactor(m) +
           g.fat * (mm["fat"] ?? 0) / 100.0 * 9.3;
     }
 
@@ -5336,7 +5389,7 @@ class _MainScreenState extends State<MainScreen> {
     final mm = mealMacros[meal]!;
     return (
       p: recP * (mm['protein']! / 100.0),
-      c: recC * (mm['carbs']! / 100.0),
+      c: recC * (mm['carbs']! / 100.0) * _restCarbFactor(meal),
       f: recF * (mm['fat']! / 100.0),
     );
   }
@@ -5354,7 +5407,7 @@ class _MainScreenState extends State<MainScreen> {
     final post = mealMacros['Post-Workout']!;
     return (
       p: recP * ((pre['protein']! + post['protein']!) / 100.0),
-      c: recC * ((pre['carbs']! + post['carbs']!) / 100.0),
+      c: recC * ((pre['carbs']! + post['carbs']!) / 100.0) * _restCarbFactor("Pre-Workout"),
       f: recF * ((pre['fat']! + post['fat']!) / 100.0),
     );
   }
@@ -6681,6 +6734,12 @@ class _MainScreenState extends State<MainScreen> {
 
       autoOpenWeightMorning =
           prefs.getBool(_kAutoOpenWeightMorningKey) ?? true;
+      try {
+        final rd = prefs.getString(_kRestDaysKey);
+        restDays
+          ..clear()
+          ..addAll(rd == null ? const [] : List<String>.from(jsonDecode(rd) as List));
+      } catch (_) {}
       _lastAutoWeightPromptDay =
           prefs.getString(_kLastAutoWeightPromptDayKey);
 
@@ -7267,6 +7326,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "rest_day_label": "Rest Day · KH ½",
+      "rest_day_tooltip": "Rest Day (KH in Pre/Post halbieren)",
+      "rest_day_on_snack": "Rest Day: KH in Pre- & Post-Workout halbiert (−{g} g KH heute).",
+      "rest_day_off_snack": "Rest Day aus — normale Ziele.",
+      "rest_day_cheat_conflict": "An einem Cheatday ist Rest Day nicht möglich.",
       "db_category_label": "Kategorie",
       "db_taste_label": "Geschmack",
       "workout_block_open_hint": "antippen zum Öffnen",
@@ -8435,6 +8499,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "rest_day_label": "Rest day · carbs ½",
+      "rest_day_tooltip": "Rest day (halve pre/post carbs)",
+      "rest_day_on_snack": "Rest day: pre & post-workout carbs halved (−{g} g carbs today).",
+      "rest_day_off_snack": "Rest day off — normal targets.",
+      "rest_day_cheat_conflict": "Rest day isn't possible on a cheat day.",
       "db_category_label": "Category",
       "db_taste_label": "Taste",
       "workout_block_open_hint": "tap to open",
@@ -13601,7 +13670,7 @@ class _MainScreenState extends State<MainScreen> {
   // Crashout = -1 als Sentinel für "kein Maximum" (UI behandelt das).
   double effectiveGoalKcalForDay(String dayKey) {
     final info = cheatDays[dayKey];
-    if (info == null) return goalCalories;
+    if (info == null) return goalCalories - _restCarbCutG(dayKey) * 4.1;
     if (info.isCrashout) return -1; // unbegrenzt
     return goalCalories * _cheatDayKcalScale(info);
   }
@@ -18377,7 +18446,9 @@ class _MainScreenState extends State<MainScreen> {
                 _buildKcalHeader(
                   current: totalCalories,
                   goal: () {
-                    if (!isCheatDay(selectedDayKey)) return goalCalories;
+                    if (!isCheatDay(selectedDayKey)) {
+      return goalCalories - _restCarbCutG(selectedDayKey) * 4.1;
+    }
                     if (isSelectedDayCrashout) return goalCalories;
                     final eff = effectiveGoalKcalForDay(selectedDayKey);
                     return eff > 0 ? eff : goalCalories;
@@ -18418,7 +18489,9 @@ class _MainScreenState extends State<MainScreen> {
                         _ringOverview(
                           eaten: totalCalories,
                           goal: () {
-                            if (!isCheatDay(selectedDayKey)) return goalCalories;
+                            if (!isCheatDay(selectedDayKey)) {
+      return goalCalories - _restCarbCutG(selectedDayKey) * 4.1;
+    }
                             if (isSelectedDayCrashout) return goalCalories;
                             final eff = effectiveGoalKcalForDay(selectedDayKey);
                             return eff > 0 ? eff : goalCalories;
@@ -18882,7 +18955,7 @@ class _MainScreenState extends State<MainScreen> {
     final recG = _balanceRecommendMacroGForMeal(meal);
     final mm = mealMacros[meal]!;
     final slotP = gDayM.protein * (mm['protein']! / 100.0);
-    final slotC = gDayM.carbs * (mm['carbs']! / 100.0);
+    final slotC = gDayM.carbs * (mm['carbs']! / 100.0) * _restCarbFactor(meal);
     final slotF = gDayM.fat * (mm['fat']! / 100.0);
     // Pre-Workout komplex/einfach: Bänder = Anteil am **Tages-KH-Ziel** (15–20 % bzw. 10–15 %), nicht am Mahlzeiten-Slot.
     final dayCarbG = gDayM.carbs;
@@ -19153,8 +19226,9 @@ class _MainScreenState extends State<MainScreen> {
     final post = mealMacros['Post-Workout']!;
     final slotP =
         gDayM.protein * ((pre['protein']! + post['protein']!) / 100.0);
-    final slotC =
-        gDayM.carbs * ((pre['carbs']! + post['carbs']!) / 100.0);
+    final slotC = gDayM.carbs *
+        ((pre['carbs']! + post['carbs']!) / 100.0) *
+        _restCarbFactor("Pre-Workout");
     final slotF = gDayM.fat * ((pre['fat']! + post['fat']!) / 100.0);
 
     return Column(
@@ -19331,11 +19405,15 @@ class _MainScreenState extends State<MainScreen> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      "Pre · Post",
+                                      isRestDay(selectedDayKey)
+                                          ? t("rest_day_label")
+                                          : "Pre · Post",
                                       style: TextStyle(
                                         fontSize: 11.5,
                                         fontWeight: FontWeight.w600,
-                                        color: wtx.expandIcon,
+                                        color: isRestDay(selectedDayKey)
+                                            ? const Color(0xFFC9A24A)
+                                            : wtx.expandIcon,
                                       ),
                                     ),
                                   ],
@@ -19371,6 +19449,23 @@ class _MainScreenState extends State<MainScreen> {
                   tooltip: t("meal_note"),
                   onPressed: () =>
                       unawaited(_openMealNoteDialog(_kWorkoutBlockMealId)),
+                ),
+                // Rest Day: KH in Pre/Post halbieren.
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 34, minHeight: 32),
+                  tooltip: t("rest_day_tooltip"),
+                  icon: Icon(
+                    isRestDay(selectedDayKey)
+                        ? Icons.bedtime
+                        : Icons.bedtime_outlined,
+                    size: 20,
+                    color: isRestDay(selectedDayKey)
+                        ? const Color(0xFFC9A24A)
+                        : wtx.noteOff,
+                  ),
+                  onPressed: () => unawaited(_toggleRestDay()),
                 ),
                 // + : erst wählen, ob Pre- oder Post-Workout.
                 PopupMenuButton<String>(
@@ -24924,7 +25019,8 @@ class _MainScreenState extends State<MainScreen> {
 
           final gE0 = effectiveMacroGoalsForDay(selectedDayKey);
           final mealGoalProtein = gE0.protein * (pPct / 100.0);
-          final mealGoalCarbs = gE0.carbs * (cPct / 100.0);
+          final mealGoalCarbs =
+              gE0.carbs * (cPct / 100.0) * _restCarbFactor(selectedMeal);
           final mealGoalFat = gE0.fat * (fPct / 100.0);
 
           final consumedProtein = _mealTotals[selectedMeal]!["protein"] ?? 0;
