@@ -4173,6 +4173,18 @@ class _MainScreenState extends State<MainScreen> {
                     },
                   );
                 }(),
+              if (_pickerType == "recipes")
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.add),
+                    label: Text(t("rec_new_title")),
+                    onPressed: () async {
+                      await _openRecipeEditor();
+                      setL(() {});
+                    },
+                  ),
+                ),
             ];
           }
 
@@ -4450,7 +4462,11 @@ class _MainScreenState extends State<MainScreen> {
             if (image != null && image.isNotEmpty) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.asset(image, width: 46, height: 46, fit: BoxFit.cover,
+                child: image.startsWith("data:")
+                    ? Image.memory(base64Decode(image.split(",").last),
+                        width: 46, height: 46, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46))
+                    : Image.asset(image, width: 46, height: 46, fit: BoxFit.cover,
                     cacheWidth: (46 * 16 / 9 * MediaQuery.devicePixelRatioOf(context) * 1.5).round(),
                     filterQuality: FilterQuality.high,
                     errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46)),
@@ -7854,6 +7870,42 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "create_food": "Lebensmittel anlegen",
+      "rec_new_title": "Rezept erstellen",
+      "rec_new_sub": "Zutaten, Nährwerte, Portionen, Zubereitung",
+      "rec_edit_title": "Rezept bearbeiten",
+      "rec_need_name_ings": "Bitte Namen und mindestens eine Zutat angeben.",
+      "rec_name": "Name des Rezepts",
+      "rec_photo": "Foto",
+      "rec_ingredients": "Zutaten (roh gewogen)",
+      "rec_add_ingredient": "Zutat hinzufügen",
+      "rec_result": "Ergebnis",
+      "rec_cooked_weight": "Fertiges Gewicht (optional)",
+      "rec_portions": "Portionen",
+      "rec_cooked_hint": "Leer lassen = Summe der Zutaten ({g} g). Nach dem Kochen wiegen ist genauer (Wasser verdampft / zieht ein).",
+      "rec_total_kcal": "kcal gesamt",
+      "rec_per_portion": "pro Portion ({g} g)",
+      "rec_per_portion_note": "Makros pro Portion. In der App wird das Rezept pro 100 g gespeichert – beim Tracken gibt es „1 Portion“ als Knopf.",
+      "rec_prep": "Zubereitung",
+      "rec_dev_none": "Ohne",
+      "rec_dev_oven": "Ofen",
+      "rec_dev_pan": "Pfanne",
+      "rec_dev_pot": "Topf",
+      "rec_dev_airfryer": "Airfryer",
+      "rec_dev_micro": "Mikrowelle",
+      "rec_dev_blender": "Mixer",
+      "rec_temp": "Temperatur",
+      "rec_heat": "Herdstufe (1–9)",
+      "rec_time": "Zeit",
+      "rec_steps": "Schritte",
+      "rec_steps_hint": "Ein Schritt pro Zeile",
+      "rec_tip_label": "Tipp (optional)",
+      "rec_setup": "Gerät",
+      "rec_tip": "Tipp",
+      "rec_no_steps": "Alle Zutaten zusammen zubereiten.",
+      "rec_portion_hint": "1 Portion ≈ {g} g · {k} kcal · ergibt {n} Portion(en)",
+      "rec_delete": "Rezept löschen",
+      "rec_saved": "Rezept gespeichert – findest du unter Rezepte.",
       "portion_new_title": "Eigene Portion",
       "portion_name": "Bezeichnung (z. B. Packung, Riegel, Scheibe)",
       "portion_grams": "Menge",
@@ -9063,6 +9115,42 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "create_food": "Create food",
+      "rec_new_title": "Create recipe",
+      "rec_new_sub": "Ingredients, nutrition, portions, preparation",
+      "rec_edit_title": "Edit recipe",
+      "rec_need_name_ings": "Please enter a name and at least one ingredient.",
+      "rec_name": "Recipe name",
+      "rec_photo": "Photo",
+      "rec_ingredients": "Ingredients (weighed raw)",
+      "rec_add_ingredient": "Add ingredient",
+      "rec_result": "Result",
+      "rec_cooked_weight": "Finished weight (optional)",
+      "rec_portions": "Portions",
+      "rec_cooked_hint": "Leave empty = sum of ingredients ({g} g). Weighing after cooking is more accurate.",
+      "rec_total_kcal": "kcal total",
+      "rec_per_portion": "per portion ({g} g)",
+      "rec_per_portion_note": "Macros per portion. The recipe is stored per 100 g – when tracking there is a “1 portion” button.",
+      "rec_prep": "Preparation",
+      "rec_dev_none": "None",
+      "rec_dev_oven": "Oven",
+      "rec_dev_pan": "Pan",
+      "rec_dev_pot": "Pot",
+      "rec_dev_airfryer": "Air fryer",
+      "rec_dev_micro": "Microwave",
+      "rec_dev_blender": "Blender",
+      "rec_temp": "Temperature",
+      "rec_heat": "Stove level (1–9)",
+      "rec_time": "Time",
+      "rec_steps": "Steps",
+      "rec_steps_hint": "One step per line",
+      "rec_tip_label": "Tip (optional)",
+      "rec_setup": "Device",
+      "rec_tip": "Tip",
+      "rec_no_steps": "Prepare all ingredients together.",
+      "rec_portion_hint": "1 portion ≈ {g} g · {k} kcal · makes {n} portion(s)",
+      "rec_delete": "Delete recipe",
+      "rec_saved": "Recipe saved – find it under Recipes.",
       "portion_new_title": "Custom portion",
       "portion_name": "Label (e.g. pack, bar, slice)",
       "portion_grams": "Amount",
@@ -11412,7 +11500,11 @@ class _MainScreenState extends State<MainScreen> {
                           ),
                           onPressed: () {
                             Navigator.of(ctx).pop();
-                            _openEditUserFoodDialog(food);
+                            if (food.category == "Rezepte") {
+                              unawaited(_openRecipeEditor(edit: food));
+                            } else {
+                              _openEditUserFoodDialog(food);
+                            }
                           },
                         ),
                       IconButton(
@@ -16458,7 +16550,7 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: addFoodDialog,
+        onPressed: _openCreateChooser,
         child: const Icon(Icons.add),
       ),
       body: CustomScrollView(
@@ -17602,6 +17694,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _foodImagePathExists(String? path) {
     if (path == null || path.isEmpty) return false;
     if (_foodImagePathIsAsset(path)) return true;
+    if (path.startsWith("data:")) return true;
     return File(path).existsSync();
   }
 
@@ -17634,6 +17727,14 @@ class _MainScreenState extends State<MainScreen> {
           height: height,
           child: const Icon(Icons.broken_image, color: Colors.white38),
         );
+    if (path.startsWith("data:")) {
+      try {
+        return Image.memory(base64Decode(path.split(",").last),
+            width: width, height: height, fit: fit, errorBuilder: (_, __, ___) => err);
+      } catch (_) {
+        return err;
+      }
+    }
     if (_foodImagePathIsAsset(path)) {
       // Scharf statt verpixelt: in passender Grösse dekodieren + hochwertig skalieren.
       final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -18490,6 +18591,508 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
     );
+  }
+
+  // ───────────── Eigene Rezepte erstellen / bearbeiten ─────────────
+  static const String _kUserRecipesKey = "user_recipes_v1";
+
+  Future<Map<String, dynamic>> _loadUserRecipeMeta() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kUserRecipesKey);
+      if (raw == null || raw.isEmpty) return {};
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _saveUserRecipeMeta(Map<String, dynamic> m) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kUserRecipesKey, jsonEncode(m));
+    } catch (_) {}
+  }
+
+  /// Einfache Lebensmittel-Suche (für Rezept-Zutaten).
+  Future<Food?> _pickFoodSimple() async {
+    var q = "";
+    String norm(String x) => x
+        .toLowerCase()
+        .replaceAll("ä", "a")
+        .replaceAll("ö", "o")
+        .replaceAll("ü", "u")
+        .replaceAll("ß", "ss");
+    return showModalBottomSheet<Food>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.sol.scaffold,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setL) {
+        final words = norm(q).split(RegExp(r"\s+")).where((w) => w.isNotEmpty);
+        final list = foodDatabase
+            .where((f) => !f.isRecipe && words.every(norm(f.name).contains))
+            .toList()
+          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        return SizedBox(
+          height: MediaQuery.sizeOf(ctx).height * 0.85,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: TextField(
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: t("track_search_hint"),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onChanged: (v) => setL(() => q = v),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  children: _withFoodDividers([
+                    for (final f in list)
+                      ListTile(
+                        title: Text(f.name),
+                        subtitle: Text(
+                            "P ${f.protein.round()} · K ${f.carbs.round()} · F ${f.fat.round()} · ${f.calories.round()} kcal / 100 g",
+                            style: TextStyle(fontSize: 11.5, color: context.sol.muted)),
+                        onTap: () => Navigator.pop(ctx, f),
+                      ),
+                  ]),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  Future<void> _openRecipeEditor({Food? edit}) async {
+    const gold = Color(0xFFC9A24A);
+    final metaAll = await _loadUserRecipeMeta();
+    final meta = edit == null
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from((metaAll[edit.name] ?? {}) as Map);
+    if (!mounted) return;
+    final nameCtrl = TextEditingController(text: edit?.name ?? "");
+    final ings = <(Food, TextEditingController)>[];
+    for (final e in (meta["ings"] as List? ?? const [])) {
+      final f = _foodByName((e as List)[0].toString());
+      if (f != null) {
+        ings.add((f, TextEditingController(text: (e[1] as num).round().toString())));
+      }
+    }
+    final cookedCtrl = TextEditingController(
+        text: meta["cooked"] == null ? "" : (meta["cooked"] as num).round().toString());
+    final portionsCtrl =
+        TextEditingController(text: (meta["portions"] ?? 1).toString());
+    var device = (meta["device"] ?? "none").toString();
+    final tempCtrl = TextEditingController(text: (meta["temp"] ?? "").toString());
+    final timeCtrl = TextEditingController(text: (meta["time"] ?? "").toString());
+    final stepsCtrl = TextEditingController(text: (meta["steps"] ?? "").toString());
+    final notesCtrl = TextEditingController(text: (meta["tip"] ?? "").toString());
+    var flavor = edit?.recipeFlavor ?? "salty";
+    String? imageData = (edit?.imagePath ?? "").startsWith("data:") ? edit!.imagePath : null;
+    double? parse(String x) => double.tryParse(x.trim().replaceAll(",", "."));
+
+    const devices = [
+      ("none", Icons.do_not_disturb_alt, "rec_dev_none"),
+      ("oven", Icons.local_fire_department_outlined, "rec_dev_oven"),
+      ("pan", Icons.soup_kitchen_outlined, "rec_dev_pan"),
+      ("pot", Icons.ramen_dining_outlined, "rec_dev_pot"),
+      ("airfryer", Icons.air, "rec_dev_airfryer"),
+      ("micro", Icons.microwave_outlined, "rec_dev_micro"),
+      ("blender", Icons.blender_outlined, "rec_dev_blender"),
+    ];
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Dialog.fullscreen(
+        backgroundColor: context.sol.scaffold,
+        child: StatefulBuilder(builder: (ctx, setL) {
+          final muted = context.sol.muted;
+          // Summen
+          var gSum = 0.0, pS = 0.0, cS = 0.0, fS = 0.0, su = 0.0, fi = 0.0;
+          for (final (food, ctrl) in ings) {
+            final g = parse(ctrl.text) ?? 0;
+            gSum += g;
+            pS += food.protein * g / 100;
+            cS += food.carbs * g / 100;
+            fS += food.fat * g / 100;
+            su += food.sugar * g / 100;
+            fi += food.fiber * g / 100;
+          }
+          final kcal = pS * 4.1 + cS * 4.1 + fS * 9.3;
+          final cooked = parse(cookedCtrl.text);
+          final weight = (cooked != null && cooked > 0) ? cooked : gSum;
+          final portions = (parse(portionsCtrl.text) ?? 1).clamp(1, 100);
+          final portionG = weight / portions;
+          final portionK = kcal / portions;
+
+          Widget sec(String x) => Padding(
+                padding: const EdgeInsets.fromLTRB(0, 18, 0, 8),
+                child: Text(x.toUpperCase(),
+                    style: const TextStyle(
+                        color: gold,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1)),
+              );
+          Widget numBox(TextEditingController ctl, String label, String suffix) =>
+              Expanded(
+                child: TextField(
+                  controller: ctl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                      labelText: label, suffixText: suffix, isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                  onChanged: (_) => setL(() {}),
+                ),
+              );
+          Widget tile(String v, String l) => Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: gold.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: gold.withValues(alpha: 0.4)),
+                  ),
+                  child: Column(children: [
+                    Text(v,
+                        style: TextStyle(
+                            color: context.sol.onCard,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800)),
+                    Text(l, style: TextStyle(color: muted, fontSize: 10.5)),
+                  ]),
+                ),
+              );
+
+          return Column(
+            children: [
+              SafeArea(
+                bottom: false,
+                child: Row(
+                  children: [
+                    IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx, false)),
+                    Expanded(
+                      child: Text(edit == null ? t("rec_new_title") : t("rec_edit_title"),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final name = nameCtrl.text.trim();
+                        if (name.isEmpty || ings.isEmpty || weight <= 0) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text(t("rec_need_name_ings"))));
+                          return;
+                        }
+                        final per = 100 / weight;
+                        final k100 = kcal * per;
+                        final devLabel = device == "none"
+                            ? ""
+                            : t(devices.firstWhere((d) => d.$1 == device).$3);
+                        final setup = [
+                          if (devLabel.isNotEmpty) devLabel,
+                          if (tempCtrl.text.trim().isNotEmpty) "${tempCtrl.text.trim()} °C",
+                          if (timeCtrl.text.trim().isNotEmpty) "${timeCtrl.text.trim()} min",
+                        ].join(" · ");
+                        final steps = stepsCtrl.text
+                            .split("\n")
+                            .map((x) => x.trim())
+                            .where((x) => x.isNotEmpty)
+                            .toList();
+                        final food = Food(
+                          name: name,
+                          protein: pS * per,
+                          carbs: cS * per,
+                          sugar: su * per,
+                          fiber: fi * per,
+                          fat: fS * per,
+                          category: "Rezepte",
+                          type: k100 < 150 ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)",
+                          isDefault: false,
+                          imagePath: imageData,
+                          ingredients: [
+                            for (final (fd, ctl) in ings)
+                              "${(parse(ctl.text) ?? 0).round()} g ${fd.name}",
+                          ],
+                          instructions: [
+                            if (setup.isNotEmpty) "${t("rec_setup")}: $setup",
+                            ...steps,
+                            if (notesCtrl.text.trim().isNotEmpty)
+                              "${t("rec_tip")}: ${notesCtrl.text.trim()}",
+                            if (steps.isEmpty && setup.isEmpty) t("rec_no_steps"),
+                          ],
+                          portionHint: tFmt("rec_portion_hint", {
+                            "g": portionG.round().toString(),
+                            "k": portionK.round().toString(),
+                            "n": portions.round().toString(),
+                          }),
+                          basePortionGrams: portionG,
+                          recipeFlavor: flavor,
+                        );
+                        setState(() {
+                          if (edit != null) foodDatabase.remove(edit);
+                          foodDatabase.removeWhere((x) => !x.isDefault && x.name == name);
+                          foodDatabase.add(food);
+                        });
+                        _saveAppState();
+                        if (edit != null && edit.name != name) metaAll.remove(edit.name);
+                        metaAll[name] = {
+                          "ings": [
+                            for (final (fd, ctl) in ings) [fd.name, parse(ctl.text) ?? 0]
+                          ],
+                          "cooked": cooked,
+                          "portions": portions.round(),
+                          "device": device,
+                          "temp": tempCtrl.text.trim(),
+                          "time": timeCtrl.text.trim(),
+                          "steps": stepsCtrl.text,
+                          "tip": notesCtrl.text,
+                        };
+                        await _saveUserRecipeMeta(metaAll);
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      },
+                      child: Text(t("save"),
+                          style: const TextStyle(color: gold, fontWeight: FontWeight.w800)),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: InputDecoration(
+                          labelText: t("rec_name"),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        if (imageData != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.memory(
+                                base64Decode(imageData!.split(",").last),
+                                width: 64, height: 64, fit: BoxFit.cover),
+                          ),
+                        if (imageData != null) const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                          label: Text(t("rec_photo")),
+                          onPressed: () async {
+                            final x = await ImagePicker().pickImage(
+                                source: ImageSource.gallery, maxWidth: 900, imageQuality: 72);
+                            if (x == null) return;
+                            final b = await x.readAsBytes();
+                            setL(() => imageData =
+                                "data:${x.mimeType ?? "image/jpeg"};base64,${base64Encode(b)}");
+                          },
+                        ),
+                        const Spacer(),
+                        for (final fl in const ["sweet", "salty"])
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: ChoiceChip(
+                              visualDensity: VisualDensity.compact,
+                              label: Text(fl == "sweet"
+                                  ? t("recipe_flavor_sweet")
+                                  : t("recipe_flavor_salty")),
+                              selected: flavor == fl,
+                              onSelected: (_) => setL(() => flavor = fl),
+                            ),
+                          ),
+                      ],
+                    ),
+                    sec(t("rec_ingredients")),
+                    for (var i = 0; i < ings.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(ings[i].$1.name,
+                                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                                  Text(
+                                      "${((parse(ings[i].$2.text) ?? 0) * ings[i].$1.calories / 100).round()} kcal",
+                                      style: TextStyle(color: muted, fontSize: 11.5)),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              width: 90,
+                              child: TextField(
+                                controller: ings[i].$2,
+                                textAlign: TextAlign.center,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(
+                                    suffixText: "g", isDense: true),
+                                onChanged: (_) => setL(() {}),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, size: 18, color: muted),
+                              onPressed: () => setL(() => ings.removeAt(i)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.add, color: gold),
+                      label: Text(t("rec_add_ingredient")),
+                      onPressed: () async {
+                        final fd = await _pickFoodSimple();
+                        if (fd == null) return;
+                        setL(() => ings.add((fd, TextEditingController(text: "100"))));
+                      },
+                    ),
+                    sec(t("rec_result")),
+                    Row(children: [
+                      numBox(cookedCtrl, t("rec_cooked_weight"), "g"),
+                      const SizedBox(width: 8),
+                      numBox(portionsCtrl, t("rec_portions"), "×"),
+                    ]),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(tFmt("rec_cooked_hint", {"g": gSum.round().toString()}),
+                          style: TextStyle(color: muted, fontSize: 11)),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      tile("${kcal.round()}", t("rec_total_kcal")),
+                      const SizedBox(width: 6),
+                      tile("${portionK.round()} kcal", tFmt("rec_per_portion", {"g": portionG.round().toString()})),
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      tile("${(pS / portions).round()} g", t("protein")),
+                      const SizedBox(width: 6),
+                      tile("${(cS / portions).round()} g", t("carbs")),
+                      const SizedBox(width: 6),
+                      tile("${(fS / portions).round()} g", t("fat")),
+                    ]),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(t("rec_per_portion_note"),
+                          style: TextStyle(color: muted, fontSize: 11)),
+                    ),
+                    sec(t("rec_prep")),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final d in devices)
+                          ChoiceChip(
+                            avatar: Icon(d.$2, size: 16),
+                            label: Text(t(d.$3)),
+                            selected: device == d.$1,
+                            onSelected: (_) => setL(() => device = d.$1),
+                          ),
+                      ],
+                    ),
+                    if (device != "none") ...[
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        if (device == "oven" || device == "airfryer" || device == "pan")
+                          numBox(tempCtrl, device == "pan" ? t("rec_heat") : t("rec_temp"),
+                              device == "pan" ? "" : "°C"),
+                        if (device == "oven" || device == "airfryer" || device == "pan")
+                          const SizedBox(width: 8),
+                        numBox(timeCtrl, t("rec_time"), "min"),
+                      ]),
+                    ],
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: stepsCtrl,
+                      minLines: 4,
+                      maxLines: 12,
+                      decoration: InputDecoration(
+                          labelText: t("rec_steps"),
+                          hintText: t("rec_steps_hint"),
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: notesCtrl,
+                      minLines: 1,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                          labelText: t("rec_tip_label"),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                    ),
+                    if (edit != null) ...[
+                      const SizedBox(height: 24),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: const Color(0xFFA84A4A)),
+                        icon: const Icon(Icons.delete_outline),
+                        label: Text(t("rec_delete")),
+                        onPressed: () async {
+                          setState(() => foodDatabase.remove(edit));
+                          _saveAppState();
+                          metaAll.remove(edit.name);
+                          await _saveUserRecipeMeta(metaAll);
+                          if (ctx.mounted) Navigator.pop(ctx, true);
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(t("rec_saved"))));
+    }
+  }
+
+  /// Datenbank-Plus: Lebensmittel oder Rezept anlegen.
+  Future<void> _openCreateChooser() async {
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: context.sol.card,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.egg_outlined, color: Color(0xFFC9A24A)),
+              title: Text(t("create_food")),
+              onTap: () => Navigator.pop(ctx, "food"),
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            ListTile(
+              leading: const Icon(Icons.menu_book_outlined, color: Color(0xFFC9A24A)),
+              title: Text(t("rec_new_title")),
+              subtitle: Text(t("rec_new_sub"), style: const TextStyle(fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, "recipe"),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (v == "food") addFoodDialog();
+    if (v == "recipe") await _openRecipeEditor();
   }
 
   void addFoodDialog() {

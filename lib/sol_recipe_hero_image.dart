@@ -1,3 +1,4 @@
+import 'dart:convert';
 // Rezept-Header: Standard-Bild, sonst gecachtes KI-Bild, sonst Button zum Erzeugen (Imagen).
 
 import 'dart:async';
@@ -107,6 +108,17 @@ class _SolRecipeHeroImageState extends State<SolRecipeHeroImage> {
         !_assetFailed) {
       final path = widget.imageAssetPath!;
       final isAsset = path.startsWith('assets/');
+      if (path.startsWith('data:')) {
+        return _framed(
+          context,
+          Image.memory(
+            base64Decode(path.split(',').last),
+            width: double.infinity,
+            height: widget.height,
+            fit: BoxFit.cover,
+          ),
+        );
+      }
       return _framed(
         context,
         isAsset
