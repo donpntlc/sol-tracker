@@ -3875,6 +3875,23 @@ class _MainScreenState extends State<MainScreen> {
     return m;
   }
 
+  /// Dichte-Wert für Diät/Aufbau-Sortierung: Makro der Kategorie pro 100 g,
+  /// sonst kcal pro 100 g.
+  double _densityFor(Food f, String cat) => switch (cat) {
+        "Carbs" => f.carbs,
+        "Protein" => f.protein,
+        "Fett" => f.fat,
+        "Ballaststoffe" => f.fiber,
+        _ => f.calories,
+      };
+
+  /// Diät: geringste Dichte oben · Aufbau: höchste Dichte oben.
+  int _densityCompare(Food a, Food b, String cat, String mode) {
+    final c = _densityFor(a, cat).compareTo(_densityFor(b, cat));
+    if (c != 0) return mode == "Aufbau" ? -c : c;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
   Future<void> _openFoodPicker(String meal, {String? fillTag}) async {
     var q = "";
     final usage = _foodUsageCounts();
@@ -3925,10 +3942,14 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ];
           } else {
+            // Komplexe/einfache KH füllen → nur passende KH-Quellen.
+            final kindOnly = fillTag == "cP"
+                ? "komplex"
+                : (fillTag == "cE" ? "einfach" : null);
             var list = foodDatabase.where((f) {
               if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) return false;
               if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) return false;
-              if (_pickerMode != "Alle" && !f.type.startsWith(_pickerMode)) return false;
+              if (kindOnly != null && f.carbKind != kindOnly) return false;
               return words.isEmpty || match(f.name);
             }).toList();
             // Makro passend zur Kategorie (für Anzeige + Sortierung).
@@ -3949,6 +3970,10 @@ class _MainScreenState extends State<MainScreen> {
             int byName(Food a, Food b) =>
                 a.name.toLowerCase().compareTo(b.name.toLowerCase());
             list.sort((a, b) {
+              // Diät/Aufbau sortiert nach Dichte (Makro der Kategorie bzw. kcal).
+              if (_pickerMode != "Alle") {
+                return _densityCompare(a, b, _pickerCat, _pickerMode);
+              }
               switch (_pickerSort) {
                 case "az":
                   return byName(a, b);
@@ -15868,9 +15893,8 @@ class _MainScreenState extends State<MainScreen> {
           food.name.toLowerCase().contains(searchQuery.toLowerCase());
       final matchesCategory = databaseCategoryFilter == "Alle" ||
           food.isInCategory(databaseCategoryFilter);
-      final matchesType = databaseTypeFilter == "Alle" ||
-          (databaseTypeFilter == "Diät" && food.type.startsWith("Diät")) ||
-          (databaseTypeFilter == "Aufbau" && food.type.startsWith("Aufbau"));
+      // Diät/Aufbau sortiert jetzt nur noch (nach Dichte), filtert nicht.
+      const matchesType = true;
       final matchesSource = databaseSourceFilter == "all" ||
           (databaseSourceFilter == "mine" && !food.isDefault) ||
           (databaseSourceFilter == "sol" && food.isDefault);
@@ -16062,12 +16086,9 @@ class _MainScreenState extends State<MainScreen> {
                       .where((f) => f.isInCategory(category))
                       .toList()
                     ..sort((a, b) {
-                      final calCompare = a.calories.compareTo(b.calories);
-                      if (databaseTypeFilter == "Diät" && calCompare != 0) {
-                        return calCompare;
-                      }
-                      if (databaseTypeFilter == "Aufbau" && calCompare != 0) {
-                        return -calCompare;
+                      if (databaseTypeFilter != "Alle") {
+                        return _densityCompare(
+                            a, b, category, databaseTypeFilter);
                       }
                       return a.name
                           .toLowerCase()
