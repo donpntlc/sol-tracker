@@ -4015,6 +4015,7 @@ class _MainScreenState extends State<MainScreen> {
   String _pickerType = "food"; // food | meals | recipes
   String _pickerCat = "Alle";
   String _pickerMode = "Alle"; // Alle | Diät | Aufbau
+  String _pickerFlavor = "all"; // all | sweet | salty
   String _pickerSort = "freq"; // freq | az | kcalUp | kcalDown | macroDown
   bool _pickerPer100 = true; // false = Portion/Menge, true = pro 100 g
 
@@ -4102,6 +4103,7 @@ class _MainScreenState extends State<MainScreen> {
               if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) return false;
               if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) return false;
               if (kindOnly != null && f.carbKind != kindOnly) return false;
+              if (!_recipeMatchesFlavorFilter(f, _pickerFlavor)) return false;
               return words.isEmpty || match(f.name);
             }).toList();
             // Makro passend zur Kategorie (für Anzeige + Sortierung).
@@ -4425,6 +4427,30 @@ class _MainScreenState extends State<MainScreen> {
                                 ),
                             ],
                           ),
+                        ],
+                      ),
+                    ),
+                  if (_pickerType != "meals")
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: Row(
+                        children: [
+                          for (final fl in const ["all", "sweet", "salty"])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: ChoiceChip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text(
+                                    fl == "all"
+                                        ? "Süß & salzig"
+                                        : (fl == "sweet"
+                                            ? t("recipe_flavor_sweet")
+                                            : t("recipe_flavor_salty")),
+                                    style: const TextStyle(fontSize: 12)),
+                                selected: _pickerFlavor == fl,
+                                onSelected: (_) => setL(() => _pickerFlavor = fl),
+                              ),
+                            ),
                         ],
                       ),
                     ),
