@@ -13944,6 +13944,10 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 14),
                 _kpiLine(t("day"), _dayLabelForKey(dayKey)),
+                if (isCheatDay(dayKey))
+                  _kpiLine("Tagesart", "🔥 Cheat Day")
+                else if (isRestDay(dayKey))
+                  _kpiLine("Tagesart", "🌙 Rest Day · KH ½"),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Row(
@@ -29331,6 +29335,12 @@ class _MainScreenState extends State<MainScreen> {
               initialDate: initial,
               weekdayShort: _tWeekdayShort,
               legendText: t("calendar_weekstart_legend"),
+              dayTag: (d) {
+                final k = dateKeyFromDate(d);
+                if (isCheatDay(k)) return "cheat";
+                if (isRestDay(k)) return "rest";
+                return null;
+              },
               onDayPicked: (d) {
                 Navigator.of(ctx).pop(d);
               },
@@ -31150,6 +31160,7 @@ class _WeekStartCalendarPicker extends StatefulWidget {
     required this.weekdayShort,
     required this.legendText,
     required this.onDayPicked,
+    this.dayTag,
   });
 
   final int weekStartWeekday;
@@ -31157,6 +31168,8 @@ class _WeekStartCalendarPicker extends StatefulWidget {
   final String Function(int) weekdayShort;
   final String legendText;
   final void Function(DateTime) onDayPicked;
+  /// Markierung pro Tag: "cheat", "rest" oder null.
+  final String? Function(DateTime)? dayTag;
 
   @override
   State<_WeekStartCalendarPicker> createState() =>
@@ -31303,19 +31316,38 @@ class _WeekStartCalendarPickerState extends State<_WeekStartCalendarPicker> {
                         width: isSel ? 2.2 : 1,
                       ),
                     ),
-                    child: Center(
-                      child: Text(
-                        "$day",
-                        style: TextStyle(
-                          fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                          fontSize: 13,
-                          color: isSel
-                              ? const Color(0xFFC9A24A)
-                              : (isWStart
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.92)),
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: Text(
+                            "$day",
+                            style: TextStyle(
+                              fontWeight:
+                                  isSel ? FontWeight.w800 : FontWeight.w600,
+                              fontSize: 13,
+                              color: isSel
+                                  ? const Color(0xFFC9A24A)
+                                  : (isWStart
+                                      ? Colors.white
+                                      : Colors.white.withValues(alpha: 0.92)),
+                            ),
+                          ),
                         ),
-                      ),
+                        if (widget.dayTag?.call(d) != null)
+                          Positioned(
+                            right: 2,
+                            bottom: 1,
+                            child: Icon(
+                              widget.dayTag!(d) == "cheat"
+                                  ? Icons.local_fire_department
+                                  : Icons.nightlight_round,
+                              size: 11,
+                              color: widget.dayTag!(d) == "cheat"
+                                  ? const Color(0xFFE53935)
+                                  : const Color(0xFF8AB4F8),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -31351,6 +31383,23 @@ class _WeekStartCalendarPickerState extends State<_WeekStartCalendarPicker> {
               ),
             ],
           ),
+          if (widget.dayTag != null) ...[
+            const SizedBox(height: 6),
+            const Row(
+              children: [
+                Icon(Icons.nightlight_round, size: 14, color: Color(0xFF8AB4F8)),
+                SizedBox(width: 4),
+                Text("Rest Day",
+                    style: TextStyle(fontSize: 11.5, color: Colors.white60)),
+                SizedBox(width: 14),
+                Icon(Icons.local_fire_department,
+                    size: 14, color: Color(0xFFE53935)),
+                SizedBox(width: 4),
+                Text("Cheat Day",
+                    style: TextStyle(fontSize: 11.5, color: Colors.white60)),
+              ],
+            ),
+          ],
         ],
       ),
     );
