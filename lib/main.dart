@@ -19698,6 +19698,18 @@ class _MainScreenState extends State<MainScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Zahl oben, Bezeichnung darunter.
+            Text(
+              "${grams.toStringAsFixed(0)} g",
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(height: 1),
             Text(
               label,
               maxLines: 1,
@@ -19707,17 +19719,6 @@ class _MainScreenState extends State<MainScreen> {
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
                 height: 1.1,
-              ),
-            ),
-            const SizedBox(height: 1),
-            Text(
-              "${grams.toStringAsFixed(0)} g",
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ],
