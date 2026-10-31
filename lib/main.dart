@@ -19846,7 +19846,7 @@ class _MainScreenState extends State<MainScreen> {
                   itemBuilder: (_) => [
                     PopupMenuItem(
                         value: "Pre-Workout",
-                        child: Text(_displayMealName("Pre-Workout"))),
+                        child: _ddLine(Text(_displayMealName("Pre-Workout")))),
                     PopupMenuItem(
                         value: "Post-Workout",
                         child: Text(_displayMealName("Post-Workout"))),
@@ -20557,15 +20557,15 @@ class _MainScreenState extends State<MainScreen> {
                   itemBuilder: (c) => [
                     PopupMenuItem(
                       value: "food",
-                      child: Text(t("add_food")),
+                      child: _ddLine(Text(t("add_food"))),
                     ),
                     PopupMenuItem(
                       value: "tpl",
-                      child: Text(t("meal_tpl_menu")),
+                      child: _ddLine(Text(t("meal_tpl_menu"))),
                     ),
                     PopupMenuItem(
                       value: "gen",
-                      child: Text(t("generator")),
+                      child: _ddLine(Text(t("generator"))),
                     ),
                     PopupMenuItem(
                       value: "ai_photo",
@@ -23571,10 +23571,10 @@ class _MainScreenState extends State<MainScreen> {
                     color: Color(0xFFC9A24A),
                   ),
                   itemBuilder: (_) => [
-                    PopupMenuItem(value: "food", child: Text(t("add_food"))),
+                    PopupMenuItem(value: "food", child: _ddLine(Text(t("add_food")))),
                     PopupMenuItem(
                       value: "gen",
-                      child: Text(t("generator")),
+                      child: _ddLine(Text(t("generator"))),
                     ),
                     PopupMenuItem(
                       value: "ai_photo",
@@ -24203,9 +24203,9 @@ class _MainScreenState extends State<MainScreen> {
             }
           },
           itemBuilder: (c) => [
-            PopupMenuItem(value: "food", child: Text(t("add_food"))),
-            PopupMenuItem(value: "tpl", child: Text(t("meal_tpl_menu"))),
-            PopupMenuItem(value: "gen", child: Text(t("generator"))),
+            PopupMenuItem(value: "food", child: _ddLine(Text(t("add_food")))),
+            PopupMenuItem(value: "tpl", child: _ddLine(Text(t("meal_tpl_menu")))),
+            PopupMenuItem(value: "gen", child: _ddLine(Text(t("generator")))),
             PopupMenuItem(
               value: "ai_photo",
               child: Text(t("track_add_ai_photo")),
