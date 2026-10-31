@@ -17622,17 +17622,7 @@ class _MainScreenState extends State<MainScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                letter,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: c.withValues(alpha: 0.95),
-                  fontSize: labFS,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              SizedBox(height: compact ? 1 : 3),
+              // Zahl oben, Kürzel darunter.
               Text(
                 "${val.toStringAsFixed(0)} g",
                 textAlign: TextAlign.center,
@@ -17642,6 +17632,17 @@ class _MainScreenState extends State<MainScreen> {
                   color: c,
                   fontSize: valFS,
                   fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: compact ? 1 : 3),
+              Text(
+                letter,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: c.withValues(alpha: 0.95),
+                  fontSize: labFS,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
                 ),
               ),
             ],
