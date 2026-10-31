@@ -3916,7 +3916,79 @@ class _MainScreenState extends State<MainScreen> {
       out.addAll([("½ Portion", b / 2), ("1 Portion", b), ("2 Portionen", b * 2)]);
     }
     out.addAll(_kPortionPresets[f.name] ?? const []);
+    // Eigene Portionen (z. B. „Packung · 45 g“) zuerst-fähig: hinten anhängen.
+    for (final e in customPortions[f.name] ?? const <List<dynamic>>[]) {
+      out.add((e[0].toString(), (e[1] as num).toDouble()));
+    }
     return out;
+  }
+
+  // ───────────── Eigene Portionen pro Lebensmittel ─────────────
+  static const String _kCustomPortionsKey = "custom_portions_v1";
+  Map<String, List<List<dynamic>>> customPortions = {};
+  bool _customPortionsLoaded = false;
+
+  Future<void> _loadCustomPortions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kCustomPortionsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        customPortions = m.map((k, v) => MapEntry(
+            k, (v as List).map((e) => List<dynamic>.from(e as List)).toList()));
+      }
+    } catch (_) {}
+    _customPortionsLoaded = true;
+  }
+
+  Future<void> _saveCustomPortions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kCustomPortionsKey, jsonEncode(customPortions));
+    } catch (_) {}
+  }
+
+  bool _isCustomPortion(Food f, (String, double) p) =>
+      (customPortions[f.name] ?? const [])
+          .any((e) => e[0].toString() == p.$1 && ((e[1] as num) - p.$2).abs() < 0.01);
+
+  /// Kleiner Dialog: eigene Portion anlegen (Name + Gramm).
+  Future<(String, double)?> _askCustomPortion(Food f, {double? grams}) async {
+    final nCtrl = TextEditingController(text: "Packung");
+    final gCtrl = TextEditingController(
+        text: grams != null && grams > 0 ? grams.round().toString() : "");
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t("portion_new_title")),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nCtrl,
+              decoration: InputDecoration(labelText: t("portion_name")),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: gCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(labelText: t("portion_grams"), suffixText: "g"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t("cancel"))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t("save"))),
+        ],
+      ),
+    );
+    if (ok != true) return null;
+    final name = nCtrl.text.trim();
+    final g = double.tryParse(gCtrl.text.trim().replaceAll(",", "."));
+    if (name.isEmpty || g == null || g <= 0) return null;
+    customPortions.putIfAbsent(f.name, () => []).add([name, g]);
+    await _saveCustomPortions();
+    return (name, g);
   }
 
   /// Standardmenge für die Liste: 1 Portion / mittlere Größe / 100 g.
@@ -4438,8 +4510,9 @@ class _MainScreenState extends State<MainScreen> {
   bool _isRawName(String n) => n.endsWith("(roh)") || n.endsWith(", roh)");
 
   Future<bool> _openAmountDialog(Food food, String meal, {String? fillTag}) async {
+    if (!_customPortionsLoaded) await _loadCustomPortions();
     final sibling = _cookedRawSibling(food);
-    final portions = _portionsFor(food);
+    var portions = _portionsFor(food);
     final def = _defaultPortion(food);
     final ctrl = TextEditingController(text: def.$2.round().toString());
     double grams() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
@@ -4518,23 +4591,52 @@ class _MainScreenState extends State<MainScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (portions.isNotEmpty) ...[
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          for (final p in portions)
-                            ChoiceChip(
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final p in portions)
+                          GestureDetector(
+                            // Eigene Portion lange drücken → löschen.
+                            onLongPress: _isCustomPortion(food, p)
+                                ? () async {
+                                    customPortions[food.name]?.removeWhere((e) =>
+                                        e[0].toString() == p.$1 &&
+                                        ((e[1] as num) - p.$2).abs() < 0.01);
+                                    await _saveCustomPortions();
+                                    setL(() => portions = _portionsFor(food));
+                                  }
+                                : null,
+                            child: ChoiceChip(
                               label: Text("${p.$1} · ${p.$2.round()} g",
                                   style: const TextStyle(fontSize: 12)),
                               selected: (grams() - p.$2).abs() < 0.5,
                               onSelected: (_) =>
                                   setL(() => ctrl.text = p.$2.round().toString()),
                             ),
-                        ],
+                          ),
+                        ActionChip(
+                          avatar: const Icon(Icons.add, size: 16, color: Color(0xFFC9A24A)),
+                          label: Text(t("portion_add_chip"),
+                              style: const TextStyle(fontSize: 12)),
+                          onPressed: () async {
+                            final np = await _askCustomPortion(food, grams: grams());
+                            if (np == null) return;
+                            setL(() {
+                              portions = _portionsFor(food);
+                              ctrl.text = np.$2.round().toString();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    if (portions.any((p) => _isCustomPortion(food, p)))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(t("portion_delete_hint"),
+                            style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
                       ),
-                      const SizedBox(height: 10),
-                    ],
+                    const SizedBox(height: 10),
                     TextField(
                       controller: ctrl,
                       keyboardType:
@@ -6771,6 +6873,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadWeekAvgEntries());
     unawaited(_loadHelpTextsPref());
     unawaited(_loadOverviewRingPref());
+    unawaited(_loadCustomPortions());
   }
 
   @override
@@ -7723,6 +7826,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "portion_new_title": "Eigene Portion",
+      "portion_name": "Bezeichnung (z. B. Packung, Riegel, Scheibe)",
+      "portion_grams": "Menge",
+      "portion_add_chip": "Portion",
+      "portion_delete_hint": "Eigene Portion lange drücken zum Löschen.",
       "barcode_linked_existing": "Barcode mit „{n}“ verknüpft – wird beim nächsten Scan direkt erkannt.",
       "barcode_live_hint": "Barcode in den Rahmen halten",
       "barcode_live_other": "Foto / eintippen",
@@ -8927,6 +9035,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "portion_new_title": "Custom portion",
+      "portion_name": "Label (e.g. pack, bar, slice)",
+      "portion_grams": "Amount",
+      "portion_add_chip": "Portion",
+      "portion_delete_hint": "Long-press a custom portion to delete it.",
       "barcode_linked_existing": "Barcode linked to “{n}” – recognised directly next time.",
       "barcode_live_hint": "Hold the barcode inside the frame",
       "barcode_live_other": "Photo / type",
