@@ -3971,11 +3971,13 @@ class _MainScreenState extends State<MainScreen> {
             int byName(Food a, Food b) =>
                 a.name.toLowerCase().compareTo(b.name.toLowerCase());
             list.sort((a, b) {
-              // Diät/Aufbau sortiert nach Dichte (Makro der Kategorie bzw. kcal).
-              if (_pickerMode != "Alle") {
-                return _densityCompare(a, b, _pickerCat, _pickerMode);
-              }
-              switch (_pickerSort) {
+              // Ohne Kategorie-Makro: „KH/P/F“-Sortierung = kcal.
+              final sortKey = macroKey.isEmpty
+                  ? (_pickerSort == "macroUp"
+                      ? "kcalUp"
+                      : (_pickerSort == "macroDown" ? "kcalDown" : _pickerSort))
+                  : _pickerSort;
+              switch (sortKey) {
                 case "az":
                   return byName(a, b);
                 case "kcalUp":
@@ -3985,6 +3987,9 @@ class _MainScreenState extends State<MainScreen> {
                 case "macroDown":
                   final m = macroOf(b).compareTo(macroOf(a));
                   return m != 0 ? m : byName(a, b);
+                case "macroUp":
+                  final m2 = macroOf(a).compareTo(macroOf(b));
+                  return m2 != 0 ? m2 : byName(a, b);
                 default:
                   final u = (usage[b.name] ?? 0).compareTo(usage[a.name] ?? 0);
                   return u != 0 ? u : byName(a, b);
@@ -4194,7 +4199,13 @@ class _MainScreenState extends State<MainScreen> {
                                 label: Text(_tTypeFilter(m),
                                     style: const TextStyle(fontSize: 12)),
                                 selected: _pickerMode == m,
-                                onSelected: (_) => setL(() => _pickerMode = m),
+                                onSelected: (_) => setL(() {
+                                  _pickerMode = m;
+                                  // Diät: geringste Dichte oben · Aufbau: höchste.
+                                  if (m == "Diät") _pickerSort = "macroUp";
+                                  if (m == "Aufbau") _pickerSort = "macroDown";
+                                  if (m == "Alle") _pickerSort = "freq";
+                                }),
                               ),
                             ),
                           const Spacer(),
@@ -4216,13 +4227,19 @@ class _MainScreenState extends State<MainScreen> {
                             position: PopupMenuPosition.under,
                             color: context.sol.card,
                             icon: const Icon(Icons.sort, color: gold),
-                            onSelected: (v) => setL(() => _pickerSort = v),
+                            onSelected: (v) => setL(() {
+                              _pickerSort = v;
+                              _pickerMode = v == "macroUp"
+                                  ? "Diät"
+                                  : (v == "macroDown" ? "Aufbau" : "Alle");
+                            }),
                             itemBuilder: (_) => [
                               for (final o in [
                                 ("freq", t("picker_sort_freq")),
                                 ("az", t("picker_sort_az")),
                                 ("kcalUp", t("picker_sort_kcal_up")),
                                 ("kcalDown", t("picker_sort_kcal_down")),
+                                ("macroUp", t("picker_sort_macro_up")),
                                 ("macroDown", t("picker_sort_macro")),
                               ])
                                 PopupMenuItem(
@@ -7430,6 +7447,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "picker_sort_macro_up": "Wenigste KH/P/F (Diät)",
+      "tracked_total_label": "Gesamt",
+      "tracked_items_label": "Einzeln ({n})",
       "picker_fill_hint": "Füllen bis Zielmitte",
       "rest_day_label": "Rest Day · KH ½",
       "rest_day_tooltip": "Rest Day (KH in Pre/Post halbieren)",
@@ -7446,7 +7466,7 @@ class _MainScreenState extends State<MainScreen> {
       "picker_sort_az": "A–Z",
       "picker_sort_kcal_up": "Wenig kcal zuerst",
       "picker_sort_kcal_down": "Viel kcal zuerst",
-      "picker_sort_macro": "Meiste KH/P/F (nach Kategorie)",
+      "picker_sort_macro": "Meiste KH/P/F (Aufbau)",
       "picker_fiber_short": "Ballast",
       "picker_type_food": "Lebensmittel",
       "picker_type_meals": "Mahlzeiten",
@@ -8604,6 +8624,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "picker_sort_macro_up": "Fewest C/P/F (diet)",
+      "tracked_total_label": "Total",
+      "tracked_items_label": "Items ({n})",
       "picker_fill_hint": "fill to target",
       "rest_day_label": "Rest day · carbs ½",
       "rest_day_tooltip": "Rest day (halve pre/post carbs)",
@@ -8620,7 +8643,7 @@ class _MainScreenState extends State<MainScreen> {
       "picker_sort_az": "A–Z",
       "picker_sort_kcal_up": "Fewest kcal first",
       "picker_sort_kcal_down": "Most kcal first",
-      "picker_sort_macro": "Most C/P/F (by category)",
+      "picker_sort_macro": "Most C/P/F (bulk)",
       "picker_fiber_short": "Fiber",
       "picker_type_food": "Foods",
       "picker_type_meals": "Meals",
@@ -19787,70 +19810,92 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Summe der Mahlzeit im Tracking-Popup (unter dem Titel).
-  Widget _mealTrackedPopupMealTotals(String mealId) {
+  Widget _mealTrackedPopupMealTotals(String mealId, {int count = 0}) {
     final m = _mealTotals[mealId]!;
     final on = context.sol.onCard;
     final muted = context.sol.muted;
+    const gold = Color(0xFFC9A24A);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: const Color(0xFFC9A24A).withValues(alpha: 0.28),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text.rich(
-              TextSpan(
-                style: const TextStyle(
-                  fontSize: 12,
-                  height: 1.2,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
-                children: [
-                  TextSpan(
-                    text: "∑ ${m['grams']!.toStringAsFixed(0)} g",
-                    style: TextStyle(
-                      color: on,
-                      fontWeight: FontWeight.w700,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            decoration: BoxDecoration(
+              color: gold.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: gold.withValues(alpha: 0.55), width: 1.2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      t("tracked_total_label").toUpperCase(),
+                      style: const TextStyle(
+                        color: gold,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                  ),
-                  TextSpan(text: " · ", style: TextStyle(color: muted)),
-                  TextSpan(
-                    text: "${m['calories']!.toStringAsFixed(0)} kcal",
-                    style: const TextStyle(
-                      color: Color(0xFFC9A24A),
-                      fontWeight: FontWeight.w800,
+                    const Spacer(),
+                    Text(
+                      "${m['calories']!.toStringAsFixed(0)} kcal",
+                      style: const TextStyle(
+                        color: gold,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    Text(
+                      "  ·  ${m['grams']!.toStringAsFixed(0)} g",
+                      style: TextStyle(
+                        color: on,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _trackedFoodPcfRow(
+                  protein: m['protein']!,
+                  carbs: m['carbs']!,
+                  fat: m['fat']!,
+                ),
+                if (m['sugar']! > 0.05 || m['fiber']! > 0.05) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    "${t("of_which_sugar")} ${m['sugar']!.toStringAsFixed(0)} · ${t("of_which_fiber")} ${m['fiber']!.toStringAsFixed(0)} g",
+                    style: TextStyle(
+                      color: muted.withValues(alpha: 0.85),
+                      fontSize: 10,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
-            const SizedBox(height: 5),
-            _trackedFoodPcfRow(
-              protein: m['protein']!,
-              carbs: m['carbs']!,
-              fat: m['fat']!,
-            ),
-            if (m['sugar']! > 0.05 || m['fiber']! > 0.05) ...[
-              const SizedBox(height: 4),
-              Text(
-                "${t("of_which_sugar")} ${m['sugar']!.toStringAsFixed(0)} · ${t("of_which_fiber")} ${m['fiber']!.toStringAsFixed(0)} g",
+          ),
+          if (count > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 14, 4, 0),
+              child: Text(
+                tFmt("tracked_items_label", {"n": count.toString()}).toUpperCase(),
                 style: TextStyle(
-                  color: muted.withValues(alpha: 0.85),
-                  fontSize: 10,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
                 ),
               ),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -20030,7 +20075,8 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                 ),
-                if (items.isNotEmpty) _mealTrackedPopupMealTotals(meal),
+                if (items.isNotEmpty)
+                  _mealTrackedPopupMealTotals(meal, count: items.length),
                 if (items.isEmpty)
                   Padding(
                     padding: EdgeInsets.fromLTRB(
