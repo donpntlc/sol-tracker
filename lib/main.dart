@@ -8032,6 +8032,17 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "day_yesterday": "Gestern",
+      "day_tomorrow": "Morgen",
+      "day_nav_entries": "{n} Einträge · antippen für Kalender",
+      "move_day_label": "Tag",
+      "move_same_day": "Gleicher Tag",
+      "move_prev_day": "Vortag",
+      "move_next_day": "Nächster Tag",
+      "move_pick_date": "Datum …",
+      "move_whole_meal": "Ganze Mahlzeit verschieben ({m})",
+      "move_done_other_day": "Verschoben nach {d}",
+      "move_show_day": "Anzeigen",
       "picker_type_fav": "★ Favoriten",
       "cat_favorites": "★ Favoriten",
       "fav_empty_hint": "Noch keine Favoriten. Tippe bei einem Lebensmittel, Rezept oder einer Mahlzeit auf den Stern ☆.",
@@ -9283,6 +9294,17 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "day_yesterday": "Yesterday",
+      "day_tomorrow": "Tomorrow",
+      "day_nav_entries": "{n} entries · tap for calendar",
+      "move_day_label": "Day",
+      "move_same_day": "Same day",
+      "move_prev_day": "Previous day",
+      "move_next_day": "Next day",
+      "move_pick_date": "Date …",
+      "move_whole_meal": "Move whole meal ({m})",
+      "move_done_other_day": "Moved to {d}",
+      "move_show_day": "Show",
       "picker_type_fav": "★ Favourites",
       "cat_favorites": "★ Favourites",
       "fav_empty_hint": "No favourites yet. Tap the star ☆ on a food, recipe or meal.",
@@ -11181,15 +11203,19 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _openMoveTrackedFoodDialog(TrackedFood f, String fromMeal) async {
-    final targets = meals.where((m) => m != fromMeal).toList();
-    if (targets.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t("track_move_none"))),
-      );
-      return;
+    final baseDay = dateFromKey(f.dayKey);
+    var pickDay = baseDay;
+    var pickMeal = f.meal;
+    var wholeMeal = false;
+    String dl(DateTime d) {
+      final today = _dateOnlyLocal(DateTime.now());
+      final diff = _dateOnlyLocal(d).difference(today).inDays;
+      final base = "${_tWeekdayShort(d.weekday)} ${d.day}.${d.month}.";
+      if (diff == 0) return "${t("day_today")} · $base";
+      if (diff == -1) return "${t("day_yesterday")} · $base";
+      if (diff == 1) return "${t("day_tomorrow")} · $base";
+      return base;
     }
-    var pick = targets.first;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -11200,44 +11226,75 @@ class _MainScreenState extends State<MainScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                t("track_move_hint"),
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  color: Colors.white60,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                f.food.name,
+                "${f.food.name} · ${f.grams.toStringAsFixed(0)} g",
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFFC9A24A),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                "${f.grams.toStringAsFixed(0)} g",
-                style: const TextStyle(fontSize: 12, color: Colors.white60),
+              const SizedBox(height: 14),
+              Text(t("move_day_label"),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final off in const [-1, 0, 1])
+                    ChoiceChip(
+                      label: Text(off == 0
+                          ? t("move_same_day")
+                          : (off < 0 ? t("move_prev_day") : t("move_next_day")),
+                          style: const TextStyle(fontSize: 12.5)),
+                      selected: _dateOnlyLocal(pickDay) ==
+                          _dateOnlyLocal(baseDay.add(Duration(days: off))),
+                      onSelected: (_) =>
+                          setL(() => pickDay = baseDay.add(Duration(days: off))),
+                    ),
+                  ActionChip(
+                    avatar: const Icon(Icons.calendar_month, size: 16),
+                    label: Text(t("move_pick_date"), style: const TextStyle(fontSize: 12.5)),
+                    onPressed: () async {
+                      final d = await showDatePicker(
+                        context: c2,
+                        initialDate: pickDay,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2100),
+                      );
+                      if (d != null) setL(() => pickDay = d);
+                    },
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text("→ ${dl(pickDay)}",
+                    style: TextStyle(fontSize: 12, color: context.sol.muted)),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: pick,
+                initialValue: pickMeal,
                 decoration: _touchInputDecoration(t("track_move_target_label")),
-                dropdownColor: const Color(0xFF1F1F1F),
-                items: targets
-                    .map(
-                      (m) => DropdownMenuItem(
-                        value: m,
-                        child: Text(_displayMealName(m)),
-                      ),
-                    )
+                items: meals
+                    .map((m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(_displayMealName(m)),
+                        ))
                     .toList(),
                 onChanged: (v) {
                   if (v == null) return;
-                  setL(() => pick = v);
+                  setL(() => pickMeal = v);
                 },
+              ),
+              const SizedBox(height: 6),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: wholeMeal,
+                onChanged: (v) => setL(() => wholeMeal = v ?? false),
+                title: Text(tFmt("move_whole_meal", {"m": _displayMealName(fromMeal)}),
+                    style: const TextStyle(fontSize: 13)),
               ),
             ],
           ),
@@ -11248,19 +11305,112 @@ class _MainScreenState extends State<MainScreen> {
             ),
             FilledButton(
               onPressed: () {
-                if (f.meal == pick) {
-                  Navigator.pop(ctx);
-                  return;
-                }
+                final newKey = dateKeyFromDate(pickDay);
+                final items = wholeMeal
+                    ? trackedFoods
+                        .where((x) => x.dayKey == f.dayKey && x.meal == fromMeal)
+                        .toList()
+                    : [f];
                 setState(() {
-                  f.meal = pick;
+                  for (final x in items) {
+                    x.meal = pickMeal;
+                    x.dayKey = newKey;
+                  }
                 });
                 _updateMealTotals();
                 _saveAppState();
                 _applyDailyKcalOverSchedule();
-                if (ctx.mounted) Navigator.pop(ctx);
+                Navigator.pop(ctx);
+                if (newKey != selectedDayKey && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(tFmt("move_done_other_day", {"d": dl(pickDay)})),
+                    action: SnackBarAction(
+                      label: t("move_show_day"),
+                      onPressed: () => _goToDay(newKey),
+                    ),
+                  ));
+                }
               },
               child: Text(t("track_move_confirm")),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Tag wechseln (Pfeile / Heute) ohne Bilanz-Popup.
+  void _goToDay(String key) {
+    setState(() {
+      selectedDayKey = key;
+      if (nutritionMode == "Diät") _applyAutoNutritionTargets();
+    });
+    _updateMealTotals();
+    _saveAppState();
+  }
+
+  /// Leiste oben im Tracking: ‹ Tag › + „Heute“.
+  Widget _dayNavBar() {
+    const gold = Color(0xFFC9A24A);
+    final today = _dateOnlyLocal(DateTime.now());
+    final d = _dateOnlyLocal(dateFromKey(selectedDayKey));
+    final diff = d.difference(today).inDays;
+    final base = "${_tWeekdayShort(d.weekday)} ${d.day}.${d.month}.";
+    final label = diff == 0
+        ? "${t("day_today")} · $base"
+        : diff == -1
+            ? "${t("day_yesterday")} · $base"
+            : diff == 1
+                ? "${t("day_tomorrow")} · $base"
+                : base;
+    final count = trackedFoods.where((x) => x.dayKey == selectedDayKey).length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+      child: Container(
+        height: 46,
+        decoration: BoxDecoration(
+          color: diff == 0 ? context.sol.card : gold.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: diff == 0 ? context.sol.muted.withValues(alpha: 0.25) : gold),
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left, size: 28),
+              onPressed: () => _goToDay(dateKeyFromDate(d.subtract(const Duration(days: 1)))),
+            ),
+            Expanded(
+              child: InkWell(
+                onTap: _pickDay,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(label,
+                        style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            color: diff == 0 ? context.sol.onCard : gold)),
+                    if (diff != 0)
+                      Text(tFmt("day_nav_entries", {"n": count.toString()}),
+                          style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
+                  ],
+                ),
+              ),
+            ),
+            if (diff != 0)
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: gold,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _goToDay(dateKeyFromDate(today)),
+                child: Text(t("day_today"),
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right, size: 28),
+              onPressed: () => _goToDay(dateKeyFromDate(d.add(const Duration(days: 1)))),
             ),
           ],
         ),
@@ -19781,6 +19931,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       body: CustomScrollView(
         slivers: [
+          SliverToBoxAdapter(child: _dayNavBar()),
           if (isCheatDay(selectedDayKey))
             SliverToBoxAdapter(child: _cheatDayBanner(selectedDayKey)),
           if (_isAggressiveMode)
