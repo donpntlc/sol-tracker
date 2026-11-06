@@ -4084,13 +4084,20 @@ class _MainScreenState extends State<MainScreen> {
           if (_pickerType == "meals") {
             final tpls = [...userMealTemplates, ..._solMealTemplates]
                 .where((t) => match(t["name"].toString()))
-                .toList();
+                .toList()
+              ..sort((a, b) => (_isFavTpl(b["name"].toString()) ? 1 : 0)
+                  .compareTo(_isFavTpl(a["name"].toString()) ? 1 : 0));
             rows = [
               for (final tpl in tpls)
                 _pickerRow(
                   title: tpl["name"].toString(),
                   sub: (tpl["items"] as List).join(" + "),
                   trailing: "",
+                  fav: _isFavTpl(tpl["name"].toString()),
+                  onFav: () async {
+                    await _toggleFavKey("m:${tpl["name"]}");
+                    setL(() {});
+                  },
                   onTap: () {
                     Navigator.pop(ctx);
                     _applyMealTemplate(meal, tpl);
@@ -4114,7 +4121,11 @@ class _MainScreenState extends State<MainScreen> {
                 ? "komplex"
                 : (fillTag == "cE" ? "einfach" : null);
             var list = foodDatabase.where((f) {
-              if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) return false;
+              if (_pickerType == "fav") {
+                if (!_isFav(f)) return false;
+              } else if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) {
+                return false;
+              }
               if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) return false;
               if (kindOnly != null && f.carbKind != kindOnly) return false;
               if (!_recipeMatchesFlavorFilter(f, _pickerFlavor)) return false;
@@ -4196,12 +4207,44 @@ class _MainScreenState extends State<MainScreen> {
                     sub: (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
                     trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
+                    fav: _isFav(f),
+                    onFav: () async {
+                      await _toggleFavKey("f:${f.name}");
+                      setL(() {});
+                    },
+                    onInfo: () => _showRecipeInfoDialog(f),
                     onTap: () async {
                       final added = await _openAmountDialog(f, meal, fillTag: fillTag);
                       if (added && ctx.mounted) Navigator.pop(ctx);
                     },
                   );
                 }(),
+              if (_pickerType == "fav")
+                for (final tpl in [...userMealTemplates, ..._solMealTemplates]
+                    .where((t) => _isFavTpl(t["name"].toString()) && match(t["name"].toString())))
+                  _pickerRow(
+                    title: "🍽 ${tpl["name"]}",
+                    sub: (tpl["items"] as List).join(" + "),
+                    trailing: "",
+                    fav: true,
+                    onFav: () async {
+                      await _toggleFavKey("m:${tpl["name"]}");
+                      setL(() {});
+                    },
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _applyMealTemplate(meal, tpl);
+                    },
+                  ),
+              if (_pickerType == "fav" && list.isEmpty &&
+                  !userMealTemplates.followedBy(_solMealTemplates)
+                      .any((t) => _isFavTpl(t["name"].toString())))
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(t("fav_empty_hint"),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: muted, fontSize: 13)),
+                ),
               if (_pickerType == "recipes")
                 Padding(
                   padding: const EdgeInsets.all(12),
@@ -4364,6 +4407,7 @@ class _MainScreenState extends State<MainScreen> {
                           ("food", t("picker_type_food")),
                           ("meals", t("picker_type_meals")),
                           ("recipes", t("picker_type_recipes")),
+                          ("fav", t("picker_type_fav")),
                         ], (v) => _pickerType = v),
                         const SizedBox(width: 10),
                         dd(
@@ -4491,12 +4535,54 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // ───────────── Favoriten (Lebensmittel, Rezepte, Mahlzeiten) ─────────────
+  static const String _kFavoritesKey = "favorites_v1";
+  final Set<String> favorites = {};
+
+  Future<void> _loadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final l = prefs.getStringList(_kFavoritesKey);
+      if (l != null && mounted) setState(() => favorites..clear()..addAll(l));
+    } catch (_) {}
+  }
+
+  bool _isFav(Food f) => favorites.contains("f:${f.name}");
+  bool _isFavTpl(String name) => favorites.contains("m:$name");
+
+  Future<void> _toggleFavKey(String key) async {
+    setState(() {
+      if (!favorites.remove(key)) favorites.add(key);
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_kFavoritesKey, favorites.toList());
+    } catch (_) {}
+  }
+
+  /// Kategorie-Filter inkl. „Favoriten“.
+  bool _inCat(Food f, String cat) =>
+      cat == "Favoriten" ? _isFav(f) : f.isInCategory(cat);
+
+  Widget _favStar(bool on, VoidCallback onTap) => IconButton(
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        icon: Icon(on ? Icons.star_rounded : Icons.star_outline_rounded,
+            size: 24,
+            color: on ? const Color(0xFFC9A24A) : context.sol.muted.withValues(alpha: 0.6)),
+        onPressed: onTap,
+      );
+
   Widget _pickerRow({
     required String title,
     required String sub,
     required String trailing,
     String? image,
     required VoidCallback onTap,
+    bool? fav,
+    VoidCallback? onFav,
+    VoidCallback? onInfo,
   }) {
     const gold = Color(0xFFC9A24A);
     return InkWell(
@@ -4513,7 +4599,10 @@ class _MainScreenState extends State<MainScreen> {
         child: Row(
           children: [
             if (image != null && image.isNotEmpty) ...[
-              ClipRRect(
+              GestureDetector(
+                // Bild antippen → Details (Lebensmittel / Rezept ansehen).
+                onTap: onInfo,
+                child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: image.startsWith("data:")
                     ? Image.memory(base64Decode(image.split(",").last),
@@ -4523,6 +4612,7 @@ class _MainScreenState extends State<MainScreen> {
                     cacheWidth: (46 * 16 / 9 * MediaQuery.devicePixelRatioOf(context) * 1.5).round(),
                     filterQuality: FilterQuality.high,
                     errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46)),
+              ),
               ),
               const SizedBox(width: 12),
             ],
@@ -4547,10 +4637,11 @@ class _MainScreenState extends State<MainScreen> {
             ),
             if (trailing.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(left: 8, right: 10),
+                padding: const EdgeInsets.only(left: 8, right: 4),
                 child: Text(trailing,
                     style: TextStyle(fontSize: 14, color: context.sol.onCard)),
               ),
+            if (onFav != null) _favStar(fav == true, onFav),
             const Icon(Icons.add_circle_outline, color: gold, size: 30),
           ],
         ),
@@ -4640,7 +4731,22 @@ class _MainScreenState extends State<MainScreen> {
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(food.name, style: const TextStyle(fontSize: 18)),
+                Row(
+                  children: [
+                    Expanded(
+                        child: Text(food.name, style: const TextStyle(fontSize: 18))),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: const Color(0xFFC9A24A),
+                      ),
+                      icon: const Icon(Icons.info_outline, size: 18),
+                      label: Text(t("amount_details"),
+                          style: const TextStyle(fontSize: 12.5)),
+                      onPressed: () => _showRecipeInfoDialog(food),
+                    ),
+                  ],
+                ),
                 if (sibling != null) ...[
                   const SizedBox(height: 8),
                   // Direkt umschalten: roh ↔ gekocht (Nährwerte passen sich an).
@@ -6958,6 +7064,7 @@ class _MainScreenState extends State<MainScreen> {
     unawaited(_loadHelpTextsPref());
     unawaited(_loadOverviewRingPref());
     unawaited(_loadCustomPortions());
+    unawaited(_loadFavorites());
   }
 
   @override
@@ -7925,6 +8032,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "picker_type_fav": "★ Favoriten",
+      "cat_favorites": "★ Favoriten",
+      "fav_empty_hint": "Noch keine Favoriten. Tippe bei einem Lebensmittel, Rezept oder einer Mahlzeit auf den Stern ☆.",
+      "fav_add": "Als Favorit markieren",
+      "fav_remove": "Favorit entfernen",
+      "amount_details": "Details",
       "create_food": "Lebensmittel anlegen",
       "rec_new_title": "Rezept erstellen",
       "rec_new_sub": "Zutaten, Nährwerte, Portionen, Zubereitung",
@@ -9170,6 +9283,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "picker_type_fav": "★ Favourites",
+      "cat_favorites": "★ Favourites",
+      "fav_empty_hint": "No favourites yet. Tap the star ☆ on a food, recipe or meal.",
+      "fav_add": "Mark as favourite",
+      "fav_remove": "Remove favourite",
+      "amount_details": "Details",
       "create_food": "Create food",
       "rec_new_title": "Create recipe",
       "rec_new_sub": "Ingredients, nutrition, portions, preparation",
@@ -10197,6 +10316,8 @@ class _MainScreenState extends State<MainScreen> {
         return t("cat_fruit");
       case "Gemüse":
         return t("cat_vegetable");
+      case "Favoriten":
+        return t("cat_favorites");
       default:
         return cat;
     }
@@ -11546,6 +11667,12 @@ class _MainScreenState extends State<MainScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      StatefulBuilder(
+                        builder: (c2, setS) => _favStar(_isFav(food), () async {
+                          await _toggleFavKey("f:${food.name}");
+                          setS(() {});
+                        }),
+                      ),
                       if (!food.isDefault)
                         IconButton(
                           tooltip: t("db_edit_food"),
@@ -16546,7 +16673,7 @@ class _MainScreenState extends State<MainScreen> {
       final matchesSearch =
           food.name.toLowerCase().contains(searchQuery.toLowerCase());
       final matchesCategory = databaseCategoryFilter == "Alle" ||
-          food.isInCategory(databaseCategoryFilter);
+          _inCat(food, databaseCategoryFilter);
       // Diät/Aufbau sortiert jetzt nur noch (nach Dichte), filtert nicht.
       const matchesType = true;
       final matchesSource = databaseSourceFilter == "all" ||
@@ -16662,7 +16789,7 @@ class _MainScreenState extends State<MainScreen> {
                       ], (v) => databaseSourceFilter = v),
                       const SizedBox(width: 10),
                       _dbDd(t("db_category_label"), databaseCategoryFilter, [
-                        for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Rezepte"])
+                        for (final c in const ["Alle", "Favoriten", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Rezepte"])
                           (c, _tCat(c)),
                       ], (v) => databaseCategoryFilter = v),
                     ],
@@ -16752,7 +16879,7 @@ class _MainScreenState extends State<MainScreen> {
                 (context, index) {
                   final category = visibleCategories[index];
                   final foodsInCategory = filteredFoods
-                      .where((f) => f.isInCategory(category))
+                      .where((f) => _inCat(f, category))
                       .toList()
                     ..sort((a, b) {
                       if (databaseTypeFilter != "Alle") {
