@@ -6026,19 +6026,21 @@ class _MainScreenState extends State<MainScreen> {
     }
     final dr = dailyKcalRange();
     final dayMid = (dr.minKcal + dr.maxKcal) / 2.0;
-    var eatenOther = 0.0;
+    // Andere Mahlzeiten behalten ihr offenes Ziel (Zielmitte) — sonst würde die
+    // letzte Mahlzeit dieselben kcal nochmal anzeigen und die Summe der offenen
+    // kcal wäre grösser als „Übrig“ in der Tagesübersicht.
+    var takenOther = 0.0;
     for (final m in meals) {
       if (m == anchor) continue;
-      eatenOther += _mealTotals[m]!['calories'] ?? 0.0;
+      final eaten = _mealTotals[m]?['calories'] ?? 0.0;
+      if (m == "Snacks" && !reserveSnacks) {
+        takenOther += eaten;
+        continue;
+      }
+      final center = _mealCenterKcal(m) ?? eaten;
+      takenOther += math.max(eaten, center);
     }
-    var rem = dayMid - eatenOther;
-    if (reserveSnacks && meals.contains("Snacks")) {
-      final sk = dynamicMealKcalRange("Snacks");
-      final sMid = (sk.minKcal + sk.maxKcal) / 2.0;
-      final sEaten = _mealTotals["Snacks"]!['calories'] ?? 0.0;
-      final sKeep = (sMid - sEaten).clamp(0.0, sMid);
-      rem -= sKeep;
-    }
+    var rem = dayMid - takenOther;
     if (dayMid < 1.0) {
       return dynamicMealKcalRange(anchor);
     }
@@ -20396,7 +20398,7 @@ class _MainScreenState extends State<MainScreen> {
                   maxVal: cCxMax,
                   baseColor: _carbColor,
                   dayTotalGoalG: gDayM.carbs,
-                  mealCenterGoalG: null,
+                  mealCenterGoalG: (cCxMin + cCxMax) / 2,
                   recommendVal: null,
                   rangeBarSurface: mSurf,
                 ),
@@ -20429,7 +20431,7 @@ class _MainScreenState extends State<MainScreen> {
                   maxVal: cSiMax,
                   baseColor: const Color(0xFFFFB74D),
                   dayTotalGoalG: gDayM.carbs,
-                  mealCenterGoalG: null,
+                  mealCenterGoalG: (cSiMin + cSiMax) / 2,
                   recommendVal: null,
                   rangeBarSurface: mSurf,
                 ),
