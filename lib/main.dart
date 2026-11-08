@@ -8032,6 +8032,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "recap_deficit_label": "Defizit der Woche",
+      "recap_deficit_line": "Defizit der Woche · rechnerisch ≈ {kg} kg Fett",
+      "recap_avg_eaten": "Ø gegessen / Tag",
+      "recap_avg_goal": "Ø Ziel / Tag",
+      "recap_avg_weight": "Ø Gewicht",
+      "recap_scale_change": "Waage (Wochenanfang → Ende)",
+      "recap_encourage": "Daten sehen, justieren, weitermachen – du bist im Spiel.",
       "day_yesterday": "Gestern",
       "day_tomorrow": "Morgen",
       "day_nav_entries": "{n} Einträge · antippen für Kalender",
@@ -9294,6 +9301,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "recap_deficit_label": "Weekly deficit",
+      "recap_deficit_line": "Weekly deficit · in theory ≈ {kg} kg fat",
+      "recap_avg_eaten": "Ø eaten / day",
+      "recap_avg_goal": "Ø target / day",
+      "recap_avg_weight": "Ø weight",
+      "recap_scale_change": "Scale (start → end of week)",
+      "recap_encourage": "See the data, adjust, keep going – you're in the game.",
       "day_yesterday": "Yesterday",
       "day_tomorrow": "Tomorrow",
       "day_nav_entries": "{n} entries · tap for calendar",
@@ -25603,22 +25617,94 @@ class _MainScreenState extends State<MainScreen> {
       builder: (ctx) => AlertDialog(
         title: Text(t("week_recap_title")),
         content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                t("week_recap_sub"),
-                style: const TextStyle(
-                  color: Colors.white60,
-                  fontSize: 12.5,
-                  height: 1.35,
+          child: Builder(builder: (c) {
+            const gold = Color(0xFFC9A24A);
+            final muted = c.sol.muted;
+            final on = c.sol.onCard;
+            Widget tile(String v, String l, {Color? col}) => Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: muted.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(v,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: col ?? on,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 2),
+                        Text(l,
+                            maxLines: 2,
+                            style: TextStyle(color: muted, fontSize: 11, height: 1.2)),
+                      ],
+                    ),
+                  ),
+                );
+            final def = roll.goalDayCount > 0 ? roll.totalDeficitKcal : null;
+            final fatKg = def == null ? null : def / 7000;
+            final d = roll.weeklyDeltaKg;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Hauptzahl: Defizit der Woche
+                Container(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  decoration: BoxDecoration(
+                    color: gold.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: gold.withValues(alpha: 0.5)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          def == null
+                              ? "—"
+                              : "${def >= 0 ? "−" : "+"}${_fmtThousands(def.abs())} kcal",
+                          style: const TextStyle(
+                              color: gold, fontSize: 24, fontWeight: FontWeight.w800)),
+                      Text(
+                          fatKg == null
+                              ? t("recap_deficit_label")
+                              : tFmt("recap_deficit_line", {
+                                  "kg": "${fatKg >= 0 ? "−" : "+"}${fatKg.abs().toStringAsFixed(1)}"
+                                }),
+                          style: TextStyle(color: muted, fontSize: 12, height: 1.3)),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              _weekRollupDataColumn(roll, withEncourage: true),
-            ],
-          ),
+                const SizedBox(height: 8),
+                Row(children: [
+                  tile("${_fmtThousands(roll.avgEatenKcal)} kcal", t("recap_avg_eaten")),
+                  const SizedBox(width: 6),
+                  tile("${_fmtThousands(roll.meanGoalKcal)} kcal", t("recap_avg_goal")),
+                ]),
+                const SizedBox(height: 6),
+                Row(children: [
+                  tile(roll.avgWeight == null ? "—" : "${roll.avgWeight!.toStringAsFixed(1)} kg",
+                      t("recap_avg_weight")),
+                  const SizedBox(width: 6),
+                  tile(
+                      d == null
+                          ? "—"
+                          : "${d > 0.05 ? "+" : (d < -0.05 ? "−" : "±")}${d.abs().toStringAsFixed(1)} kg",
+                      t("recap_scale_change")),
+                ]),
+                const SizedBox(height: 12),
+                Text(t("recap_encourage"),
+                    style: const TextStyle(
+                        color: gold, fontSize: 13, fontWeight: FontWeight.w700, height: 1.35)),
+              ],
+            );
+          }),
         ),
         actions: [
           TextButton(
