@@ -2662,24 +2662,63 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// SOL-Mahlzeiten (nur die, deren Lebensmittel es gibt).
+  /// Felder: Name, passende Mahlzeiten (pre/post/main/evening/snack), Kurzbeschreibung, Lebensmittel.
   List<Map<String, dynamic>> get _solMealTemplates {
-    const raw = [
-      ["SOL · Magerquark-Shake + Haferflocken", "Magerquark Proteinshake", "Haferflocken"],
-      ["SOL · Hähnchen, Reis & Olivenöl", "Hähnchenbrust (roh)", "Reis (roh)", "Olivenöl"],
-      ["SOL · Skyr, Haferflocken & Erdnussbutter", "Skyr", "Haferflocken", "Erdnussbutter"],
-      ["SOL · Eier & Kartoffeln", "Eier", "Kartoffel (roh)", "Magerquark"],
-      ["SOL · Lachs & Süßkartoffel", "Lachs (gekocht)", "Süßkartoffel (roh)"],
-      ["SOL · Protein Shake + Banane", "Protein Shake", "Banane (ohne Schale)"],
+    const raw = <(String, List<String>, String, List<String>)>[
+      // ── Pre-Workout: leicht verdaulich, viele KH, etwas Protein, wenig Fett ──
+      ("Grieß-Bowl mit Banane", ["pre"], "Grieß in Wasser oder Milch aufkochen, Quark unterrühren, Banane in Scheiben drauf. 60–90 min vor dem Training.", ["Weizengrieß", "Magerquark", "Banane (ohne Schale)"]),
+      ("Cornflakes, Skyr & Beeren", ["pre", "snack"], "Schnell gemacht, leicht im Magen. 45–60 min vor dem Training.", ["Cornflakes (ungesüßt)", "Skyr", "TK Beeren Mix"]),
+      ("Weißbrot, Banane & Skyr", ["pre"], "Toast mit Bananenscheiben, Skyr dazu. Schnelle Energie.", ["Weißbrot", "Banane (ohne Schale)", "Skyr"]),
+      ("Datteln + Protein Shake (schnell)", ["pre"], "Wenn's schnell gehen muss: 20–30 min vorher.", ["Datteln", "Protein Shake"]),
+      ("Haferflocken-Quark-Bowl", ["pre", "snack"], "Haferflocken mit Quark und Heidelbeeren. Eher 90 min vorher (mehr Ballaststoffe).", ["Haferflocken", "Magerquark", "Heidelbeeren"]),
+      // ── Post-Workout: Protein + KH ──
+      ("Hähnchen, Reis & Brokkoli", ["post", "main"], "Reis kochen, Hähnchen anbraten, Brokkoli dämpfen, mit etwas Öl.", ["Hähnchenbrust (roh)", "Reis (roh)", "Broccoli", "Olivenöl"]),
+      ("Pute mit Nudeln, Zucchini & Tomate", ["post", "main"], "Nudeln kochen, Pute in Streifen anbraten, Gemüse mitbraten.", ["Putenbrust (roh)", "Nudeln (roh)", "Zucchini", "Tomate"]),
+      ("Thunfisch-Reis-Bowl", ["post", "main"], "Reis, Thunfisch, Mais und Gurke – kalt oder warm.", ["Thunfisch (Dose, im eigenen Saft, abgetropft)", "Reis (roh)", "Mais (Dose, abgetropft)", "Gurke"]),
+      ("Protein Shake + Banane", ["post", "snack"], "Direkt nach dem Training, wenn keine Zeit zum Kochen ist.", ["Protein Shake", "Banane (ohne Schale)"]),
+      ("Magerquark-Shake + Haferflocken", ["post", "snack"], "Shake mixen, Haferflocken dazu oder mitmixen.", ["Magerquark Proteinshake", "Haferflocken"]),
+      // ── Hauptmahlzeit ──
+      ("Bauernfrühstück (Kartoffeln & Eier)", ["main", "post"], "Kartoffeln kochen oder vom Vortag nehmen, in Scheiben anbraten, Paprika dazu, Eier darüber stocken lassen.", ["Kartoffel (roh)", "Eier", "Paprika (rot, roh)", "Olivenöl"]),
+      ("Lachs, Süßkartoffel & grüne Bohnen", ["main", "evening"], "Süßkartoffel-Würfel im Ofen (200 °C, 25 min), Lachs dazu (12 min), Bohnen kochen.", ["Lachs (roh)", "Süßkartoffel (roh)", "Bohnen (grün, roh)"]),
+      ("Rinderhack-Pfanne mit Reis & Paprika", ["main", "post"], "Hack krümelig anbraten, Paprika und Zucchini mitbraten, mit Reis.", ["Faschiertes mager (Rind, roh)", "Reis (roh)", "Paprika (rot, roh)", "Zucchini"]),
+      ("Linsen-Curry mit Reis & Spinat", ["main"], "Linsen mit Tomate köcheln, Spinat am Ende unterrühren, mit Reis.", ["Linsen (roh)", "Reis (roh)", "Spinat", "Tomate"]),
+      ("Tofu-Gemüse-Pfanne mit Quinoa", ["main", "evening"], "Tofu knusprig anbraten, Brokkoli und Karotte dazu, mit Quinoa.", ["Tofu", "Quinoa (roh)", "Broccoli", "Karotte"]),
+      // ── Abendessen: viel Protein + Gemüse, eher weniger KH ──
+      ("Shrimps-Zucchini-Pfanne", ["evening"], "Shrimps mit Zucchini und Tomate in wenig Öl braten.", ["Shrimps (roh)", "Zucchini", "Tomate", "Olivenöl"]),
+      ("Fisch mit Blumenkohl & Kartoffeln", ["evening", "main"], "Fisch im Ofen oder in der Pfanne, Blumenkohl und Kartoffeln kochen.", ["Schellfisch (roh)", "Blumenkohl", "Kartoffel (roh)"]),
+      ("Spinat-Omelett mit Käse", ["evening"], "Eier verquirlen, Spinat in der Pfanne zusammenfallen lassen, Eier und Käse darüber.", ["Eier", "Spinat", "Käse (fettarm)"]),
+      ("Hüttenkäse-Gemüse-Teller", ["evening", "snack"], "Hüttenkäse mit Gurke, Tomate und einer Scheibe Vollkornbrot.", ["Hüttenkäse (0.2% Fett)", "Gurke", "Tomate", "Vollkornbrot"]),
+      // ── Snacks ──
+      ("Skyr mit Beeren & Mandeln", ["snack"], "Skyr, gefrorene Beeren, ein paar Mandeln.", ["Skyr", "TK Beeren Mix", "Mandeln"]),
+      ("Skyr, Haferflocken & Erdnussbutter", ["snack", "pre"], "Sättigend, gut als Zwischenmahlzeit.", ["Skyr", "Haferflocken", "Erdnussbutter"]),
     ];
     final out = <Map<String, dynamic>>[];
     for (final r in raw) {
-      final foods = r.sublist(1);
-      if (foods.every((n) => _foodByName(n) != null)) {
-        out.add({"id": "sol_${r[0]}", "name": r[0], "items": foods, "sol": true});
+      if (r.$4.every((n) => _foodByName(n) != null)) {
+        out.add({
+          "id": "sol_${r.$1}",
+          "name": r.$1,
+          "items": r.$4,
+          "tags": r.$2,
+          "desc": r.$3,
+          "sol": true,
+        });
       }
     }
     return out;
   }
+
+  /// Mahlzeit → Vorlagen-Tag.
+  String _mealTag(String meal) => switch (meal) {
+        "Pre-Workout" => "pre",
+        "Post-Workout" => "post",
+        "Evening Meal" => "evening",
+        "Snacks" => "snack",
+        _ => "main",
+      };
+
+  bool _tplFits(Map<String, dynamic> tpl, String meal) =>
+      ((tpl["tags"] as List?) ?? const []).contains(_mealTag(meal));
 
   /// Größen-Presets (Gramm ohne Schale, dazu ca. mit Schale) — USDA-Standardgrößen.
   static const Map<String, List<(String, double, double)>> _kSizePresets = {
@@ -3067,6 +3106,11 @@ class _MainScreenState extends State<MainScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if ((tpl["desc"] ?? "").toString().isNotEmpty) ...[
+                      Text(tpl["desc"].toString(),
+                          style: const TextStyle(fontSize: 13.5, height: 1.4)),
+                      const SizedBox(height: 8),
+                    ],
                     Text(t("meal_tpl_apply_hint"),
                         style: const TextStyle(fontSize: 12, color: Colors.white60, height: 1.35)),
                     const SizedBox(height: 12),
@@ -4082,13 +4126,24 @@ class _MainScreenState extends State<MainScreen> {
 
           List<Widget> rows;
           if (_pickerType == "meals") {
+            int score(Map<String, dynamic> t) =>
+                (_isFavTpl(t["name"].toString()) ? 2 : 0) + (_tplFits(t, meal) ? 1 : 0);
             final tpls = [...userMealTemplates, ..._solMealTemplates]
                 .where((t) => match(t["name"].toString()))
                 .toList()
-              ..sort((a, b) => (_isFavTpl(b["name"].toString()) ? 1 : 0)
-                  .compareTo(_isFavTpl(a["name"].toString()) ? 1 : 0));
+              ..sort((a, b) => score(b).compareTo(score(a)));
+            final fitCount = tpls.where((t) => _tplFits(t, meal) || _isFavTpl(t["name"].toString())).length;
+            Widget head(String x) => Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
+                  child: Text(x.toUpperCase(),
+                      style: const TextStyle(
+                          color: gold, fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
+                );
             rows = [
-              for (final tpl in tpls)
+              if (fitCount > 0) head(tFmt("tpl_fits_head", {"m": _displayMealName(meal)})),
+              for (var i = 0; i < tpls.length; i++) ...[
+                if (i == fitCount && fitCount > 0 && i < tpls.length) head(t("tpl_more_head")),
+                () { final tpl = tpls[i]; return
                 _pickerRow(
                   title: tpl["name"].toString(),
                   sub: (tpl["items"] as List).join(" + "),
@@ -4102,7 +4157,8 @@ class _MainScreenState extends State<MainScreen> {
                     Navigator.pop(ctx);
                     _applyMealTemplate(meal, tpl);
                   },
-                ),
+                ); }(),
+              ],
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: OutlinedButton.icon(
@@ -8032,6 +8088,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "tpl_fits_head": "Passend für {m}",
+      "tpl_more_head": "Weitere Mahlzeiten",
       "recap_deficit_label": "Defizit der Woche",
       "recap_deficit_line": "Defizit der Woche · rechnerisch ≈ {kg} kg Fett",
       "recap_avg_eaten": "Ø gegessen / Tag",
@@ -9301,6 +9359,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "tpl_fits_head": "Good for {m}",
+      "tpl_more_head": "More meals",
       "recap_deficit_label": "Weekly deficit",
       "recap_deficit_line": "Weekly deficit · in theory ≈ {kg} kg fat",
       "recap_avg_eaten": "Ø eaten / day",
