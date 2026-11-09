@@ -3917,6 +3917,7 @@ class _MainScreenState extends State<MainScreen> {
     "Kiwi": [("1 Stück", 75)],
     "Kaki": [("Klein", 120), ("Mittel", 170), ("Groß", 230)],
     "Mango": [("½ Mango", 100), ("1 Mango", 200)],
+    "Kaki": [("Klein", 120), ("Mittel", 170), ("Groß", 220)],
     "Grapefruit": [("½ Grapefruit", 120)],
     "Avocado": [("½ Avocado", 70), ("1 Avocado", 140)],
     "Karotte": [("1 Karotte", 60)],

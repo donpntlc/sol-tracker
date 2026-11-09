@@ -153,6 +153,20 @@ List<Food> _extraDefaultFoods() {
       extraCategories: const ["Obst"],
     ),
     Food(
+      // Kaki (Persimone), USDA 09265: 70 kcal, 18.6 g KH gesamt, 3.6 g Ballaststoffe.
+      name: "Kaki",
+      protein: 0.6,
+      carbs: 15,
+      sugar: 12.5,
+      fiber: 3.6,
+      fat: 0.2,
+      category: "Carbs",
+      type: "Diät (Viel Volumen)",
+      isDefault: true,
+      carbKind: "einfach",
+      extraCategories: const ["Obst"],
+    ),
+    Food(
       name: "Mango",
       protein: 0.6,
       carbs: 15,
