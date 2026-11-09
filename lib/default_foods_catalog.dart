@@ -395,6 +395,20 @@ List<Food> _extraDefaultFoods() {
       extraCategories: const ["Obst"],
     ),
     Food(
+      name: "Kaki",
+      // USDA (Japanese persimmon, raw): 70 kcal · KH 18.6 inkl. 3.6 Ballaststoffe
+      protein: 0.6,
+      carbs: 15.0,
+      sugar: 12.5,
+      fiber: 3.6,
+      fat: 0.2,
+      category: "Ballaststoffe",
+      type: "Diät (Viel Volumen)",
+      isDefault: true,
+      carbKind: "einfach",
+      extraCategories: const ["Obst"],
+    ),
+    Food(
       name: "Heidelbeeren",
       protein: 0.4,
       carbs: 8.5,

@@ -3915,6 +3915,7 @@ class _MainScreenState extends State<MainScreen> {
     "Süßkartoffel (gekocht)": [("Klein", 110), ("Mittel", 170), ("Groß", 260)],
     "Birne": [("Klein", 140), ("Mittel", 180), ("Groß", 230)],
     "Kiwi": [("1 Stück", 75)],
+    "Kaki": [("Klein", 120), ("Mittel", 170), ("Groß", 230)],
     "Mango": [("½ Mango", 100), ("1 Mango", 200)],
     "Grapefruit": [("½ Grapefruit", 120)],
     "Avocado": [("½ Avocado", 70), ("1 Avocado", 140)],
