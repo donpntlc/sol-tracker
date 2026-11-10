@@ -8366,6 +8366,24 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_title": "Generator",
+      "gen2_advanced": "Erweitert",
+      "gen2_open": "Offen",
+      "gen2_cut": "Cut · Volumen",
+      "gen2_normal": "Normal",
+      "gen2_bulk": "Aufbau · kompakt",
+      "gen2_any": "Egal",
+      "gen2_tab_combos": "Fertige Kombis",
+      "gen2_tab_build": "Selbst zusammenstellen",
+      "gen2_option": "OPTION",
+      "gen2_recipe": "REZEPT",
+      "gen2_add": "Hinzufügen",
+      "gen2_step_p": "Proteinquelle",
+      "gen2_step_c": "Kohlenhydratquelle",
+      "gen2_step_f": "Fettquelle (optional)",
+      "gen2_need": "fehlt",
+      "gen2_none": "Keine passenden Lebensmittel gefunden — anderen Geschmack oder Ziel wählen.",
+      "gen2_full": "Diese Mahlzeit ist schon voll. 👍",
       "amount_unit_label": "EINHEIT",
       "amount_fill_label": "AUFFÜLLEN BIS ZIEL",
       "amount_fill_carbs_short": "KH",
@@ -9660,6 +9678,24 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_title": "Generator",
+      "gen2_advanced": "Advanced",
+      "gen2_open": "Open",
+      "gen2_cut": "Cut · volume",
+      "gen2_normal": "Normal",
+      "gen2_bulk": "Bulk · compact",
+      "gen2_any": "Any",
+      "gen2_tab_combos": "Ready combos",
+      "gen2_tab_build": "Build your own",
+      "gen2_option": "OPTION",
+      "gen2_recipe": "RECIPE",
+      "gen2_add": "Add",
+      "gen2_step_p": "Protein source",
+      "gen2_step_c": "Carb source",
+      "gen2_step_f": "Fat source (optional)",
+      "gen2_need": "missing",
+      "gen2_none": "No matching foods — try another flavor or goal.",
+      "gen2_full": "This meal is already full. 👍",
       "amount_unit_label": "UNIT",
       "amount_fill_label": "FILL UP TO TARGET",
       "amount_fill_carbs_short": "Carbs",
@@ -26708,7 +26744,7 @@ class _MainScreenState extends State<MainScreen> {
       unawaited(_openMealGeneratorAfterLastMealPrompt(meal: meal));
       return;
     }
-    _openMealGeneratorImpl(meal: meal);
+    _openSmartMealGenerator(sm);
   }
 
   Future<void> _openMealGeneratorAfterLastMealPrompt({String? meal}) async {
@@ -26718,7 +26754,552 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
     if (!mounted) return;
-    _openMealGeneratorImpl(meal: meal);
+    _openSmartMealGenerator(m);
+  }
+
+  // ───────────────── Mahlzeit-Generator (neu, übersichtlich) ─────────────────
+
+  /// süß / salzig — gesetzt oder aus dem Namen geschätzt (null = passt zu beidem).
+  String? _genFlavorOf(Food f) {
+    if (f.recipeFlavor == "sweet" || f.recipeFlavor == "salty") return f.recipeFlavor;
+    if (f.isInCategory("Obst")) return "sweet";
+    final n = f.name.toLowerCase();
+    const sweet = [
+      "quark", "skyr", "joghurt", "jogurt", "hafer", "banane", "beere", "apfel",
+      "honig", "reiswaffel", "cornflakes", "müsli", "whey", "protein pulver",
+      "proteinpulver", "schoko", "marmelade", "dattel", "grieß", "griess", "pudding",
+      "milchreis", "kakao", "zucker", "sirup", "rosine", "mango", "kiwi", "kaki",
+      "traube", "orange", "ananas", "erdnussbutter", "nutella", "cookie", "riegel",
+    ];
+    const salty = [
+      "hähnchen", "huhn", "pute", "rind", "schwein", "fisch", "lachs", "thunfisch",
+      "ei", "tofu", "kartoffel", "reis", "nudel", "pasta", "brot", "shrimp", "garnele",
+      "linsen", "bohnen", "kichererbsen", "schinken", "wurst", "hack", "seelachs",
+      "schellfisch", "kabeljau", "forelle", "feta", "mozzarella", "gemüse", "brokkoli",
+      "broccoli", "zucchini", "spinat", "tomate", "gurke", "paprika", "olivenöl",
+      "jerky", "couscous", "bulgur", "quinoa", "süßkartoffel", "wrap", "tortilla",
+    ];
+    bool has(List<String> l) => l.any((k) {
+          if (k == "ei") return RegExp(r"(^|\s)eie?r?($|\s|\()").hasMatch(n);
+          return n.contains(k);
+        });
+    if (n.contains("süßkartoffel")) return "salty";
+    if (has(sweet)) return "sweet";
+    if (has(salty)) return "salty";
+    return null;
+  }
+
+  void _openSmartMealGenerator(String meal) {
+    if (meal == _kMergedMealCardId || !mealMacros.containsKey(meal)) {
+      _openMealGeneratorImpl(meal: meal);
+      return;
+    }
+    _updateMealTotals();
+    const gold = Color(0xFFC9A24A);
+    var goal = nutritionMode == "Diät"
+        ? "cut"
+        : (nutritionMode == "Aufbau" ? "bulk" : "normal");
+    var flavor = "all";
+    var tab = 0; // 0 = Kombis, 1 = Baukasten
+    Food? pickP;
+    Food? pickC;
+    Food? pickF;
+
+    final gDay = effectiveMacroGoalsForDay(selectedDayKey);
+    final mm = mealMacros[meal]!;
+    final eaten = _mealTotals[meal] ?? const <String, double>{};
+    double rem(double v) => v < 0 ? 0 : v;
+    final tP = rem(gDay.protein * (mm["protein"] ?? 0) / 100 - (eaten["protein"] ?? 0));
+    final tC = rem(gDay.carbs * (mm["carbs"] ?? 0) / 100 * _restCarbFactor(meal) -
+        (eaten["carbs"] ?? 0));
+    final tF = rem(gDay.fat * (mm["fat"] ?? 0) / 100 - (eaten["fat"] ?? 0));
+    final tK = tP * 4.1 + tC * 4.1 + tF * 9.3;
+
+    bool typeOk(Food f) {
+      if (goal == "cut") return f.type.startsWith("Diät");
+      if (goal == "bulk") return f.type.startsWith("Aufbau");
+      return true;
+    }
+
+    bool flavorOk(Food f) {
+      if (flavor == "all") return true;
+      final fl = _genFlavorOf(f);
+      return fl == null || fl == flavor;
+    }
+
+    List<Food> sources(String cat, double Function(Food) macro, double minPer100) {
+      final base = foodDatabase
+          .where((f) =>
+              f.isInCategory(cat) &&
+              !f.isRecipe &&
+              f.category != "Rezepte" &&
+              macro(f) >= minPer100 &&
+              flavorOk(f))
+          .toList();
+      final typed = base.where(typeOk).toList();
+      return typed.length >= 3 ? typed : base;
+    }
+
+    double r5(double g) => (g / 5).round() * 5.0;
+
+    // Sortierung je Ziel: Cut = wenig kcal pro g Makro (viel Volumen), Aufbau = wenig g (kompakt).
+    double rankFor(Food f, double per100) {
+      if (per100 <= 0.01) return 1e9;
+      final kcalPerMacro = f.calories / per100;
+      final gramsPerMacro = 100 / per100;
+      if (goal == "cut") return kcalPerMacro;
+      if (goal == "bulk") return gramsPerMacro;
+      return kcalPerMacro * 0.6 + gramsPerMacro * 0.4;
+    }
+
+    ({List<(Food, double)> items, double k, double p, double c, double f, double score}) combo(
+        Food pF, Food cF, Food? fF, Food? veg) {
+      final items = <(Food, double)>[];
+      var p0 = 0.0, c0 = 0.0, f0 = 0.0;
+      if (veg != null) {
+        items.add((veg, 150));
+        p0 += veg.protein * 1.5;
+        c0 += veg.carbs * 1.5;
+        f0 += veg.fat * 1.5;
+      }
+      final needP = rem(tP - p0), needC = rem(tC - c0);
+      // 2×2: Protein- und KH-Quelle gemeinsam lösen.
+      final a = pF.protein / 100, b = cF.protein / 100;
+      final c = pF.carbs / 100, d = cF.carbs / 100;
+      final det = a * d - b * c;
+      double gp, gc;
+      if (det.abs() > 1e-4) {
+        gp = (needP * d - b * needC) / det;
+        gc = (a * needC - c * needP) / det;
+      } else {
+        gp = -1;
+        gc = -1;
+      }
+      if (gp < 0 || gc < 0) {
+        gc = cF.carbs > 0.5 ? needC / (cF.carbs / 100) : 0;
+        gp = pF.protein > 0.5 ? rem(needP - gc * b) / a : 0;
+      }
+      gp = r5(gp.clamp(0, 450));
+      gc = r5(gc.clamp(0, 500));
+      if (gp > 0) items.add((pF, gp));
+      if (gc > 0) items.add((cF, gc));
+      var p = p0 + pF.protein * gp / 100 + cF.protein * gc / 100;
+      var cc = c0 + pF.carbs * gp / 100 + cF.carbs * gc / 100;
+      var f = f0 + pF.fat * gp / 100 + cF.fat * gc / 100;
+      if (fF != null && tF - f > 4 && fF.fat > 1) {
+        final gf = r5(((tF - f) / (fF.fat / 100)).clamp(0, 80));
+        if (gf > 0) {
+          items.add((fF, gf));
+          p += fF.protein * gf / 100;
+          cc += fF.carbs * gf / 100;
+          f += fF.fat * gf / 100;
+        }
+      }
+      final k = p * 4.1 + cc * 4.1 + f * 9.3;
+      double err(double v, double tgt) => tgt < 1 ? v / 20 : ((v - tgt) / math.max(tgt, 10)).abs();
+      var score = err(p, tP) * 1.4 + err(cc, tC) + err(f, tF) * 0.8 + err(k, tK);
+      final grams = items.fold(0.0, (s, e) => s + e.$2);
+      if (goal == "cut") score -= grams / 4000;
+      if (goal == "bulk") score += grams / 4000;
+      return (items: items, k: k, p: p, c: cc, f: f, score: score);
+    }
+
+    List<({List<(Food, double)> items, double k, double p, double c, double f, double score, bool recipe})>
+        buildCombos() {
+      final ps = sources("Protein", (f) => f.protein, 12)
+        ..sort((x, y) => rankFor(x, x.protein).compareTo(rankFor(y, y.protein)));
+      final cs = sources("Carbs", (f) => f.carbs, 15)
+        ..sort((x, y) => rankFor(x, x.carbs).compareTo(rankFor(y, y.carbs)));
+      final fs = sources("Fett", (f) => f.fat, 20);
+      final vegs = foodDatabase
+          .where((f) => f.isInCategory("Gemüse") && !f.isRecipe && f.calories < 60 && flavorOk(f))
+          .toList()
+        ..sort((x, y) => x.calories.compareTo(y.calories));
+      final veg = goal == "cut" && vegs.isNotEmpty && flavor != "sweet" ? vegs.first : null;
+      final all = <({List<(Food, double)> items, double k, double p, double c, double f, double score, bool recipe})>[];
+      for (final pF in ps.take(10)) {
+        for (final cF in cs.take(10)) {
+          final r = combo(pF, cF, fs.isEmpty ? null : fs.first, veg);
+          all.add((items: r.items, k: r.k, p: r.p, c: r.c, f: r.f, score: r.score, recipe: false));
+        }
+      }
+      all.sort((a, b) => a.score.compareTo(b.score));
+      final out = <({List<(Food, double)> items, double k, double p, double c, double f, double score, bool recipe})>[];
+      final usedP = <String>{}, usedC = <String>{};
+      for (final x in all) {
+        final pn = x.items.firstWhere((e) => e.$1.isInCategory("Protein"), orElse: () => x.items.first).$1.name;
+        final cn = x.items.lastWhere((e) => e.$1.isInCategory("Carbs"), orElse: () => x.items.last).$1.name;
+        if (usedP.contains(pn) || (usedC.contains(cn) && out.length < 3)) continue;
+        usedP.add(pn);
+        usedC.add(cn);
+        out.add(x);
+        if (out.length >= 5) break;
+      }
+      // Rezepte, auf die kcal skaliert.
+      final recs = foodDatabase.where((f) => f.category == "Rezepte" && f.calories > 10 && flavorOk(f)).toList();
+      final rs = <({List<(Food, double)> items, double k, double p, double c, double f, double score, bool recipe})>[];
+      for (final r in recs) {
+        final g = r5((tK / r.calories * 100).clamp(50, 900));
+        final p = r.protein * g / 100, c = r.carbs * g / 100, f = r.fat * g / 100;
+        final k = r.calories * g / 100;
+        double err(double v, double tgt) => tgt < 1 ? v / 20 : ((v - tgt) / math.max(tgt, 10)).abs();
+        rs.add((items: [(r, g)], k: k, p: p, c: c, f: f, score: err(p, tP) * 1.4 + err(c, tC) + err(f, tF), recipe: true));
+      }
+      rs.sort((a, b) => a.score.compareTo(b.score));
+      out.addAll(rs.where((x) => x.score < 1.2).take(2));
+      return out;
+    }
+
+    void addItems(List<(Food, double)> items) {
+      setState(() {
+        for (final it in items) {
+          trackedFoods.add(TrackedFood(
+              food: it.$1, grams: it.$2, meal: meal, dayKey: selectedDayKey));
+        }
+        _updateMealTotals();
+      });
+      _saveAppState();
+      _showBlessing();
+      _applyDailyKcalOverSchedule();
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetCtx) => StatefulBuilder(builder: (ctx, setG) {
+        Widget pill(String label, bool sel, VoidCallback onTap) => Expanded(
+              child: GestureDetector(
+                onTap: onTap,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: sel ? gold : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(label,
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: sel ? Colors.black : Colors.white70)),
+                ),
+              ),
+            );
+        Widget sectionLabel(String s) => Padding(
+              padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+              child: Text(s.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      letterSpacing: 1.1,
+                      fontWeight: FontWeight.w700,
+                      color: context.sol.muted)),
+            );
+        Widget macroLine(double k, double p, double c, double f, {bool big = false}) => Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                    text: "${k.round()} kcal",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: gold,
+                        fontSize: big ? 14 : 12.5)),
+                TextSpan(
+                    text: "  ·  P ${p.round()}  ·  K ${c.round()}  ·  F ${f.round()}",
+                    style: TextStyle(color: Colors.white60, fontSize: big ? 13 : 12)),
+              ]),
+            );
+        Widget foodRow(Food f, double g, {bool selected = false, VoidCallback? onTap}) => InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: onTap == null
+                    ? null
+                    : BoxDecoration(
+                        color: selected ? gold.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: selected ? gold : Colors.transparent),
+                      ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 58,
+                      child: Text("${g.round()} g",
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(f.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                          macroLine(f.calories * g / 100, f.protein * g / 100, f.carbs * g / 100,
+                              f.fat * g / 100),
+                        ],
+                      ),
+                    ),
+                    if (onTap != null)
+                      Icon(selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                          size: 20, color: selected ? gold : Colors.white24),
+                  ],
+                ),
+              ),
+            );
+
+        // ── Inhalt: Kombis ──
+        List<Widget> combosView() {
+          final list = buildCombos();
+          if (list.isEmpty) {
+            return [
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(t("gen2_none"), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60)),
+              )
+            ];
+          }
+          return [
+            for (var i = 0; i < list.length; i++)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                decoration: BoxDecoration(
+                  color: context.sol.card,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                            list[i].recipe
+                                ? "🍳 ${t("gen2_recipe")}"
+                                : "${t("gen2_option")} ${i + 1}",
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w800, color: gold, letterSpacing: 0.6)),
+                        const Spacer(),
+                        macroLine(list[i].k, list[i].p, list[i].c, list[i].f),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    for (final it in list[i].items) foodRow(it.$1, it.$2),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: gold,
+                          foregroundColor: Colors.black,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: Text(t("gen2_add")),
+                        onPressed: () {
+                          Navigator.pop(sheetCtx);
+                          addItems(list[i].items);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ];
+        }
+
+        // ── Inhalt: Baukasten ──
+        List<Widget> builderView() {
+          final ps = sources("Protein", (f) => f.protein, 12)
+            ..sort((x, y) => rankFor(x, x.protein).compareTo(rankFor(y, y.protein)));
+          double gFor(Food f, double need, double per100) =>
+              per100 > 0.5 ? r5((need / (per100 / 100)).clamp(0, 600)) : 0;
+          final gP = pickP == null ? 0.0 : gFor(pickP!, tP, pickP!.protein);
+          final afterC = rem(tC - (pickP?.carbs ?? 0) * gP / 100);
+          final cs = sources("Carbs", (f) => f.carbs, 15)
+            ..sort((x, y) => rankFor(x, x.carbs).compareTo(rankFor(y, y.carbs)));
+          final gC = pickC == null ? 0.0 : gFor(pickC!, afterC, pickC!.carbs);
+          final afterF = rem(tF - (pickP?.fat ?? 0) * gP / 100 - (pickC?.fat ?? 0) * gC / 100);
+          final fs = sources("Fett", (f) => f.fat, 20)
+            ..sort((x, y) => (100 / x.fat).compareTo(100 / y.fat));
+          final gF = pickF == null ? 0.0 : gFor(pickF!, afterF, pickF!.fat);
+          return [
+            sectionLabel("1 · ${t("gen2_step_p")} — ${t("gen2_need")} ${tP.round()} g"),
+            for (final f in ps.take(8))
+              foodRow(f, gFor(f, tP, f.protein),
+                  selected: pickP == f,
+                  onTap: () => setG(() => pickP = pickP == f ? null : f)),
+            sectionLabel("2 · ${t("gen2_step_c")} — ${t("gen2_need")} ${afterC.round()} g"),
+            for (final f in cs.take(8))
+              foodRow(f, gFor(f, afterC, f.carbs),
+                  selected: pickC == f,
+                  onTap: () => setG(() => pickC = pickC == f ? null : f)),
+            if (afterF > 3) ...[
+              sectionLabel("3 · ${t("gen2_step_f")} — ${t("gen2_need")} ${afterF.round()} g"),
+              for (final f in fs.take(5))
+                foodRow(f, gFor(f, afterF, f.fat),
+                    selected: pickF == f,
+                    onTap: () => setG(() => pickF = pickF == f ? null : f)),
+            ],
+            const SizedBox(height: 70),
+          ];
+        }
+
+        List<(Food, double)> picked() {
+          final gP = pickP == null ? 0.0 : r5(tP / (pickP!.protein / 100));
+          final afterC = rem(tC - (pickP?.carbs ?? 0) * gP / 100);
+          final gC = pickC == null || pickC!.carbs < 0.5 ? 0.0 : r5(afterC / (pickC!.carbs / 100));
+          final afterF = rem(tF - (pickP?.fat ?? 0) * gP / 100 - (pickC?.fat ?? 0) * gC / 100);
+          final gF = pickF == null || pickF!.fat < 0.5 ? 0.0 : r5(afterF / (pickF!.fat / 100));
+          return [
+            if (pickP != null && gP > 0) (pickP!, gP),
+            if (pickC != null && gC > 0) (pickC!, gC),
+            if (pickF != null && gF > 0) (pickF!, gF),
+          ];
+        }
+
+        final sel = picked();
+        double sum(double Function(Food) m) => sel.fold(0.0, (s, e) => s + m(e.$1) * e.$2 / 100);
+
+        return SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.92,
+          child: Column(
+            children: [
+              // Kopf
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, color: gold, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text("${t("gen2_title")} · ${_displayMealName(meal)}",
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(sheetCtx);
+                        _openMealGeneratorImpl(meal: meal);
+                      },
+                      child: Text(t("gen2_advanced"), style: const TextStyle(fontSize: 12)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetCtx), icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              // Ziel der Mahlzeit
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: gold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Text(t("gen2_open"), style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                    const SizedBox(width: 10),
+                    Expanded(child: macroLine(tK, tP, tC, tF, big: true)),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                child: Column(
+                  children: [
+                    Row(children: [
+                      pill(t("gen2_cut"), goal == "cut", () => setG(() => goal = "cut")),
+                      pill(t("gen2_normal"), goal == "normal", () => setG(() => goal = "normal")),
+                      pill(t("gen2_bulk"), goal == "bulk", () => setG(() => goal = "bulk")),
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      pill(t("gen2_any"), flavor == "all", () => setG(() => flavor = "all")),
+                      pill("🍯 ${t("recipe_flavor_sweet")}", flavor == "sweet", () => setG(() => flavor = "sweet")),
+                      pill("🧂 ${t("recipe_flavor_salty")}", flavor == "salty", () => setG(() => flavor = "salty")),
+                    ]),
+                  ],
+                ),
+              ),
+              // Tabs
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Row(
+                  children: [
+                    for (final e in [(0, t("gen2_tab_combos")), (1, t("gen2_tab_build"))])
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setG(() => tab = e.$1),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                    width: 2, color: tab == e.$1 ? gold : Colors.white12),
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(e.$2,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: tab == e.$1 ? gold : Colors.white54)),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (tK < 40)
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(t("gen2_full"), textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white60)),
+                )
+              else
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+                    children: tab == 0 ? combosView() : builderView(),
+                  ),
+                ),
+              if (tab == 1 && sel.isNotEmpty && tK >= 40)
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+                    decoration: BoxDecoration(
+                      color: context.sol.card,
+                      border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: macroLine(
+                              sum((f) => f.calories), sum((f) => f.protein), sum((f) => f.carbs), sum((f) => f.fat),
+                              big: true),
+                        ),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: gold, foregroundColor: Colors.black),
+                          onPressed: () {
+                            Navigator.pop(sheetCtx);
+                            addItems(sel);
+                          },
+                          child: Text(t("gen2_add")),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }),
+    );
   }
 
   void _openMealGeneratorImpl({String? meal}) {
