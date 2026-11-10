@@ -4894,6 +4894,94 @@ class _MainScreenState extends State<MainScreen> {
             });
           }
 
+          const gold = Color(0xFFC9A24A);
+          Widget unitPill({
+            required String label,
+            String? sub,
+            required bool selected,
+            required VoidCallback onTap,
+            VoidCallback? onLongPress,
+          }) =>
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: GestureDetector(
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: selected ? gold : Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: selected ? gold : Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: selected ? Colors.black : Colors.white)),
+                        if (sub != null)
+                          Text(sub,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: selected ? Colors.black54 : Colors.white54)),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+          Widget stepBtn(IconData ic, VoidCallback onTap) => InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: onTap,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: gold.withValues(alpha: 0.15),
+                  ),
+                  child: Icon(ic, color: gold, size: 22),
+                ),
+              );
+          Widget macroTile(String l, double v, Color c) => Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: c.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(v.round().toString(),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c)),
+                      Text(l, style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
+                    ],
+                  ),
+                ),
+              );
+          Widget fillBtn(String l, VoidCallback onTap) => Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: Colors.white70,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: onTap,
+                    child: FittedBox(child: Text(l, style: const TextStyle(fontSize: 12))),
+                  ),
+                ),
+              );
+
           return AlertDialog(
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4959,140 +5047,146 @@ class _MainScreenState extends State<MainScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 5,
-                      children: [
-                        // Gramm-Eingabe
-                        ChoiceChip(
-                          label: Text(t("unit_grams"), style: const TextStyle(fontSize: 12)),
-                          selected: unit == null,
-                          onSelected: (_) => setL(() {
-                            final g = grams();
-                            unit = null;
-                            ctrl.text = g > 0 ? g.round().toString() : "";
-                          }),
-                        ),
-                        for (final p in portions)
-                          GestureDetector(
-                            // Eigene Portion lange drücken → löschen.
-                            onLongPress: _isCustomPortion(food, p)
-                                ? () async {
-                                    customPortions[food.name]?.removeWhere((e) =>
-                                        e[0].toString() == p.$1 &&
-                                        ((e[1] as num) - p.$2).abs() < 0.01);
-                                    await _saveCustomPortions();
-                                    setL(() {
-                                      portions = _portionsFor(food);
-                                      if (unit == p) {
-                                        unit = null;
-                                        ctrl.text = p.$2.round().toString();
-                                      }
-                                    });
-                                  }
-                                : null,
-                            child: ChoiceChip(
-                              label: Text("${p.$1} · ${p.$2.round()} g",
-                                  style: const TextStyle(fontSize: 12)),
+                    // ── Einheit ──
+                    Text(t("amount_unit_label"),
+                        style: TextStyle(fontSize: 11, color: context.sol.muted, letterSpacing: 0.4)),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          unitPill(
+                            label: t("unit_grams"),
+                            sub: null,
+                            selected: unit == null,
+                            onTap: () => setL(() {
+                              final g = grams();
+                              unit = null;
+                              ctrl.text = g > 0 ? g.round().toString() : "";
+                            }),
+                          ),
+                          for (final p in portions)
+                            unitPill(
+                              label: p.$1,
+                              sub: "${p.$2.round()} g",
                               selected: unit == p,
-                              onSelected: (_) => setL(() {
+                              onTap: () => setL(() {
                                 unit = p;
                                 ctrl.text = "1";
                               }),
+                              // Eigene Portion lange drücken → löschen.
+                              onLongPress: _isCustomPortion(food, p)
+                                  ? () async {
+                                      customPortions[food.name]?.removeWhere((e) =>
+                                          e[0].toString() == p.$1 &&
+                                          ((e[1] as num) - p.$2).abs() < 0.01);
+                                      await _saveCustomPortions();
+                                      setL(() {
+                                        portions = _portionsFor(food);
+                                        if (unit == p) {
+                                          unit = null;
+                                          ctrl.text = p.$2.round().toString();
+                                        }
+                                      });
+                                    }
+                                  : null,
                             ),
+                          unitPill(
+                            label: "+",
+                            sub: null,
+                            selected: false,
+                            onTap: () async {
+                              final np = await _askCustomPortion(food, grams: grams());
+                              if (np == null) return;
+                              setL(() {
+                                portions = _portionsFor(food);
+                                unit = np;
+                                ctrl.text = "1";
+                              });
+                            },
                           ),
-                        ActionChip(
-                          avatar: const Icon(Icons.add, size: 16, color: Color(0xFFC9A24A)),
-                          label: Text(t("portion_add_chip"),
-                              style: const TextStyle(fontSize: 12)),
-                          onPressed: () async {
-                            final np = await _askCustomPortion(food, grams: grams());
-                            if (np == null) return;
-                            setL(() {
-                              portions = _portionsFor(food);
-                              unit = np;
-                              ctrl.text = "1";
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    if (portions.any((p) => _isCustomPortion(food, p)))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(t("portion_delete_hint"),
-                            style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
+                        ],
                       ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        if (unit != null)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.remove_circle_outline,
-                                size: 22, color: Color(0xFFC9A24A)),
-                            onPressed: () => setL(() {
+                    ),
+                    const SizedBox(height: 14),
+                    // ── Menge: − Zahl + ──
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          stepBtn(Icons.remove, () => setL(() {
+                            if (unit == null) {
+                              final v = rawVal() - 10;
+                              ctrl.text = (v < 0 ? 0 : v).round().toString();
+                            } else {
                               final v = rawVal() - (rawVal() <= 1 ? 0.5 : 1);
                               ctrl.text = fmtN(v < 0.5 ? 0.5 : v);
-                            }),
-                          ),
-                        Expanded(
-                          child: TextField(
-                            controller: ctrl,
-                            textAlign: unit != null ? TextAlign.center : TextAlign.start,
-                            keyboardType:
-                                const TextInputType.numberWithOptions(decimal: true),
-                            style: TextStyle(
-                                fontSize: unit != null ? 17 : 15,
-                                fontWeight: unit != null ? FontWeight.w800 : FontWeight.w400),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              suffixStyle: const TextStyle(fontSize: 13, color: Colors.white60),
-                              suffixText: unit == null ? "g" : "× ${unit!.$1}",
-                              helperText: unit == null
-                                  ? null
-                                  : tFmt("unit_equals", {"g": fmtN(grams())}),
+                            }
+                          })),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                TextField(
+                                  controller: ctrl,
+                                  textAlign: TextAlign.center,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    filled: false,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                  onChanged: (_) => setL(() {}),
+                                ),
+                                Text(
+                                  unit == null
+                                      ? t("unit_grams")
+                                      : "${unit!.$1} · ${fmtN(grams())} g",
+                                  style: TextStyle(fontSize: 11.5, color: context.sol.muted),
+                                ),
+                              ],
                             ),
-                            onChanged: (_) => setL(() {}),
                           ),
-                        ),
-                        if (unit != null)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.add_circle_outline,
-                                size: 22, color: Color(0xFFC9A24A)),
-                            onPressed: () => setL(() {
+                          stepBtn(Icons.add, () => setL(() {
+                            if (unit == null) {
+                              ctrl.text = (rawVal() + 10).round().toString();
+                            } else {
                               final v = rawVal() + (rawVal() < 1 ? 0.5 : 1);
                               ctrl.text = fmtN(v);
-                            }),
-                          ),
+                            }
+                          })),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // ── Nährwerte ──
+                    Row(
+                      children: [
+                        macroTile("kcal", food.calories * grams() / 100, const Color(0xFFC9A24A)),
+                        macroTile("P", food.protein * grams() / 100, const Color(0xFF6FA8DC)),
+                        macroTile("K", food.carbs * grams() / 100, const Color(0xFFE0B04A)),
+                        macroTile("F", food.fat * grams() / 100, const Color(0xFFD9826B)),
                       ],
                     ),
-                    if (grams() > 0) _trackPortionMacroPreview(food, grams()),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 4,
+                    const SizedBox(height: 14),
+                    // ── Auffüllen ──
+                    Text(t("amount_fill_label"),
+                        style: TextStyle(fontSize: 11, color: context.sol.muted, letterSpacing: 0.4)),
+                    const SizedBox(height: 6),
+                    Row(
                       children: [
-                        if (food.protein > 0.01)
-                          ActionChip(
-                              label: Text(t("track_fill_protein"),
-                                  style: const TextStyle(fontSize: 11.5)),
-                              onPressed: () => fill("protein")),
-                        if (food.carbs > 0.01)
-                          ActionChip(
-                              label: Text(t("track_fill_carbs"),
-                                  style: const TextStyle(fontSize: 11.5)),
-                              onPressed: () => fill("carbs")),
-                        if (food.fat > 0.01)
-                          ActionChip(
-                              label: Text(t("track_fill_fat"),
-                                  style: const TextStyle(fontSize: 11.5)),
-                              onPressed: () => fill("fat")),
-                        ActionChip(
-                            label: Text(t("track_fill_kcal"),
-                                style: const TextStyle(fontSize: 11.5)),
-                            onPressed: () => fill("kcal")),
+                        if (food.protein > 0.01) fillBtn(t("protein"), () => fill("protein")),
+                        if (food.carbs > 0.01) fillBtn(t("amount_fill_carbs_short"), () => fill("carbs")),
+                        if (food.fat > 0.01) fillBtn(t("fat"), () => fill("fat")),
+                        fillBtn("kcal", () => fill("kcal")),
                       ],
                     ),
                     if (fillMsg != null)
@@ -8272,6 +8366,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "amount_unit_label": "EINHEIT",
+      "amount_fill_label": "AUFFÜLLEN BIS ZIEL",
+      "amount_fill_carbs_short": "KH",
       "meal_count_rec_cut": "Empfehlung im Diät-Modus (Aggressive Cut): 3 Mahlzeiten + Snacks. Pre, Post und Hauptmahlzeit werden größer und sättigender, du hast weniger Essens-Anlässe und bleibst leichter im Defizit. Die Abendessen-kcal kannst du flexibel als Snacks nutzen.",
       "meal_count_rec_bulk": "Empfehlung im Aufbau: 4 Mahlzeiten + Snacks. Mehr Mahlzeiten machen es leichter, die hohen kcal zu schaffen, ohne dass einzelne Portionen zu groß werden.",
       "meal_count_rec_neutral": "Tipp: Im Diät-Modus sind 3 Mahlzeiten + Snacks empfohlen, im Aufbau 4. Sonst ganz nach Alltag.",
@@ -9563,6 +9660,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "amount_unit_label": "UNIT",
+      "amount_fill_label": "FILL UP TO TARGET",
+      "amount_fill_carbs_short": "Carbs",
       "meal_count_rec_cut": "Recommended for an aggressive cut: 3 meals + snacks. Pre, post and main meal get bigger and more filling, you have fewer eating occasions and stay in the deficit more easily. Use the dinner kcal flexibly as snacks.",
       "meal_count_rec_bulk": "Recommended for bulking: 4 meals + snacks. More meals make it easier to hit high kcal without oversized portions.",
       "meal_count_rec_neutral": "Tip: 3 meals + snacks are recommended when cutting, 4 when bulking. Otherwise whatever fits your day.",
