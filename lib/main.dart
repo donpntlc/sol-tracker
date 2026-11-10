@@ -8246,6 +8246,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_count_eve_off": "Aus · kcal gehen in die Snacks",
       "meal_count_title": "Mahlzeiten pro Tag",
       "meal_count_4": "4 Mahlzeiten",
       "meal_count_3": "3 Mahlzeiten",
@@ -9526,6 +9527,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_count_eve_off": "Off · kcal go to snacks",
       "meal_count_title": "Meals per day",
       "meal_count_4": "4 meals",
       "meal_count_3": "3 meals",
@@ -22400,12 +22402,76 @@ class _MainScreenState extends State<MainScreen> {
         .where((g) => g != "Snacks" && !(threeMeals && g == "Evening Meal"))
         .toList();
 
+    void setThree(bool v) {
+      setState(() {
+        threeMeals = v;
+        _updateMealTotals();
+      });
+      HapticFeedback.selectionClick();
+      _saveAppState();
+    }
+
+    Widget mealCountSwitch() => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(t("meal_count_title"),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              ),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: WidgetStateProperty.resolveWith((st) =>
+                      st.contains(WidgetState.selected)
+                          ? const Color(0xFFC9A24A)
+                          : Colors.transparent),
+                  foregroundColor: WidgetStateProperty.resolveWith((st) =>
+                      st.contains(WidgetState.selected)
+                          ? Colors.black
+                          : Colors.white70),
+                ),
+                segments: const [
+                  ButtonSegment(value: true, label: Text("3")),
+                  ButtonSegment(value: false, label: Text("4")),
+                ],
+                selected: {threeMeals},
+                onSelectionChanged: (v) => setThree(v.first),
+              ),
+            ],
+          ),
+        );
+
     Widget mealOrderTile(
       String groupId, {
       required bool showDrag,
       int? dragIndex,
       required Key rowKey,
     }) {
+      final isEve = groupId == "Evening Meal";
+      if (isEve && threeMeals) {
+        return Container(
+          key: rowKey,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: ListTile(
+            dense: true,
+            leading: Icon(groupIcon(groupId), color: Colors.white24, size: 22),
+            title: Text(groupLabel(groupId),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white38,
+                    decoration: TextDecoration.lineThrough)),
+            subtitle: Text(t("meal_count_eve_off"),
+                style: const TextStyle(fontSize: 11, color: Colors.white38)),
+            trailing: Switch(value: false, onChanged: (_) => setThree(false)),
+          ),
+        );
+      }
       return Container(
         key: rowKey,
         margin: const EdgeInsets.symmetric(vertical: 4),
@@ -22443,6 +22509,11 @@ class _MainScreenState extends State<MainScreen> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (isEve)
+                Transform.scale(
+                  scale: 0.8,
+                  child: Switch(value: true, onChanged: (_) => setThree(true)),
+                ),
               if (free)
                 IconButton(
                   tooltip: t("meal_order_rename"),
@@ -22482,6 +22553,7 @@ class _MainScreenState extends State<MainScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
+          mealCountSwitch(),
           if (hasSnacks) ...[
             mealOrderTile(
               "Snacks",
@@ -22560,6 +22632,12 @@ class _MainScreenState extends State<MainScreen> {
               );
             },
           ),
+          if (threeMeals && mealGroupOrder.contains("Evening Meal"))
+            mealOrderTile(
+              "Evening Meal",
+              showDrag: false,
+              rowKey: const ValueKey("meal_order_evening_off"),
+            ),
         ],
       ),
     );
@@ -23698,32 +23776,6 @@ class _MainScreenState extends State<MainScreen> {
                       fontSize: 12, color: Colors.white70, height: 1.4),
                 ),
                 const SizedBox(height: 10),
-                Text(t("meal_count_title"),
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final three in const [false, true])
-                      ChoiceChip(
-                        label: Text(t(three ? "meal_count_3" : "meal_count_4")),
-                        selected: threeMeals == three,
-                        onSelected: (_) {
-                          setState(() {
-                            threeMeals = three;
-                            _updateMealTotals();
-                          });
-                          _saveAppState();
-                        },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  t(threeMeals ? "meal_count_3_hint" : "meal_count_4_hint"),
-                  style: const TextStyle(fontSize: 11.5, color: Colors.white60, height: 1.35),
-                ),
-                const SizedBox(height: 12),
                 _buildMealOrderEditor(),
               ],
             ),
