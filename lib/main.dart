@@ -8246,6 +8246,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_count_rec_cut": "Empfehlung im Diät-Modus (Aggressive Cut): 3 Mahlzeiten + Snacks. Pre, Post und Hauptmahlzeit werden größer und sättigender, du hast weniger Essens-Anlässe und bleibst leichter im Defizit. Die Abendessen-kcal kannst du flexibel als Snacks nutzen.",
+      "meal_count_rec_bulk": "Empfehlung im Aufbau: 4 Mahlzeiten + Snacks. Mehr Mahlzeiten machen es leichter, die hohen kcal zu schaffen, ohne dass einzelne Portionen zu groß werden.",
+      "meal_count_rec_neutral": "Tipp: Im Diät-Modus sind 3 Mahlzeiten + Snacks empfohlen, im Aufbau 4. Sonst ganz nach Alltag.",
+      "meal_count_rec_apply3": "→ Auf 3 Mahlzeiten umstellen",
+      "meal_count_rec_apply4": "→ Auf 4 Mahlzeiten umstellen",
       "settings_grp_goal": "Ziel & Modus",
       "settings_grp_meals": "Mahlzeiten",
       "settings_grp_weight": "Gewicht & Woche",
@@ -9532,6 +9537,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_count_rec_cut": "Recommended for an aggressive cut: 3 meals + snacks. Pre, post and main meal get bigger and more filling, you have fewer eating occasions and stay in the deficit more easily. Use the dinner kcal flexibly as snacks.",
+      "meal_count_rec_bulk": "Recommended for bulking: 4 meals + snacks. More meals make it easier to hit high kcal without oversized portions.",
+      "meal_count_rec_neutral": "Tip: 3 meals + snacks are recommended when cutting, 4 when bulking. Otherwise whatever fits your day.",
+      "meal_count_rec_apply3": "→ Switch to 3 meals",
+      "meal_count_rec_apply4": "→ Switch to 4 meals",
       "settings_grp_goal": "Goal & mode",
       "settings_grp_meals": "Meals",
       "settings_grp_weight": "Weight & week",
@@ -22589,6 +22599,66 @@ class _MainScreenState extends State<MainScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           mealCountSwitch(),
+          ...() {
+            // Empfehlung je Modus: Diät → 3, Aufbau → 4.
+            final rec3 = nutritionMode == "Diät";
+            final rec4 = nutritionMode == "Aufbau";
+            if (!rec3 && !rec4) {
+              return <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(t("meal_count_rec_neutral"),
+                      style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.35)),
+                ),
+              ];
+            }
+            final fits = rec3 ? threeMeals : !threeMeals;
+            return <Widget>[
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC9A24A).withValues(alpha: fits ? 0.06 : 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: const Color(0xFFC9A24A).withValues(alpha: fits ? 0.2 : 0.45)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(fits ? Icons.check_circle_outline : Icons.lightbulb_outline,
+                        size: 18, color: const Color(0xFFC9A24A)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            t(rec3 ? "meal_count_rec_cut" : "meal_count_rec_bulk"),
+                            style: const TextStyle(fontSize: 12, color: Colors.white, height: 1.4),
+                          ),
+                          if (!fits)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: GestureDetector(
+                                onTap: () => setThree(rec3),
+                                child: Text(
+                                  t(rec3 ? "meal_count_rec_apply3" : "meal_count_rec_apply4"),
+                                  style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFFC9A24A)),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ];
+          }(),
           if (hasSnacks) ...[
             mealOrderTile(
               "Snacks",
