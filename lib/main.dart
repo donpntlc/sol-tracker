@@ -2695,6 +2695,18 @@ class _MainScreenState extends State<MainScreen> {
                   style: TextStyle(fontSize: 12.5, color: muted),
                 ),
               ),
+            Center(
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: const Color(0xFFC9A24A),
+                ),
+                onPressed: _openDayFoodsSheet,
+                icon: const Icon(Icons.list_alt, size: 17),
+                label: Text(t("dayfoods_button"),
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+            ),
             if (_macroDetailsExpanded) _dayFillButtons(),
           ],
         ),
@@ -8352,6 +8364,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "dayfoods_button": "Alle Lebensmittel des Tages",
+      "dayfoods_title": "Heute gegessen — gesamt",
+      "dayfoods_sort": "Sortieren:",
+      "dayfoods_amount": "Menge",
+      "dayfoods_now": "Aktuell: {g} g · {k} kcal",
+      "dayfoods_new_total": "Neue Gesamtmenge",
+      "dayfoods_scale_hint": "Verteilt sich anteilig auf alle Mahlzeiten, in denen es eingetragen ist.",
+      "dayfoods_delete_all": "Alles löschen",
       "gen2_title": "Generator",
       "gen2_advanced": "Erweitert",
       "gen2_open": "Offen",
@@ -9664,6 +9684,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "dayfoods_button": "All foods today",
+      "dayfoods_title": "Eaten today — total",
+      "dayfoods_sort": "Sort:",
+      "dayfoods_amount": "Amount",
+      "dayfoods_now": "Now: {g} g · {k} kcal",
+      "dayfoods_new_total": "New total amount",
+      "dayfoods_scale_hint": "Split proportionally across all meals it's logged in.",
+      "dayfoods_delete_all": "Delete all",
       "gen2_title": "Generator",
       "gen2_advanced": "Advanced",
       "gen2_open": "Open",
@@ -14356,11 +14384,296 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// Alle Lebensmittel des Tages zusammengefasst (gleiches Lebensmittel = eine Zeile),
+  /// mit Gesamtmenge, Nährwerten, Anteil am Tag und Verteilung auf die Mahlzeiten.
+  void _openDayFoodsSheet() {
+    const gold = Color(0xFFC9A24A);
+    var sortBy = "kcal"; // kcal | protein | grams
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetCtx) => StatefulBuilder(builder: (ctx, setS) {
+        final day = trackedFoods.where((f) => f.dayKey == selectedDayKey).toList();
+        final groups = <String, List<TrackedFood>>{};
+        for (final f in day) {
+          groups.putIfAbsent(f.food.name, () => []).add(f);
+        }
+        double sumOf(List<TrackedFood> l, double Function(TrackedFood) v) =>
+            l.fold(0.0, (s, e) => s + v(e));
+        final dayK = sumOf(day, (e) => e.calories);
+        final dayP = sumOf(day, (e) => e.protein);
+        final dayC = sumOf(day, (e) => e.carbs);
+        final dayF = sumOf(day, (e) => e.fat);
+        final keys = groups.keys.toList()
+          ..sort((a, b) {
+            double v(String k) => switch (sortBy) {
+                  "protein" => sumOf(groups[k]!, (e) => e.protein),
+                  "grams" => sumOf(groups[k]!, (e) => e.grams),
+                  _ => sumOf(groups[k]!, (e) => e.calories),
+                };
+            return v(b).compareTo(v(a));
+          });
+
+        Widget sortChip(String code, String label) => Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GestureDetector(
+                onTap: () => setS(() => sortBy = code),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: sortBy == code ? gold.withValues(alpha: 0.12) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: sortBy == code ? gold : Colors.white.withValues(alpha: 0.18)),
+                  ),
+                  child: Text(label,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: sortBy == code ? FontWeight.w700 : FontWeight.w500,
+                          color: sortBy == code ? gold : Colors.white70)),
+                ),
+              ),
+            );
+
+        Future<void> editGroup(String name) async {
+          final items = groups[name]!;
+          final total = sumOf(items, (e) => e.grams);
+          final food = items.first.food;
+          final ctrl = TextEditingController(text: total.round().toString());
+          final res = await showDialog<String>(
+            context: ctx,
+            builder: (dCtx) => StatefulBuilder(builder: (dCtx, setD) {
+              final g = double.tryParse(ctrl.text.replaceAll(",", ".")) ?? 0;
+              return AlertDialog(
+                title: Text(name, style: const TextStyle(fontSize: 17)),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      tFmt("dayfoods_now", {
+                        "g": total.round().toString(),
+                        "k": sumOf(items, (e) => e.calories).round().toString(),
+                      }),
+                      style: const TextStyle(fontSize: 12.5, color: Colors.white60),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: t("dayfoods_new_total"),
+                        suffixText: "g",
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setD(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "→ ${(food.calories * g / 100).round()} kcal · P ${(food.protein * g / 100).round()} · K ${(food.carbs * g / 100).round()} · F ${(food.fat * g / 100).round()}",
+                      style: const TextStyle(color: gold, fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    if (items.length > 1) ...[
+                      const SizedBox(height: 6),
+                      Text(t("dayfoods_scale_hint"),
+                          style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.3)),
+                    ],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: const Color(0xFFE57373)),
+                    onPressed: () => Navigator.pop(dCtx, "delete"),
+                    child: Text(t("dayfoods_delete_all")),
+                  ),
+                  TextButton(
+                      onPressed: () => Navigator.pop(dCtx), child: Text(t("cancel"))),
+                  FilledButton(
+                      onPressed: g > 0 ? () => Navigator.pop(dCtx, "save") : null,
+                      child: Text(t("save"))),
+                ],
+              );
+            }),
+          );
+          if (res == null) return;
+          final newG = double.tryParse(ctrl.text.replaceAll(",", ".")) ?? 0;
+          setState(() {
+            if (res == "delete") {
+              trackedFoods.removeWhere((e) => items.contains(e));
+            } else if (res == "save" && newG > 0 && total > 0) {
+              // Auf alle Einträge anteilig verteilen (Mahlzeiten bleiben erhalten).
+              final f = newG / total;
+              for (final e in items) {
+                e.grams = (e.grams * f * 10).round() / 10;
+              }
+            }
+            _updateMealTotals();
+          });
+          _saveAppState();
+          setS(() {});
+        }
+
+        return SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.88,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(t("dayfoods_title"),
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    ),
+                    IconButton(
+                        onPressed: () => Navigator.pop(sheetCtx), icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: gold.withValues(alpha: 0.35)),
+                ),
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(
+                      text: "${dayK.round()} kcal",
+                      style: const TextStyle(fontWeight: FontWeight.w800, color: gold)),
+                  TextSpan(
+                      text: "  ·  P ${dayP.round()}  ·  K ${dayC.round()}  ·  F ${dayF.round()}",
+                      style: const TextStyle(color: Colors.white70)),
+                ])),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Row(children: [
+                  Text("${t("dayfoods_sort")}  ",
+                      style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+                  sortChip("kcal", "kcal"),
+                  sortChip("protein", t("protein")),
+                  sortChip("grams", t("dayfoods_amount")),
+                ]),
+              ),
+              Expanded(
+                child: keys.isEmpty
+                    ? Center(
+                        child: Text(t("meal_tracked_empty"),
+                            style: const TextStyle(color: Colors.white54)))
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                        itemCount: keys.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+                        itemBuilder: (_, i) {
+                          final name = keys[i];
+                          final l = groups[name]!;
+                          final g = sumOf(l, (e) => e.grams);
+                          final k = sumOf(l, (e) => e.calories);
+                          final share = dayK > 0 ? k / dayK : 0.0;
+                          final perMeal = <String, double>{};
+                          for (final e in l) {
+                            perMeal[e.meal] = (perMeal[e.meal] ?? 0) + e.grams;
+                          }
+                          return InkWell(
+                            onTap: () => editGroup(name),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                fontSize: 14, fontWeight: FontWeight.w600)),
+                                      ),
+                                      Text("${g.round()} g",
+                                          style: const TextStyle(
+                                              fontSize: 14, fontWeight: FontWeight.w800)),
+                                      const SizedBox(width: 6),
+                                      const Icon(Icons.edit_outlined, size: 16, color: Colors.white38),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text.rich(TextSpan(children: [
+                                    TextSpan(
+                                        text: "${k.round()} kcal",
+                                        style: const TextStyle(color: gold, fontWeight: FontWeight.w700)),
+                                    TextSpan(
+                                        text:
+                                            "  ·  P ${sumOf(l, (e) => e.protein).round()}  ·  K ${sumOf(l, (e) => e.carbs).round()}  ·  F ${sumOf(l, (e) => e.fat).round()}",
+                                        style: const TextStyle(color: Colors.white60)),
+                                  ]), style: const TextStyle(fontSize: 12)),
+                                  const SizedBox(height: 5),
+                                  // Anteil an den Tages-kcal
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(2),
+                                          child: LinearProgressIndicator(
+                                            value: share.clamp(0.0, 1.0),
+                                            minHeight: 3,
+                                            backgroundColor: Colors.white.withValues(alpha: 0.06),
+                                            valueColor: AlwaysStoppedAnimation(gold.withValues(alpha: 0.7)),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text("${(share * 100).round()} %",
+                                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    perMeal.entries
+                                        .map((e) => "${_displayMealName(e.key)} ${e.value.round()} g")
+                                        .join("  ·  "),
+                                    style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
   /// Pro Mahlzeit aufklappbar: gegessene Lebensmittel (Tagesübersicht).
   Widget _buildDailyOverviewMealFoodExpansions() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: const Color(0xFFC9A24A),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+            onPressed: _openDayFoodsSheet,
+            icon: const Icon(Icons.list_alt, size: 18),
+            label: Text(t("dayfoods_button"),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          ),
+        ),
         for (final meal in meals)
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
