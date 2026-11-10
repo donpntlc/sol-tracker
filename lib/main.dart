@@ -14411,6 +14411,8 @@ class _MainScreenState extends State<MainScreen> {
           ..sort((a, b) {
             double v(String k) => switch (sortBy) {
                   "protein" => sumOf(groups[k]!, (e) => e.protein),
+                  "carbs" => sumOf(groups[k]!, (e) => e.carbs),
+                  "fat" => sumOf(groups[k]!, (e) => e.fat),
                   "grams" => sumOf(groups[k]!, (e) => e.grams),
                   _ => sumOf(groups[k]!, (e) => e.calories),
                 };
@@ -14553,13 +14555,18 @@ class _MainScreenState extends State<MainScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                child: Row(children: [
-                  Text("${t("dayfoods_sort")}  ",
-                      style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
-                  sortChip("kcal", "kcal"),
-                  sortChip("protein", t("protein")),
-                  sortChip("grams", t("dayfoods_amount")),
-                ]),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    Text("${t("dayfoods_sort")}  ",
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+                    sortChip("kcal", "kcal"),
+                    sortChip("protein", t("protein")),
+                    sortChip("carbs", t("amount_fill_carbs_short")),
+                    sortChip("fat", t("fat")),
+                    sortChip("grams", t("dayfoods_amount")),
+                  ]),
+                ),
               ),
               Expanded(
                 child: keys.isEmpty
