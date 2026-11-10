@@ -31695,7 +31695,9 @@ class _MainScreenState extends State<MainScreen> {
     final g = goalCalories;
     if (g <= 0) return;
     final prefs = await SharedPreferences.getInstance();
-    if (total <= g) {
+    // Erst über der Obergrenze des Tagesbereichs melden (innerhalb der Range ist ok).
+    final limit = math.max(g, dailyKcalRange().maxKcal);
+    if (total <= limit) {
       if (prefs.getString(_kSurplusCheatPromptDayKey) == selectedDayKey) {
         await prefs.remove(_kSurplusCheatPromptDayKey);
       }
