@@ -4784,8 +4784,15 @@ class _MainScreenState extends State<MainScreen> {
     final sibling = _cookedRawSibling(food);
     var portions = _portionsFor(food);
     final def = _defaultPortion(food);
-    final ctrl = TextEditingController(text: def.$2.round().toString());
-    double grams() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
+    // Mit Portion (Stück, Packung …) wird die ANZAHL eingegeben, sonst Gramm.
+    (String, double)? unit =
+        (portions.isNotEmpty && def.$1 != "100 g") ? def : null;
+    final ctrl = TextEditingController(
+        text: unit != null ? "1" : def.$2.round().toString());
+    double rawVal() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
+    double grams() => unit == null ? rawVal() : rawVal() * unit!.$2;
+    String fmtN(double v) =>
+        (v - v.roundToDouble()).abs() < 0.01 ? v.round().toString() : v.toStringAsFixed(1);
     String? fillMsg;
     // Kommt von einem „… füllen“-Knopf: Menge direkt bis zur Zielmitte setzen.
     if (fillTag != null) {
@@ -4804,6 +4811,7 @@ class _MainScreenState extends State<MainScreen> {
         if (g == null || g <= 0) {
           fillMsg = t("track_fill_none");
         } else {
+          unit = null;
           ctrl.text = g.round().toString();
         }
       }
@@ -4819,6 +4827,7 @@ class _MainScreenState extends State<MainScreen> {
                 fillMsg = t("track_fill_none");
               } else {
                 fillMsg = null;
+                unit = null; // Füllen rechnet in Gramm
                 ctrl.text = g.round().toString();
               }
             });
@@ -4880,6 +4889,16 @@ class _MainScreenState extends State<MainScreen> {
                       spacing: 6,
                       runSpacing: 4,
                       children: [
+                        // Gramm-Eingabe
+                        ChoiceChip(
+                          label: Text(t("unit_grams"), style: const TextStyle(fontSize: 12)),
+                          selected: unit == null,
+                          onSelected: (_) => setL(() {
+                            final g = grams();
+                            unit = null;
+                            ctrl.text = g > 0 ? g.round().toString() : "";
+                          }),
+                        ),
                         for (final p in portions)
                           GestureDetector(
                             // Eigene Portion lange drücken → löschen.
@@ -4889,15 +4908,23 @@ class _MainScreenState extends State<MainScreen> {
                                         e[0].toString() == p.$1 &&
                                         ((e[1] as num) - p.$2).abs() < 0.01);
                                     await _saveCustomPortions();
-                                    setL(() => portions = _portionsFor(food));
+                                    setL(() {
+                                      portions = _portionsFor(food);
+                                      if (unit == p) {
+                                        unit = null;
+                                        ctrl.text = p.$2.round().toString();
+                                      }
+                                    });
                                   }
                                 : null,
                             child: ChoiceChip(
                               label: Text("${p.$1} · ${p.$2.round()} g",
                                   style: const TextStyle(fontSize: 12)),
-                              selected: (grams() - p.$2).abs() < 0.5,
-                              onSelected: (_) =>
-                                  setL(() => ctrl.text = p.$2.round().toString()),
+                              selected: unit == p,
+                              onSelected: (_) => setL(() {
+                                unit = p;
+                                ctrl.text = "1";
+                              }),
                             ),
                           ),
                         ActionChip(
@@ -4909,7 +4936,8 @@ class _MainScreenState extends State<MainScreen> {
                             if (np == null) return;
                             setL(() {
                               portions = _portionsFor(food);
-                              ctrl.text = np.$2.round().toString();
+                              unit = np;
+                              ctrl.text = "1";
                             });
                           },
                         ),
@@ -4922,12 +4950,45 @@ class _MainScreenState extends State<MainScreen> {
                             style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
                       ),
                     const SizedBox(height: 10),
-                    TextField(
-                      controller: ctrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(suffixText: "g"),
-                      onChanged: (_) => setL(() {}),
+                    Row(
+                      children: [
+                        if (unit != null)
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline,
+                                color: Color(0xFFC9A24A)),
+                            onPressed: () => setL(() {
+                              final v = rawVal() - (rawVal() <= 1 ? 0.5 : 1);
+                              ctrl.text = fmtN(v < 0.5 ? 0.5 : v);
+                            }),
+                          ),
+                        Expanded(
+                          child: TextField(
+                            controller: ctrl,
+                            textAlign: unit != null ? TextAlign.center : TextAlign.start,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(decimal: true),
+                            style: TextStyle(
+                                fontSize: unit != null ? 20 : 16,
+                                fontWeight: unit != null ? FontWeight.w800 : FontWeight.w400),
+                            decoration: InputDecoration(
+                              suffixText: unit == null ? "g" : "× ${unit!.$1}",
+                              helperText: unit == null
+                                  ? null
+                                  : tFmt("unit_equals", {"g": fmtN(grams())}),
+                            ),
+                            onChanged: (_) => setL(() {}),
+                          ),
+                        ),
+                        if (unit != null)
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline,
+                                color: Color(0xFFC9A24A)),
+                            onPressed: () => setL(() {
+                              final v = rawVal() + (rawVal() < 1 ? 0.5 : 1);
+                              ctrl.text = fmtN(v);
+                            }),
+                          ),
+                      ],
                     ),
                     if (grams() > 0) _trackPortionMacroPreview(food, grams()),
                     const SizedBox(height: 8),
@@ -8129,6 +8190,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "unit_grams": "Gramm",
+      "unit_equals": "= {g} g",
       "tpl_fits_head": "Passend für {m}",
       "tpl_more_head": "Weitere Mahlzeiten",
       "recap_deficit_label": "Defizit der Woche",
@@ -9402,6 +9465,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "unit_grams": "Grams",
+      "unit_equals": "= {g} g",
       "tpl_fits_head": "Good for {m}",
       "tpl_more_head": "More meals",
       "recap_deficit_label": "Weekly deficit",
