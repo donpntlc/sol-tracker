@@ -8246,6 +8246,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "settings_grp_goal": "Ziel & Modus",
+      "settings_grp_meals": "Mahlzeiten",
+      "settings_grp_weight": "Gewicht & Woche",
+      "settings_grp_app": "App & Anzeige",
+      "settings_grp_data": "Daten",
       "meal_count_eve_off": "Aus · kcal gehen in die Snacks",
       "meal_count_title": "Mahlzeiten pro Tag",
       "meal_count_4": "4 Mahlzeiten",
@@ -9527,6 +9532,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "settings_grp_goal": "Goal & mode",
+      "settings_grp_meals": "Meals",
+      "settings_grp_weight": "Weight & week",
+      "settings_grp_app": "App & display",
+      "settings_grp_data": "Data",
       "meal_count_eve_off": "Off · kcal go to snacks",
       "meal_count_title": "Meals per day",
       "meal_count_4": "4 meals",
@@ -14063,6 +14073,31 @@ class _MainScreenState extends State<MainScreen> {
   Color get _dailyOverviewCardBorder => context.sol.dailyBorder;
   /// P/C/F-Blöcke in Datenbank (Rahmen, konsistent mit Tageskarte).
   static const Color _kMacroGoldFrame = Color(0x8EC9A24A);
+
+  /// Rubrik-Überschrift in den Einstellungen.
+  Widget _settingsGroupHeader(String label) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 6),
+        child: Row(
+          children: [
+            Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                color: Color(0xFFC9A24A),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 1,
+                color: const Color(0xFFC9A24A).withValues(alpha: 0.25),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _sectionCard({
     required String title,
@@ -22658,516 +22693,7 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(title: Text(t("settings"))),
       body: ListView(
         children: [
-          if (kIsWeb)
-            _sectionCard(
-              title: t("data_title"),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    t("data_sub"),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: context.sol.soft,
-                      height: 1.35,
-                    ),
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.download_rounded,
-                        color: Color(0xFFC9A24A)),
-                    title: Text(t("data_export"),
-                        style: TextStyle(
-                            color: context.sol.onCard, fontSize: 15)),
-                    onTap: () {
-                      if (!solDataExport()) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(t("data_export_fail"))),
-                        );
-                      }
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.restaurant_menu_rounded,
-                        color: Color(0xFFC9A24A)),
-                    title: Text(t("macroplan_export"),
-                        style: TextStyle(
-                            color: context.sol.onCard, fontSize: 15)),
-                    onTap: () {
-                      // Direkt im Tipp (ohne await), sonst blockt das iPhone das Teilen.
-                      if (!solMacroPlanExport(_macroPlanJson())) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(t("macroplan_export_fail"))),
-                        );
-                      }
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.upload_rounded,
-                        color: Color(0xFFC9A24A)),
-                    title: Text(t("data_import"),
-                        style: TextStyle(
-                            color: context.sol.onCard, fontSize: 15)),
-                    onTap: () {
-                      showDialog<void>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(t("data_import_confirm_title")),
-                          content: Text(t("data_import_confirm")),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: Text(t("cancel")),
-                            ),
-                            TextButton(
-                              // Direkt im Tipp öffnen, sonst blockt das iPhone die Dateiauswahl.
-                              onPressed: () {
-                                solDataImport();
-                                Navigator.pop(ctx);
-                              },
-                              child: Text(t("data_import_go")),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          _sectionCard(
-            title: t("intro"),
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.menu_book, color: Color(0xFFC9A24A)),
-              title: Text(
-                t("settings_open_intro"),
-                style: TextStyle(color: context.sol.onCard, fontSize: 15),
-              ),
-              trailing: Icon(Icons.chevron_right, color: context.sol.muted),
-              onTap: () => setState(() => selectedIndex = 0),
-            ),
-          ),
-          _sectionCard(
-            title: t("settings_appearance"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("settings_appearance_sub"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ValueListenableBuilder<bool>(
-                  valueListenable: appUseLightTheme,
-                  builder: (context, isLight, _) {
-                    return SegmentedButton<bool>(
-                      segments: [
-                        ButtonSegment(
-                          value: false,
-                          label: Text(t("settings_theme_dark")),
-                        ),
-                        ButtonSegment(
-                          value: true,
-                          label: Text(t("settings_theme_light")),
-                        ),
-                      ],
-                      selected: {isLight},
-                      onSelectionChanged: (s) {
-                        appUseLightTheme.value = s.first;
-                        unawaited(() async {
-                          final p = await SharedPreferences.getInstance();
-                          await p.setString(
-                            _kAppThemePresetKey,
-                            s.first ? "light" : "dark",
-                          );
-                        }());
-                      },
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          _sectionCard(
-            title: t("language"),
-            child: DropdownButtonFormField<String>(
-              initialValue: languageCode,
-              decoration: _touchInputDecoration(t("language")),
-              style: TextStyle(color: context.sol.onCard, fontSize: 16),
-              iconEnabledColor: context.sol.muted,
-              dropdownColor: context.sol.card,
-              items: [
-                DropdownMenuItem(
-                    value: "de",
-                    child: Text(t("language_name_de"),
-                        style: TextStyle(color: context.sol.onCard))),
-                DropdownMenuItem(
-                    value: "en",
-                    child: Text(t("language_name_en"),
-                        style: TextStyle(color: context.sol.onCard))),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => languageCode = value);
-                _saveAppState();
-              },
-            ),
-          ),
-          _sectionCard(
-            title: t("settings_ui_hints_title"),
-            child: Text(
-              t("settings_ui_hints_body"),
-              style: TextStyle(
-                fontSize: 12.5,
-                color: context.sol.soft,
-                height: 1.4,
-              ),
-            ),
-          ),
-          _sectionCard(
-            title: t("settings_reset_day_tile"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("settings_reset_day_sub"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    unawaited(_resetSelectedDayTracking());
-                  },
-                  icon: const Icon(Icons.restart_alt, size: 20),
-                  label: Text(t("reset_day_title")),
-                ),
-              ],
-            ),
-          ),
-          _sectionCard(
-            title: t("meal_kcal_mode_title"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("meal_kcal_mode_sub"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SegmentedButton<String>(
-                  segments: [
-                    ButtonSegment(
-                      value: "simple",
-                      label: Text(t("meal_kcal_mode_simple")),
-                    ),
-                    ButtonSegment(
-                      value: "advanced",
-                      label: Text(t("meal_kcal_mode_advanced")),
-                    ),
-                  ],
-                  selected: {mealKcalDisplayMode},
-                  onSelectionChanged: (s) {
-                    final v = s.first;
-                    setState(() => mealKcalDisplayMode = v);
-                    _saveAppState();
-                  },
-                ),
-              ],
-            ),
-          ),
-          _sectionCard(
-            title: t("settings_last_meal_kcal_title"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("settings_last_meal_kcal_sub"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: lastMealTrackPromptEnabled,
-                  onChanged: (v) {
-                    setState(() => lastMealTrackPromptEnabled = v);
-                    _saveAppState();
-                  },
-                  title: Text(t("settings_last_meal_track_prompt")),
-                  subtitle: Text(
-                    t("settings_last_meal_track_prompt_sub"),
-                    style: const TextStyle(
-                        fontSize: 11.5, color: Colors.white60, height: 1.3),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (nutritionMode == "Advanced")
-            _sectionCard(
-              title: t("settings_meal_macro_section_title"),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    t("settings_meal_macro_section_sub"),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: context.sol.soft,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(t("settings_meal_macro_col_protein")),
-                    trailing: const Icon(Icons.chevron_right,
-                        color: Colors.white38),
-                    onTap: () => _openSettingsMacroColumnEditor("protein"),
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(t("settings_meal_macro_col_carbs")),
-                    trailing: const Icon(Icons.chevron_right,
-                        color: Colors.white38),
-                    onTap: () => _openSettingsMacroColumnEditor("carbs"),
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(t("settings_meal_macro_col_fat")),
-                    trailing: const Icon(Icons.chevron_right,
-                        color: Colors.white38),
-                    onTap: () => _openSettingsMacroColumnEditor("fat"),
-                  ),
-                  const Divider(height: 20, color: Color(0x22FFFFFF)),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(t("settings_meal_macro_bands_list")),
-                    trailing: const Icon(Icons.chevron_right,
-                        color: Colors.white38),
-                    onTap: _openSettingsMealPickerForEditMealPercent,
-                  ),
-                ],
-              ),
-            ),
-          _sectionCard(
-            title: t("ai_settings_title"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("ai_settings_sub"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _geminiKeyCtrl ??= TextEditingController(
-                    text: geminiApiKey,
-                  ),
-                  obscureText: true,
-                  autocorrect: false,
-                  onChanged: (v) {
-                    setState(() => geminiApiKey = v);
-                    _saveAppState();
-                  },
-                  decoration: _touchInputDecoration(t("ai_settings_key_label")),
-                ),
-              ],
-            ),
-          ),
-          _sectionCard(
-            title: t("week_start_settings"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("week_start_hint"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<int>(
-                  value: weekStartWeekday,
-                  decoration: _touchInputDecoration(t("week_start_settings")),
-                  style: TextStyle(color: context.sol.onCard, fontSize: 16),
-                  iconEnabledColor: context.sol.muted,
-                  dropdownColor: context.sol.card,
-                  items: List.generate(7, (i) {
-                    final d = i + 1;
-                    return DropdownMenuItem(
-                      value: d,
-                      child: Text(
-                        _tWeekdayShort(d),
-                        style: TextStyle(color: context.sol.onCard),
-                      ),
-                    );
-                  }),
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() {
-                      weekStartWeekday = v;
-                      weekStartIntroDone = true;
-                    });
-                    _saveAppState();
-                  },
-                ),
-              ],
-            ),
-          ),
-          // Gewichts-Chart direkt beim Gewicht.
-          const SizedBox(height: 6),
-          _weightBodyCard(),
-          const SizedBox(height: 6),
-          _sectionCard(
-            title: t("settings_weight_block_title"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  t("settings_auto_weight_morning_sub"),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: context.sol.soft,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    t("settings_auto_weight_morning"),
-                    style: TextStyle(
-                        color: context.sol.onCard, fontSize: 15),
-                  ),
-                  value: autoOpenWeightMorning,
-                  onChanged: (v) {
-                    setState(() => autoOpenWeightMorning = v);
-                    _saveAppState();
-                  },
-                ),
-              ],
-            ),
-          ),
-          _sectionCard(
-            title: t("settings_overview_title"),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                t("settings_overview_ring"),
-                style: TextStyle(color: context.sol.onCard, fontSize: 15),
-              ),
-              subtitle: Text(
-                t("settings_overview_ring_sub"),
-                style: TextStyle(fontSize: 12, color: context.sol.soft),
-              ),
-              value: overviewRingStyle,
-              onChanged: (v) => _setOverviewRing(v),
-            ),
-          ),
-          _sectionCard(
-            title: t("settings_help_texts_title"),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                t("settings_help_texts"),
-                style: TextStyle(color: context.sol.onCard, fontSize: 15),
-              ),
-              subtitle: Text(
-                t("settings_help_texts_sub"),
-                style: TextStyle(fontSize: 12, color: context.sol.soft),
-              ),
-              value: showHelpTexts,
-              onChanged: (v) => _setHelpTexts(v),
-            ),
-          ),
-          _sectionCard(
-            title: t("week_balances_title"),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: _openWeeklyBalancesArchive,
-                borderRadius: BorderRadius.circular(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      t("week_balances_sub"),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: Colors.white60,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      t("week_chart_kcal_caption"),
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFC9A24A),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      height: 96,
-                      child: _weekBalanceKcalBarChart(
-                        _weekRowsChronoForChart(
-                          _weeklyBalanceRows(maxWeeks: 8),
-                          take: 8,
-                        ),
-                        compact: true,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          t("week_balance_open"),
-                          style: const TextStyle(
-                            color: Color(0xFFC9A24A),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.open_in_new,
-                          size: 18,
-                          color: Color(0xFFC9A24A),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          _settingsGroupHeader(t("settings_grp_goal")),
           _sectionCard(
             title: t("mode"),
             child: Column(
@@ -23764,23 +23290,6 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           _sectionCard(
-            title: t("meal_order_title"),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _usesFreeMealLayout
-                      ? t("meal_order_free_hint")
-                      : t("meal_order_hint"),
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.white70, height: 1.4),
-                ),
-                const SizedBox(height: 10),
-                _buildMealOrderEditor(),
-              ],
-            ),
-          ),
-          _sectionCard(
             title: t("daily_goals"),
             child: Column(
               children: [
@@ -23858,6 +23367,538 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
           ),
+          _settingsGroupHeader(t("settings_grp_meals")),
+          _sectionCard(
+            title: t("meal_order_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _usesFreeMealLayout
+                      ? t("meal_order_free_hint")
+                      : t("meal_order_hint"),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white70, height: 1.4),
+                ),
+                const SizedBox(height: 10),
+                _buildMealOrderEditor(),
+              ],
+            ),
+          ),
+          if (nutritionMode == "Advanced")
+            _sectionCard(
+              title: t("settings_meal_macro_section_title"),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("settings_meal_macro_section_sub"),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.sol.soft,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_col_protein")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: () => _openSettingsMacroColumnEditor("protein"),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_col_carbs")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: () => _openSettingsMacroColumnEditor("carbs"),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_col_fat")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: () => _openSettingsMacroColumnEditor("fat"),
+                  ),
+                  const Divider(height: 20, color: Color(0x22FFFFFF)),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t("settings_meal_macro_bands_list")),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Colors.white38),
+                    onTap: _openSettingsMealPickerForEditMealPercent,
+                  ),
+                ],
+              ),
+            ),
+          _sectionCard(
+            title: t("meal_kcal_mode_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("meal_kcal_mode_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                      value: "simple",
+                      label: Text(t("meal_kcal_mode_simple")),
+                    ),
+                    ButtonSegment(
+                      value: "advanced",
+                      label: Text(t("meal_kcal_mode_advanced")),
+                    ),
+                  ],
+                  selected: {mealKcalDisplayMode},
+                  onSelectionChanged: (s) {
+                    final v = s.first;
+                    setState(() => mealKcalDisplayMode = v);
+                    _saveAppState();
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_last_meal_kcal_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_last_meal_kcal_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: lastMealTrackPromptEnabled,
+                  onChanged: (v) {
+                    setState(() => lastMealTrackPromptEnabled = v);
+                    _saveAppState();
+                  },
+                  title: Text(t("settings_last_meal_track_prompt")),
+                  subtitle: Text(
+                    t("settings_last_meal_track_prompt_sub"),
+                    style: const TextStyle(
+                        fontSize: 11.5, color: Colors.white60, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _settingsGroupHeader(t("settings_grp_weight")),
+          // Gewichts-Chart direkt beim Gewicht.
+          const SizedBox(height: 6),
+          _weightBodyCard(),
+          const SizedBox(height: 6),
+          _sectionCard(
+            title: t("settings_weight_block_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_auto_weight_morning_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    t("settings_auto_weight_morning"),
+                    style: TextStyle(
+                        color: context.sol.onCard, fontSize: 15),
+                  ),
+                  value: autoOpenWeightMorning,
+                  onChanged: (v) {
+                    setState(() => autoOpenWeightMorning = v);
+                    _saveAppState();
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("week_start_settings"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("week_start_hint"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<int>(
+                  value: weekStartWeekday,
+                  decoration: _touchInputDecoration(t("week_start_settings")),
+                  style: TextStyle(color: context.sol.onCard, fontSize: 16),
+                  iconEnabledColor: context.sol.muted,
+                  dropdownColor: context.sol.card,
+                  items: List.generate(7, (i) {
+                    final d = i + 1;
+                    return DropdownMenuItem(
+                      value: d,
+                      child: Text(
+                        _tWeekdayShort(d),
+                        style: TextStyle(color: context.sol.onCard),
+                      ),
+                    );
+                  }),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() {
+                      weekStartWeekday = v;
+                      weekStartIntroDone = true;
+                    });
+                    _saveAppState();
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("week_balances_title"),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _openWeeklyBalancesArchive,
+                borderRadius: BorderRadius.circular(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      t("week_balances_sub"),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.white60,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      t("week_chart_kcal_caption"),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFC9A24A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 96,
+                      child: _weekBalanceKcalBarChart(
+                        _weekRowsChronoForChart(
+                          _weeklyBalanceRows(maxWeeks: 8),
+                          take: 8,
+                        ),
+                        compact: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          t("week_balance_open"),
+                          style: const TextStyle(
+                            color: Color(0xFFC9A24A),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.open_in_new,
+                          size: 18,
+                          color: Color(0xFFC9A24A),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_overview_title"),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                t("settings_overview_ring"),
+                style: TextStyle(color: context.sol.onCard, fontSize: 15),
+              ),
+              subtitle: Text(
+                t("settings_overview_ring_sub"),
+                style: TextStyle(fontSize: 12, color: context.sol.soft),
+              ),
+              value: overviewRingStyle,
+              onChanged: (v) => _setOverviewRing(v),
+            ),
+          ),
+          _settingsGroupHeader(t("settings_grp_app")),
+          _sectionCard(
+            title: t("settings_appearance"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_appearance_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ValueListenableBuilder<bool>(
+                  valueListenable: appUseLightTheme,
+                  builder: (context, isLight, _) {
+                    return SegmentedButton<bool>(
+                      segments: [
+                        ButtonSegment(
+                          value: false,
+                          label: Text(t("settings_theme_dark")),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text(t("settings_theme_light")),
+                        ),
+                      ],
+                      selected: {isLight},
+                      onSelectionChanged: (s) {
+                        appUseLightTheme.value = s.first;
+                        unawaited(() async {
+                          final p = await SharedPreferences.getInstance();
+                          await p.setString(
+                            _kAppThemePresetKey,
+                            s.first ? "light" : "dark",
+                          );
+                        }());
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("language"),
+            child: DropdownButtonFormField<String>(
+              initialValue: languageCode,
+              decoration: _touchInputDecoration(t("language")),
+              style: TextStyle(color: context.sol.onCard, fontSize: 16),
+              iconEnabledColor: context.sol.muted,
+              dropdownColor: context.sol.card,
+              items: [
+                DropdownMenuItem(
+                    value: "de",
+                    child: Text(t("language_name_de"),
+                        style: TextStyle(color: context.sol.onCard))),
+                DropdownMenuItem(
+                    value: "en",
+                    child: Text(t("language_name_en"),
+                        style: TextStyle(color: context.sol.onCard))),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => languageCode = value);
+                _saveAppState();
+              },
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_ui_hints_title"),
+            child: Text(
+              t("settings_ui_hints_body"),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: context.sol.soft,
+                height: 1.4,
+              ),
+            ),
+          ),
+          _sectionCard(
+            title: t("settings_help_texts_title"),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                t("settings_help_texts"),
+                style: TextStyle(color: context.sol.onCard, fontSize: 15),
+              ),
+              subtitle: Text(
+                t("settings_help_texts_sub"),
+                style: TextStyle(fontSize: 12, color: context.sol.soft),
+              ),
+              value: showHelpTexts,
+              onChanged: (v) => _setHelpTexts(v),
+            ),
+          ),
+          _sectionCard(
+            title: t("ai_settings_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("ai_settings_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _geminiKeyCtrl ??= TextEditingController(
+                    text: geminiApiKey,
+                  ),
+                  obscureText: true,
+                  autocorrect: false,
+                  onChanged: (v) {
+                    setState(() => geminiApiKey = v);
+                    _saveAppState();
+                  },
+                  decoration: _touchInputDecoration(t("ai_settings_key_label")),
+                ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("intro"),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.menu_book, color: Color(0xFFC9A24A)),
+              title: Text(
+                t("settings_open_intro"),
+                style: TextStyle(color: context.sol.onCard, fontSize: 15),
+              ),
+              trailing: Icon(Icons.chevron_right, color: context.sol.muted),
+              onTap: () => setState(() => selectedIndex = 0),
+            ),
+          ),
+          _settingsGroupHeader(t("settings_grp_data")),
+          if (kIsWeb)
+            _sectionCard(
+              title: t("data_title"),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t("data_sub"),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.sol.soft,
+                      height: 1.35,
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.download_rounded,
+                        color: Color(0xFFC9A24A)),
+                    title: Text(t("data_export"),
+                        style: TextStyle(
+                            color: context.sol.onCard, fontSize: 15)),
+                    onTap: () {
+                      if (!solDataExport()) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(t("data_export_fail"))),
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.restaurant_menu_rounded,
+                        color: Color(0xFFC9A24A)),
+                    title: Text(t("macroplan_export"),
+                        style: TextStyle(
+                            color: context.sol.onCard, fontSize: 15)),
+                    onTap: () {
+                      // Direkt im Tipp (ohne await), sonst blockt das iPhone das Teilen.
+                      if (!solMacroPlanExport(_macroPlanJson())) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(t("macroplan_export_fail"))),
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.upload_rounded,
+                        color: Color(0xFFC9A24A)),
+                    title: Text(t("data_import"),
+                        style: TextStyle(
+                            color: context.sol.onCard, fontSize: 15)),
+                    onTap: () {
+                      showDialog<void>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: Text(t("data_import_confirm_title")),
+                          content: Text(t("data_import_confirm")),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: Text(t("cancel")),
+                            ),
+                            TextButton(
+                              // Direkt im Tipp öffnen, sonst blockt das iPhone die Dateiauswahl.
+                              onPressed: () {
+                                solDataImport();
+                                Navigator.pop(ctx);
+                              },
+                              child: Text(t("data_import_go")),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          _sectionCard(
+            title: t("settings_reset_day_tile"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  t("settings_reset_day_sub"),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: context.sol.soft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    unawaited(_resetSelectedDayTracking());
+                  },
+                  icon: const Icon(Icons.restart_alt, size: 20),
+                  label: Text(t("reset_day_title")),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
