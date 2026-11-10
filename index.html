@@ -13,9 +13,24 @@
   <link rel="manifest" href="manifest.json">
   <title>SOL Tracker</title>
   <meta name="theme-color" content="#000000">
-  <style>html,body{background:#000;margin:0}</style>
+  <style>html,body{background:#000;margin:0;overscroll-behavior:none}</style>
 </head>
 <body>
+  <script>
+    // iPhone: Seite darf nie verrutschen (sonst stimmen Tipp-Position und Anzeige nicht überein).
+    (function () {
+      function reset() {
+        if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+      }
+      window.addEventListener('scroll', reset, { passive: true });
+      document.addEventListener('focusout', function () { setTimeout(reset, 50); setTimeout(reset, 400); });
+      window.addEventListener('resize', function () { setTimeout(reset, 50); });
+      window.addEventListener('pageshow', reset);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', function () { setTimeout(reset, 50); });
+      }
+    })();
+  </script>
   <script>
     // Daten sichern / laden (PREPIT). Nimmt alle App-Daten (localStorage „flutter.*“).
     window.solDataExport = function () {
