@@ -37,3 +37,16 @@ void solDataImport() {
     globalContext.callMethod<JSAny?>('solDataImport'.toJS);
   } catch (_) {}
 }
+
+/// Makroplan (JSON) als Datei teilen/speichern (Funktion in pages/index.html).
+bool solMacroPlanExport(String json) {
+  try {
+    final r = globalContext.callMethod<JSAny?>(
+      'solMacroPlanExport'.toJS,
+      json.toJS,
+    );
+    return (r as JSBoolean?)?.toDart ?? false;
+  } catch (_) {
+    return false;
+  }
+}

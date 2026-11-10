@@ -2001,6 +2001,46 @@ class _MainScreenState extends State<MainScreen> {
     return fit(d[0], d[1]);
   }
 
+  /// Makroplan pro Mahlzeit als JSON für den SOL Planer (Import dort im ⋯-Menü).
+  String _macroPlanJson() {
+    final g = effectiveMacroGoalsForDay(selectedDayKey);
+    Map<String, num> one(String meal, String macro) {
+      final pct = _mealDayMacroBandPct(meal, macro);
+      final gr = mealMacroRangeG(meal, macro);
+      return {
+        "minPct": pct.minPct.round(),
+        "maxPct": pct.maxPct.round(),
+        "minG": gr.minG.round(),
+        "maxG": gr.maxG.round(),
+      };
+    }
+
+    final list = <Map<String, Object>>[];
+    for (final m in meals) {
+      final k = mealKcalRange(m);
+      list.add({
+        "id": m,
+        "name": _tMeal(m),
+        "carbs": one(m, "carbs"),
+        "protein": one(m, "protein"),
+        "fat": one(m, "fat"),
+        "kcal": {"min": k.minKcal.round(), "max": k.maxKcal.round()},
+      });
+    }
+    return jsonEncode({
+      "app": "prepit-macroplan",
+      "v": 1,
+      "created": DateTime.now().toIso8601String(),
+      "mode": nutritionMode,
+      "totals": {
+        "protein": g.protein.round(),
+        "carbs": g.carbs.round(),
+        "fat": g.fat.round(),
+      },
+      "meals": list,
+    });
+  }
+
   // Gramm-Range: Anteil (min–max %) an der Tagesmenge P/KH/F, cheat-/crashout-skaliert.
   ({double minG, double maxG}) mealMacroRangeG(String meal, String macro) {
     final gE = effectiveMacroGoalsForDay(selectedDayKey);
@@ -8276,6 +8316,8 @@ class _MainScreenState extends State<MainScreen> {
       "data_title": "Daten sichern & umziehen",
       "data_sub": "Sichert alle PREPIT-Daten (Tracking, Gewicht, Datenbank, Einstellungen) in einer Datei. So holst du sie z. B. in SOL-GYM.",
       "data_export": "Daten sichern (Datei)",
+      "macroplan_export": "Makroplan exportieren (für SOL Planer)",
+      "macroplan_export_fail": "Export hat nicht geklappt.",
       "data_import": "Daten laden (Datei)",
       "data_import_confirm_title": "Daten laden?",
       "data_import_confirm": "Die Daten aus der Datei ersetzen die Daten in dieser App. Danach startet PREPIT neu.",
@@ -9547,6 +9589,8 @@ class _MainScreenState extends State<MainScreen> {
       "data_title": "Back up & move data",
       "data_sub": "Saves all PREPIT data (tracking, weight, database, settings) to one file, e.g. to move it into SOL-GYM.",
       "data_export": "Back up data (file)",
+      "macroplan_export": "Export macro plan (for SOL Planner)",
+      "macroplan_export_fail": "Export failed.",
       "data_import": "Load data (file)",
       "data_import_confirm_title": "Load data?",
       "data_import_confirm": "The data from the file replaces the data in this app. PREPIT restarts afterwards.",
@@ -22424,6 +22468,22 @@ class _MainScreenState extends State<MainScreen> {
                       if (!solDataExport()) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(t("data_export_fail"))),
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.restaurant_menu_rounded,
+                        color: Color(0xFFC9A24A)),
+                    title: Text(t("macroplan_export"),
+                        style: TextStyle(
+                            color: context.sol.onCard, fontSize: 15)),
+                    onTap: () {
+                      // Direkt im Tipp (ohne await), sonst blockt das iPhone das Teilen.
+                      if (!solMacroPlanExport(_macroPlanJson())) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(t("macroplan_export_fail"))),
                         );
                       }
                     },

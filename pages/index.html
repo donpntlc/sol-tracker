@@ -43,6 +43,25 @@
         return true;
       } catch (e) { return false; }
     };
+    window.solMacroPlanExport = function (text) {
+      try {
+        var d = new Date();
+        var stamp = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+        var name = 'PREPIT-Makroplan-' + stamp + '.json';
+        var file = null;
+        try { file = new File([text], name, { type: 'application/json' }); } catch (e) {}
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: name }).catch(function () {});
+          return true;
+        }
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        a.download = name;
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+        return true;
+      } catch (e) { return false; }
+    };
     window.solDataImport = function () {
       var inp = document.createElement('input');
       inp.type = 'file';
