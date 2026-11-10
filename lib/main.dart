@@ -2374,6 +2374,7 @@ class _MainScreenState extends State<MainScreen> {
               b("c", "track_fill_carbs", Icons.vertical_align_top),
               b("p", "track_fill_protein", Icons.vertical_align_top),
               b("f", "track_fill_fat", Icons.vertical_align_top),
+              b("k", "track_fill_kcal", Icons.bolt),
               b("add", "day_fill_add_meal", Icons.add_circle_outline),
             ],
           ),
@@ -2695,18 +2696,6 @@ class _MainScreenState extends State<MainScreen> {
                   style: TextStyle(fontSize: 12.5, color: muted),
                 ),
               ),
-            Center(
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: const Color(0xFFC9A24A),
-                ),
-                onPressed: _openDayFoodsSheet,
-                icon: const Icon(Icons.list_alt, size: 17),
-                label: Text(t("dayfoods_button"),
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-              ),
-            ),
             if (_macroDetailsExpanded) _dayFillButtons(),
           ],
         ),
