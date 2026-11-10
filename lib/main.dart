@@ -4279,7 +4279,23 @@ class _MainScreenState extends State<MainScreen> {
             final kindOnly = fillTag == "cP"
                 ? "komplex"
                 : (fillTag == "cE" ? "einfach" : null);
-            var list = foodDatabase.where((f) {
+            // Zuletzt getrackt: neueste zuerst, jedes Lebensmittel einmal.
+            final recentGrams = <String, double>{};
+            final recentOrder = <Food>[];
+            if (_pickerType == "recent") {
+              final byName = {for (final f in foodDatabase) f.name: f};
+              for (final tf in trackedFoods.reversed) {
+                if (recentGrams.containsKey(tf.food.name)) continue;
+                recentGrams[tf.food.name] = tf.grams;
+                recentOrder.add(byName[tf.food.name] ?? tf.food);
+                if (recentOrder.length >= 40) break;
+              }
+            }
+            var list = (_pickerType == "recent" ? recentOrder : foodDatabase).where((f) {
+              if (_pickerType == "recent") {
+                if (!_recipeMatchesFlavorFilter(f, _pickerFlavor)) return false;
+                return words.isEmpty || match(f.name);
+              }
               if (_pickerType == "fav") {
                 if (!_isFav(f)) return false;
               } else if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) {
@@ -4313,7 +4329,7 @@ class _MainScreenState extends State<MainScreen> {
               final m = macroOf(f);
               return m >= 1 ? f.calories / m : 1e9 + f.calories;
             }
-            list.sort((a, b) {
+            if (_pickerType != "recent") list.sort((a, b) {
               // Ohne Kategorie-Makro: „KH/P/F“-Sortierung = kcal.
               final sortKey = macroKey.isEmpty
                   ? (_pickerSort == "macroUp"
@@ -4363,7 +4379,9 @@ class _MainScreenState extends State<MainScreen> {
                               : "");
                   return _pickerRow(
                     title: f.name,
-                    sub: (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
+                    sub: _pickerType == "recent" && recentGrams[f.name] != null
+                        ? tFmt("picker_recent_last", {"g": recentGrams[f.name]!.round().toString()})
+                        : (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
                     trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
                     fav: _isFav(f),
@@ -4373,7 +4391,9 @@ class _MainScreenState extends State<MainScreen> {
                     },
                     onInfo: () => _showRecipeInfoDialog(f),
                     onTap: () async {
-                      final added = await _openAmountDialog(f, meal, fillTag: fillTag);
+                      final added = await _openAmountDialog(f, meal,
+                          fillTag: fillTag,
+                          initGrams: _pickerType == "recent" ? recentGrams[f.name] : null);
                       if (added && ctx.mounted) Navigator.pop(ctx);
                     },
                   );
@@ -4567,6 +4587,7 @@ class _MainScreenState extends State<MainScreen> {
                           ("meals", t("picker_type_meals")),
                           ("recipes", t("picker_type_recipes")),
                           ("fav", t("picker_type_fav")),
+                          ("recent", t("picker_type_recent")),
                         ], (v) => _pickerType = v),
                         const SizedBox(width: 10),
                         dd(
@@ -4841,16 +4862,19 @@ class _MainScreenState extends State<MainScreen> {
 
   bool _isRawName(String n) => n.endsWith("(roh)") || n.endsWith(", roh)");
 
-  Future<bool> _openAmountDialog(Food food, String meal, {String? fillTag}) async {
+  Future<bool> _openAmountDialog(Food food, String meal,
+      {String? fillTag, double? initGrams}) async {
     if (!_customPortionsLoaded) await _loadCustomPortions();
     final sibling = _cookedRawSibling(food);
     var portions = _portionsFor(food);
     final def = _defaultPortion(food);
     // Mit Portion (Stück, Packung …) wird die ANZAHL eingegeben, sonst Gramm.
     (String, double)? unit =
-        (portions.isNotEmpty && def.$1 != "100 g") ? def : null;
+        (initGrams == null && portions.isNotEmpty && def.$1 != "100 g") ? def : null;
     final ctrl = TextEditingController(
-        text: unit != null ? "1" : def.$2.round().toString());
+        text: initGrams != null
+            ? initGrams.round().toString()
+            : (unit != null ? "1" : def.$2.round().toString()));
     double rawVal() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
     double grams() => unit == null ? rawVal() : rawVal() * unit!.$2;
     String fmtN(double v) =>
@@ -8353,6 +8377,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "picker_type_recent": "🕘 Zuletzt",
+      "picker_recent_last": "zuletzt {g} g",
       "dayfoods_button": "Alle Lebensmittel des Tages",
       "dayfoods_title": "Heute gegessen — gesamt",
       "dayfoods_sort": "Sortieren:",
@@ -9673,6 +9699,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "picker_type_recent": "🕘 Recent",
+      "picker_recent_last": "last {g} g",
       "dayfoods_button": "All foods today",
       "dayfoods_title": "Eaten today — total",
       "dayfoods_sort": "Sort:",
