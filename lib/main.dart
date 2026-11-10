@@ -1420,6 +1420,7 @@ class _MainScreenState extends State<MainScreen> {
   List<String> get meals {
     final out = <String>[];
     for (final g in mealGroupOrder) {
+      if (threeMeals && g == "Evening Meal") continue;
       if (g == "prepost") {
         out.add("Pre-Workout");
         out.add("Post-Workout");
@@ -1641,7 +1642,50 @@ class _MainScreenState extends State<MainScreen> {
     ));
   }
 
-  Map<String, Map<String, double>> mealMacros = {
+  /// 3 Mahlzeiten (Pre, Post, Haupt): Abendessen fällt weg, sein Anteil geht in die Snacks.
+  bool threeMeals = false;
+  static const String _kThreeMealsKey = "three_meals_v1";
+
+  /// Gegessenes in [meal]? Bei 3 Mahlzeiten zählen alte Abendessen-Einträge zu den Snacks.
+  bool _mealIs(String foodMeal, String meal) =>
+      foodMeal == meal ||
+      (threeMeals && meal == "Snacks" && foodMeal == "Evening Meal");
+
+  /// Verteilung wie gespeichert; bei 3 Mahlzeiten: Snacks = Snacks + Abendessen.
+  Map<String, Map<String, double>> get mealMacros {
+    if (!threeMeals) return _mealMacrosStore;
+    final s = _mealMacrosStore["Snacks"];
+    final e = _mealMacrosStore["Evening Meal"];
+    if (s == null || e == null) return _mealMacrosStore;
+    return {
+      ..._mealMacrosStore,
+      "Snacks": {
+        for (final k in {...s.keys, ...e.keys}) k: (s[k] ?? 0) + (e[k] ?? 0),
+      },
+    };
+  }
+
+  set mealMacros(Map<String, Map<String, double>> v) => _mealMacrosStore = v;
+
+  /// Schreibt einen Anteil; bei 3 Mahlzeiten wird der Abendessen-Teil der Snacks abgezogen.
+  void _setMealMacro(String meal, String macro, double v) {
+    if (threeMeals && meal == "Snacks") {
+      final e = _mealMacrosStore["Evening Meal"]?[macro] ?? 0;
+      if (v < e) {
+        _mealMacrosStore["Evening Meal"]![macro] = v;
+        _mealMacrosStore["Snacks"]![macro] = 0;
+      } else {
+        _mealMacrosStore["Snacks"]![macro] = v - e;
+      }
+      return;
+    }
+    _mealMacrosStore[meal]?[macro] = v;
+  }
+
+  /// Für „frei verfügbare %“: Abendessen zählt bei 3 Mahlzeiten nicht separat.
+  bool _skipInMacroSum(String meal) => threeMeals && meal == "Evening Meal";
+
+  Map<String, Map<String, double>> _mealMacrosStore = {
     "Pre-Workout": {"protein": 20, "carbs": 20, "fat": 5},
     "Post-Workout": {"protein": 25, "carbs": 30, "fat": 5},
     "Main Meal": {"protein": 30, "carbs": 30, "fat": 40},
@@ -1952,7 +1996,7 @@ class _MainScreenState extends State<MainScreen> {
   /// Pre-Workout–Protein [5–14] % nur in Nicht-Advanced (Sonderregel).
   /// Pre/Post-Workout–Fett: Obergrenze [_kWorkoutFatMaxPct] % (Untergrenze wie üblich).
   List<double> _defaultBandListFor(String meal, String macro) {
-    final c = mealMacros[meal]?[macro] ?? 0.0;
+    final c = _mealMacrosStore[meal]?[macro] ?? 0.0;
     if (meal == "Pre-Workout" &&
         macro == "protein" &&
         nutritionMode != "Diät" &&
@@ -1972,10 +2016,20 @@ class _MainScreenState extends State<MainScreen> {
 
   ({double minPct, double maxPct}) _mealDayMacroBandPct(
       String meal, String macro) {
+    if (threeMeals && meal == "Snacks") {
+      final a = _mealDayMacroBandPctRaw("Snacks", macro);
+      final b = _mealDayMacroBandPctRaw("Evening Meal", macro);
+      return (minPct: a.minPct + b.minPct, maxPct: a.maxPct + b.maxPct);
+    }
+    return _mealDayMacroBandPctRaw(meal, macro);
+  }
+
+  ({double minPct, double maxPct}) _mealDayMacroBandPctRaw(
+      String meal, String macro) {
     // Die Zielmitte (eigene Verteilung) muss immer im Bereich liegen —
     // sonst wäre „7 / 7 g“ rot (z. B. Pre/Post-Workout-Fett-Obergrenze 15 %).
     ({double minPct, double maxPct}) fit(double lo, double hi) {
-      final c = mealMacros[meal]?[macro];
+      final c = _mealMacrosStore[meal]?[macro];
       if (c != null) {
         if (c > hi) hi = c + 2.0;
         if (c < lo) lo = math.max(0.0, c - 2.0);
@@ -5115,7 +5169,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   List<TrackedFood> _plannedFor(String meal) => plannedFoods
-      .where((p) => p.meal == meal && p.dayKey == selectedDayKey)
+      .where((p) => _mealIs(p.meal, meal) && p.dayKey == selectedDayKey)
       .toList();
 
   void _confirmPlanned(TrackedFood p) {
@@ -6434,7 +6488,7 @@ class _MainScreenState extends State<MainScreen> {
 
   /// Fehlende [mealDayMacroBands] aus [mealMacros]-Mitteln ± Toleranz ergänzen.
   void _fillMissingMealDayMacroBandEntries() {
-    for (final meal in mealMacros.keys) {
+    for (final meal in _mealMacrosStore.keys) {
       mealDayMacroBands.putIfAbsent(meal, () => {});
       final row = mealDayMacroBands[meal]!;
       for (final macro in const ["protein", "carbs", "fat"]) {
@@ -7260,6 +7314,7 @@ class _MainScreenState extends State<MainScreen> {
     final savedAdvCheatMax = prefs.getInt(_kAdvancedCheatMaxKey);
     final savedLastDeviationWarning = prefs.getString(_kLastDeviationWarningKey);
     final savedMealGroupOrder = prefs.getString(_kMealGroupOrderKey);
+    threeMeals = prefs.getBool(_kThreeMealsKey) ?? false;
     final savedMealCustomNames = prefs.getString(_kMealCustomNamesKey);
     final savedCommitmentCut = prefs.getBool(_kCommitmentCutKey);
     final savedCommitmentBulk = prefs.getBool(_kCommitmentBulkKey);
@@ -7830,6 +7885,7 @@ class _MainScreenState extends State<MainScreen> {
           _kLastDeviationWarningKey, lastDeviationWarningKey!);
     }
     await prefs.setString(_kMealGroupOrderKey, jsonEncode(mealGroupOrder));
+    await prefs.setBool(_kThreeMealsKey, threeMeals);
     await prefs.setString(_kMealCustomNamesKey, jsonEncode(mealCustomNames));
     await prefs.setBool(_kCommitmentCutKey, commitmentAcceptedCut);
     await prefs.setBool(_kCommitmentBulkKey, commitmentAcceptedBulk);
@@ -8190,6 +8246,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_count_title": "Mahlzeiten pro Tag",
+      "meal_count_4": "4 Mahlzeiten",
+      "meal_count_3": "3 Mahlzeiten",
+      "meal_count_4_hint": "Pre-Workout, Post-Workout, Hauptmahlzeit, Abendessen — Pre + Post im Tracking als ein Block.",
+      "meal_count_3_hint": "Pre-Workout, Post-Workout, Hauptmahlzeit — einzeln angezeigt. Die kcal vom Abendessen gehen in die Snacks.",
       "unit_grams": "Gramm",
       "unit_equals": "= {g} g",
       "tpl_fits_head": "Passend für {m}",
@@ -9465,6 +9526,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_count_title": "Meals per day",
+      "meal_count_4": "4 meals",
+      "meal_count_3": "3 meals",
+      "meal_count_4_hint": "Pre-workout, post-workout, main meal, dinner — pre + post shown as one block.",
+      "meal_count_3_hint": "Pre-workout, post-workout, main meal — shown separately. Dinner kcal move into snacks.",
       "unit_grams": "Grams",
       "unit_equals": "= {g} g",
       "tpl_fits_head": "Good for {m}",
@@ -11372,7 +11438,7 @@ class _MainScreenState extends State<MainScreen> {
     final keys = [...meals, _kMergedMealCardId];
     for (var meal in keys) {
       final foods = trackedFoods
-          .where((f) => f.meal == meal && f.dayKey == selectedDayKey)
+          .where((f) => _mealIs(f.meal, meal) && f.dayKey == selectedDayKey)
           .toList();
       _mealTotals[meal] = {
         "protein": foods.fold(0.0, (s, e) => s + e.protein),
@@ -14146,7 +14212,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildDailyOverviewMealFoodRows(String meal) {
     final items = trackedFoods
         .where(
-          (f) => f.meal == meal && f.dayKey == selectedDayKey,
+          (f) => _mealIs(f.meal, meal) && f.dayKey == selectedDayKey,
         )
         .toList();
     if (items.isEmpty) {
@@ -20447,8 +20513,10 @@ class _MainScreenState extends State<MainScreen> {
                 // Reihenfolge wie in den Einstellungen; Training-Block dort,
                 // wo Pre-/Post-Workout zuerst steht.
                 ...() {
-                  final combined =
-                      hasPre && hasPost && !_workoutBlockHiddenByMerge();
+                  final combined = hasPre &&
+                      hasPost &&
+                      !threeMeals &&
+                      !_workoutBlockHiddenByMerge();
                   final out = <Widget>[];
                   var workoutDone = false;
                   for (final m in meals) {
@@ -21685,7 +21753,7 @@ class _MainScreenState extends State<MainScreen> {
             builder: (ctx, _, __) {
             _updateMealTotals();
             final items = trackedFoods
-                .where((f) => f.meal == meal && f.dayKey == selectedDayKey)
+                .where((f) => _mealIs(f.meal, meal) && f.dayKey == selectedDayKey)
                 .toList();
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -22328,8 +22396,9 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     final hasSnacks = mealGroupOrder.contains("Snacks");
-    final reorderIds =
-        mealGroupOrder.where((g) => g != "Snacks").toList();
+    final reorderIds = mealGroupOrder
+        .where((g) => g != "Snacks" && !(threeMeals && g == "Evening Meal"))
+        .toList();
 
     Widget mealOrderTile(
       String groupId, {
@@ -22472,6 +22541,9 @@ class _MainScreenState extends State<MainScreen> {
                 o.removeWhere((e) => e == "Snacks");
                 final item = o.removeAt(oldIdx);
                 o.insert(newIdx, item);
+                if (threeMeals && mealGroupOrder.contains("Evening Meal")) {
+                  o.add("Evening Meal");
+                }
                 mealGroupOrder = hasSnacks ? <String>["Snacks", ...o] : o;
                 _pinSnacksFirstInMealGroupOrder();
               });
@@ -23626,6 +23698,32 @@ class _MainScreenState extends State<MainScreen> {
                       fontSize: 12, color: Colors.white70, height: 1.4),
                 ),
                 const SizedBox(height: 10),
+                Text(t("meal_count_title"),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final three in const [false, true])
+                      ChoiceChip(
+                        label: Text(t(three ? "meal_count_3" : "meal_count_4")),
+                        selected: threeMeals == three,
+                        onSelected: (_) {
+                          setState(() {
+                            threeMeals = three;
+                            _updateMealTotals();
+                          });
+                          _saveAppState();
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  t(threeMeals ? "meal_count_3_hint" : "meal_count_4_hint"),
+                  style: const TextStyle(fontSize: 11.5, color: Colors.white60, height: 1.35),
+                ),
+                const SizedBox(height: 12),
                 _buildMealOrderEditor(),
               ],
             ),
@@ -23887,7 +23985,7 @@ class _MainScreenState extends State<MainScreen> {
     double freePct(String m) {
       var sum = 0.0;
       mealMacros.forEach((k, v) {
-        if (k != meal) sum += v[m] ?? 0;
+        if (k != meal && !_skipInMacroSum(k)) sum += v[m] ?? 0;
       });
       return 100 - sum;
     }
@@ -24106,7 +24204,7 @@ class _MainScreenState extends State<MainScreen> {
                     };
                     mealDayMacroBands.putIfAbsent(meal, () => {});
                     for (final m in macros) {
-                      mealMacros[meal]![m] = vals[m]![1];
+                      _setMealMacro(meal, m, vals[m]![1]);
                       mealDayMacroBands[meal]![m] = [vals[m]![0], vals[m]![2]];
                     }
                   });
@@ -24569,7 +24667,7 @@ class _MainScreenState extends State<MainScreen> {
                   }
                   setState(() {
                     for (final m in meals) {
-                      mealMacros[m]![macroKey] = vals[m]!;
+                      _setMealMacro(m, macroKey, vals[m]!);
                     }
                     if (macroKey == "carbs") preCxSplit = preSplit;
                   });
@@ -26723,7 +26821,9 @@ class _MainScreenState extends State<MainScreen> {
           double sumOtherMeals(String macroKey) {
             var s = 0.0;
             mealMacros.forEach((m, values) {
-              if (m != selectedMeal) s += values[macroKey] ?? 0;
+              if (m != selectedMeal && !_skipInMacroSum(m)) {
+                s += values[macroKey] ?? 0;
+              }
             });
             return s;
           }
@@ -27049,9 +27149,9 @@ class _MainScreenState extends State<MainScreen> {
                               return;
                             }
                             setState(() {
-                              mealMacros[selectedMeal]!["protein"] = pVal;
-                              mealMacros[selectedMeal]!["carbs"] = cVal;
-                              mealMacros[selectedMeal]!["fat"] = fVal;
+                              _setMealMacro(selectedMeal, "protein", pVal);
+                              _setMealMacro(selectedMeal, "carbs", cVal);
+                              _setMealMacro(selectedMeal, "fat", fVal);
                             });
                             _saveAppState();
                             setDialogState(() {});
