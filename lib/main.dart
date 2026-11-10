@@ -4932,7 +4932,20 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ],
             ),
-            content: SizedBox(
+            content: Theme(
+              // Kompakte Chips (sonst viel zu groß auf dem Handy).
+              data: Theme.of(context).copyWith(
+                chipTheme: Theme.of(context).chipTheme.copyWith(
+                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  showCheckmark: false,
+                ),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+              ),
+              child: SizedBox(
               width: 360,
               child: SingleChildScrollView(
                 child: Column(
@@ -4940,8 +4953,8 @@ class _MainScreenState extends State<MainScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
+                      spacing: 5,
+                      runSpacing: 5,
                       children: [
                         // Gramm-Eingabe
                         ChoiceChip(
@@ -5008,8 +5021,9 @@ class _MainScreenState extends State<MainScreen> {
                       children: [
                         if (unit != null)
                           IconButton(
+                            visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.remove_circle_outline,
-                                color: Color(0xFFC9A24A)),
+                                size: 22, color: Color(0xFFC9A24A)),
                             onPressed: () => setL(() {
                               final v = rawVal() - (rawVal() <= 1 ? 0.5 : 1);
                               ctrl.text = fmtN(v < 0.5 ? 0.5 : v);
@@ -5022,9 +5036,12 @@ class _MainScreenState extends State<MainScreen> {
                             keyboardType:
                                 const TextInputType.numberWithOptions(decimal: true),
                             style: TextStyle(
-                                fontSize: unit != null ? 20 : 16,
+                                fontSize: unit != null ? 17 : 15,
                                 fontWeight: unit != null ? FontWeight.w800 : FontWeight.w400),
                             decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              suffixStyle: const TextStyle(fontSize: 13, color: Colors.white60),
                               suffixText: unit == null ? "g" : "× ${unit!.$1}",
                               helperText: unit == null
                                   ? null
@@ -5035,8 +5052,9 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                         if (unit != null)
                           IconButton(
+                            visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.add_circle_outline,
-                                color: Color(0xFFC9A24A)),
+                                size: 22, color: Color(0xFFC9A24A)),
                             onPressed: () => setL(() {
                               final v = rawVal() + (rawVal() < 1 ? 0.5 : 1);
                               ctrl.text = fmtN(v);
@@ -5077,6 +5095,7 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
               ),
+            ),
             ),
             actions: [
               TextButton(
