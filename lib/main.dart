@@ -4907,61 +4907,40 @@ class _MainScreenState extends State<MainScreen> {
                 child: GestureDetector(
                   onTap: onTap,
                   onLongPress: onLongPress,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: selected ? gold : Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(20),
+                      color: selected ? gold.withValues(alpha: 0.12) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                          color: selected ? gold : Colors.white.withValues(alpha: 0.12)),
+                          color: selected ? gold : Colors.white.withValues(alpha: 0.18)),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(label,
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: selected ? Colors.black : Colors.white)),
-                        if (sub != null)
-                          Text(sub,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: selected ? Colors.black54 : Colors.white54)),
-                      ],
-                    ),
+                    child: Text(sub == null ? label : "$label · $sub",
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            color: selected ? gold : Colors.white70)),
                   ),
                 ),
               );
-          Widget stepBtn(IconData ic, VoidCallback onTap) => InkWell(
-                borderRadius: BorderRadius.circular(22),
-                onTap: onTap,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: gold.withValues(alpha: 0.15),
-                  ),
-                  child: Icon(ic, color: gold, size: 22),
-                ),
+          Widget stepBtn(IconData ic, VoidCallback onTap) => IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: onTap,
+                icon: Icon(
+                    ic == Icons.add ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                    color: gold,
+                    size: 24),
               );
           Widget macroTile(String l, double v, Color c) => Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: c.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(v.round().toString(),
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: c)),
-                      Text(l, style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
-                    ],
-                  ),
+                child: Column(
+                  children: [
+                    Text(v.round().toString(),
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: l == "kcal" ? gold : Colors.white)),
+                    Text(l, style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
+                  ],
                 ),
               );
           Widget fillBtn(String l, VoidCallback onTap) => Expanded(
@@ -5111,10 +5090,10 @@ class _MainScreenState extends State<MainScreen> {
                     const SizedBox(height: 14),
                     // ── Menge: − Zahl + ──
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
                       ),
                       child: Row(
                         children: [
@@ -5135,7 +5114,7 @@ class _MainScreenState extends State<MainScreen> {
                                   controller: ctrl,
                                   textAlign: TextAlign.center,
                                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                                   decoration: const InputDecoration(
                                     isDense: true,
                                     border: InputBorder.none,
@@ -5168,13 +5147,20 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     const SizedBox(height: 12),
                     // ── Nährwerte ──
-                    Row(
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: gold.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
                       children: [
                         macroTile("kcal", food.calories * grams() / 100, const Color(0xFFC9A24A)),
                         macroTile("P", food.protein * grams() / 100, const Color(0xFF6FA8DC)),
                         macroTile("K", food.carbs * grams() / 100, const Color(0xFFE0B04A)),
                         macroTile("F", food.fat * grams() / 100, const Color(0xFFD9826B)),
                       ],
+                    ),
                     ),
                     const SizedBox(height: 14),
                     // ── Auffüllen ──
@@ -8383,7 +8369,7 @@ class _MainScreenState extends State<MainScreen> {
       "gen2_step_f": "Fettquelle (optional)",
       "gen2_need": "fehlt",
       "gen2_none": "Keine passenden Lebensmittel gefunden — anderen Geschmack oder Ziel wählen.",
-      "gen2_full": "Diese Mahlzeit ist schon voll. 👍",
+      "gen2_full": "Diese Mahlzeit ist schon voll.",
       "amount_unit_label": "EINHEIT",
       "amount_fill_label": "AUFFÜLLEN BIS ZIEL",
       "amount_fill_carbs_short": "KH",
@@ -9695,7 +9681,7 @@ class _MainScreenState extends State<MainScreen> {
       "gen2_step_f": "Fat source (optional)",
       "gen2_need": "missing",
       "gen2_none": "No matching foods — try another flavor or goal.",
-      "gen2_full": "This meal is already full. 👍",
+      "gen2_full": "This meal is already full.",
       "amount_unit_label": "UNIT",
       "amount_fill_label": "FILL UP TO TARGET",
       "amount_fill_carbs_short": "Carbs",
@@ -26973,20 +26959,20 @@ class _MainScreenState extends State<MainScreen> {
         Widget pill(String label, bool sel, VoidCallback onTap) => Expanded(
               child: GestureDetector(
                 onTap: onTap,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
+                child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 3),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 7),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: sel ? gold : Colors.white.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(20),
+                    color: sel ? gold.withValues(alpha: 0.12) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: sel ? gold : Colors.white.withValues(alpha: 0.18)),
                   ),
                   child: Text(label,
                       style: TextStyle(
                           fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: sel ? Colors.black : Colors.white70)),
+                          fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                          color: sel ? gold : Colors.white70)),
                 ),
               ),
             );
@@ -27081,7 +27067,7 @@ class _MainScreenState extends State<MainScreen> {
                       children: [
                         Text(
                             list[i].recipe
-                                ? "🍳 ${t("gen2_recipe")}"
+                                ? t("gen2_recipe")
                                 : "${t("gen2_option")} ${i + 1}",
                             style: const TextStyle(
                                 fontSize: 11, fontWeight: FontWeight.w800, color: gold, letterSpacing: 0.6)),
@@ -27094,11 +27080,7 @@ class _MainScreenState extends State<MainScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: gold,
-                          foregroundColor: Colors.black,
-                          visualDensity: VisualDensity.compact,
-                        ),
+                        style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                         icon: const Icon(Icons.add, size: 18),
                         label: Text(t("gen2_add")),
                         onPressed: () {
@@ -27175,8 +27157,6 @@ class _MainScreenState extends State<MainScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
                 child: Row(
                   children: [
-                    const Icon(Icons.auto_awesome, color: gold, size: 20),
-                    const SizedBox(width: 8),
                     Expanded(
                       child: Text("${t("gen2_title")} · ${_displayMealName(meal)}",
                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
@@ -27197,8 +27177,8 @@ class _MainScreenState extends State<MainScreen> {
                 margin: const EdgeInsets.fromLTRB(16, 4, 16, 6),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: gold.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: gold.withValues(alpha: 0.35)),
                 ),
                 child: Row(
                   children: [
@@ -27220,8 +27200,8 @@ class _MainScreenState extends State<MainScreen> {
                     const SizedBox(height: 6),
                     Row(children: [
                       pill(t("gen2_any"), flavor == "all", () => setG(() => flavor = "all")),
-                      pill("🍯 ${t("recipe_flavor_sweet")}", flavor == "sweet", () => setG(() => flavor = "sweet")),
-                      pill("🧂 ${t("recipe_flavor_salty")}", flavor == "salty", () => setG(() => flavor = "salty")),
+                      pill(t("recipe_flavor_sweet"), flavor == "sweet", () => setG(() => flavor = "sweet")),
+                      pill(t("recipe_flavor_salty"), flavor == "salty", () => setG(() => flavor = "salty")),
                     ]),
                   ],
                 ),
@@ -27284,7 +27264,6 @@ class _MainScreenState extends State<MainScreen> {
                               big: true),
                         ),
                         FilledButton(
-                          style: FilledButton.styleFrom(backgroundColor: gold, foregroundColor: Colors.black),
                           onPressed: () {
                             Navigator.pop(sheetCtx);
                             addItems(sel);
