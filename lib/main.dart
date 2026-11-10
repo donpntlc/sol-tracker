@@ -2017,9 +2017,16 @@ class _MainScreenState extends State<MainScreen> {
   ({double minPct, double maxPct}) _mealDayMacroBandPct(
       String meal, String macro) {
     if (threeMeals && meal == "Snacks") {
+      // Zielmitte = Snacks + Abendessen; Bandbreite symmetrisch darum
+      // (Bänder einfach addieren war schief und viel zu breit).
       final a = _mealDayMacroBandPctRaw("Snacks", macro);
       final b = _mealDayMacroBandPctRaw("Evening Meal", macro);
-      return (minPct: a.minPct + b.minPct, maxPct: a.maxPct + b.maxPct);
+      final c = (_mealMacrosStore["Snacks"]?[macro] ?? 0) +
+          (_mealMacrosStore["Evening Meal"]?[macro] ?? 0);
+      final ha = (a.maxPct - a.minPct) / 2;
+      final hb = (b.maxPct - b.minPct) / 2;
+      final half = math.sqrt(ha * ha + hb * hb);
+      return (minPct: math.max(0.0, c - half), maxPct: c + half);
     }
     return _mealDayMacroBandPctRaw(meal, macro);
   }
