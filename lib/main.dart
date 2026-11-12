@@ -625,13 +625,17 @@ class TrackedFood {
   /// Gemeinsame ID, wenn ein Eintrag über „Tag auffüllen“ auf mehrere Mahlzeiten verteilt wurde.
   String? batch;
 
+  /// Zeitpunkt des Eintrags (ms seit Epoch); bei alten Einträgen null.
+  int? at;
+
   TrackedFood({
     required this.food,
     required this.grams,
     required this.meal,
     required this.dayKey,
     this.batch,
-  });
+    int? at,
+  }) : at = at ?? DateTime.now().millisecondsSinceEpoch;
 
   double get factor => grams / 100;
 
@@ -649,6 +653,7 @@ class TrackedFood {
       "meal": meal,
       "dayKey": dayKey,
       if (batch != null) "batch": batch,
+      if (at != null) "at": at,
     };
   }
 
@@ -659,7 +664,7 @@ class TrackedFood {
       meal: map["meal"] ?? "Main Meal",
       dayKey: map["dayKey"] ?? dateKeyFromDate(DateTime.now()),
       batch: map["batch"] as String?,
-    );
+    )..at = (map["at"] as num?)?.toInt();
   }
 }
 
@@ -14637,6 +14642,20 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(children: [
+                    if (l.first.at != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Text(
+                          () {
+                            final d = DateTime.fromMillisecondsSinceEpoch(l.first.at!);
+                            return "${d.hour.toString().padLeft(2, "0")}:${d.minute.toString().padLeft(2, "0")}";
+                          }(),
+                          style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.white54,
+                              fontFeatures: [FontFeature.tabularFigures()]),
+                        ),
+                      ),
                     Expanded(
                       child: Text(f.name,
                           maxLines: 1,
