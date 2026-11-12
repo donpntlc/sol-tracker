@@ -11435,7 +11435,7 @@ class _MainScreenState extends State<MainScreen> {
         category: "Rezepte",
         type: "Diät (Viel Volumen)",
         isDefault: true,
-        imagePath: "assets/recipes/griesspudding.png",
+        imagePath: "assets/recipes/griesspudding.webp",
         basePortionGrams: 280,
         portionHint: "1 Portion (Ofen) ≈ 280g · ~241 kcal — klassisch mit Milch & Grieß, süß",
         ingredients: [
@@ -11465,7 +11465,7 @@ class _MainScreenState extends State<MainScreen> {
         category: "Rezepte",
         type: "Diät (Viel Volumen)",
         isDefault: true,
-        imagePath: "assets/recipes/milchreis_suess.png",
+        imagePath: "assets/recipes/milchreis_suess.webp",
         basePortionGrams: 300,
         portionHint: "1 Portion ≈ 300g · ~335 kcal — süß, viel Volumen",
         ingredients: [
