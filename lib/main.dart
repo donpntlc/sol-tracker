@@ -20911,6 +20911,8 @@ class _MainScreenState extends State<MainScreen> {
             SliverToBoxAdapter(child: _aggressiveModeStrip()),
           if (phaseGoal != null)
             SliverToBoxAdapter(child: _phaseGoalStrip()),
+          // Ring-Ansicht: Tagesübersicht steckt im Ring (antippen → aufklappen).
+          if (!overviewRingStyle)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
@@ -21090,6 +21092,44 @@ class _MainScreenState extends State<MainScreen> {
                           totalCarbs: totalCarbs,
                           totalFat: totalFat,
                         ),
+                        if (_macroDetailsExpanded) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 10, 4, 4),
+                            child: Divider(
+                                height: 1,
+                                color: context.sol.soft.withValues(alpha: 0.35)),
+                          ),
+                          _buildDailyOverviewMealFoodExpansions(),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => _showDayContextSheet(
+                                context,
+                                dayKey: selectedDayKey,
+                                trackStreak: trackStreak,
+                                totalGrams: totalGrams,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                child: Row(children: [
+                                  const Icon(Icons.analytics_outlined,
+                                      size: 22, color: Color(0xFFC9A24A)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(_dayLabelForKey(selectedDayKey),
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                            color: context.sol.onCard)),
+                                  ),
+                                  Icon(Icons.chevron_right, color: context.sol.muted),
+                                ]),
+                              ),
+                            ),
+                          ),
+                          _plannedDayPreview(),
+                        ],
                         if (phaseGoal == null)
                           Align(
                             alignment: Alignment.center,
