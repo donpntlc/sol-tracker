@@ -2352,63 +2352,80 @@ class _MainScreenState extends State<MainScreen> {
   Widget _dayFillButtons() {
     final target = _nextMealAfterWorkout();
     if (target == null) return const SizedBox.shrink();
-    Widget b(String code, String key, IconData ic) => TextButton.icon(
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            foregroundColor: const Color(0xFFC9A24A),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+    const gold = Color(0xFFC9A24A);
+    void go(String code) {
+      _fillDayMode = code != "add";
+      _dayAddMode = true;
+      _pendingTrackFillApply = code == "add" ? null : code;
+      addTrackedFood(target);
+    }
+
+    Widget btn(String label, VoidCallback onTap, {IconData? icon}) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: gold,
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: onTap,
+              child: FittedBox(
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 5)],
+                  Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ),
           ),
-          onPressed: () {
-            _fillDayMode = code != "add";
-            _dayAddMode = true;
-            _pendingTrackFillApply = code == "add" ? null : code;
-            addTrackedFood(target);
-          },
-          icon: Icon(ic, size: 16),
-          label: Text(t(key), style: const TextStyle(fontSize: 12.5)),
         );
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(6, 14, 6, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            t("day_fill_title2"),
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFC9A24A)),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            t("day_fill_explain"),
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11.5, color: context.sol.muted, height: 1.35),
-          ),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 2,
-            children: [
-              b("c", "track_fill_carbs", Icons.vertical_align_top),
-              b("p", "track_fill_protein", Icons.vertical_align_top),
-              b("f", "track_fill_fat", Icons.vertical_align_top),
-              b("k", "track_fill_kcal", Icons.bolt),
-              b("add", "day_fill_add_meal", Icons.add_circle_outline),
-            ],
-          ),
-          Center(
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                foregroundColor: const Color(0xFFC9A24A),
+          Row(children: [
+            Text(t("day_fill_title2").toUpperCase(),
+                style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w700,
+                    color: context.sol.muted)),
+            const SizedBox(width: 4),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (d) => AlertDialog(
+                  title: Text(t("day_fill_title2")),
+                  content: Text(t("day_fill_explain")),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(d), child: const Text("OK")),
+                  ],
+                ),
               ),
-              onPressed: () => _openSmartMealGenerator(target, dayScope: true),
-              icon: const Icon(Icons.restaurant_menu, size: 16),
-              label: Text(t("day_fill_generator"),
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+              child: Padding(
+                padding: const EdgeInsets.all(3),
+                child: Icon(Icons.info_outline, size: 15, color: context.sol.muted),
+              ),
             ),
-          ),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            btn(t("amount_fill_carbs_short"), () => go("c")),
+            btn(t("protein"), () => go("p")),
+            btn(t("fat"), () => go("f")),
+            btn("kcal", () => go("k")),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            btn(t("day_fill_add_short"), () => go("add"), icon: Icons.add),
+            btn(t("day_fill_gen_short"), () => _openSmartMealGenerator(target, dayScope: true),
+                icon: Icons.restaurant_menu),
+          ]),
         ],
       ),
     );
@@ -2727,7 +2744,6 @@ class _MainScreenState extends State<MainScreen> {
                   style: TextStyle(fontSize: 12.5, color: muted),
                 ),
               ),
-            if (_macroDetailsExpanded) _dayFillButtons(),
           ],
         ),
       ),
@@ -8445,6 +8461,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "day_fill_add_short": "Mahlzeit hinzufügen",
+      "day_fill_gen_short": "Generator",
       "dayfoods_view_total": "Zusammengefasst",
       "dayfoods_view_single": "Einzeln",
       "dayfoods_via_day": "über Tagesübersicht",
@@ -9775,6 +9793,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "day_fill_add_short": "Add meal",
+      "day_fill_gen_short": "Generator",
       "dayfoods_view_total": "Combined",
       "dayfoods_view_single": "Individual",
       "dayfoods_via_day": "via daily overview",
@@ -21112,6 +21132,7 @@ class _MainScreenState extends State<MainScreen> {
                           totalFat: totalFat,
                         ),
                         if (_macroDetailsExpanded) ...[
+                          _dayFillButtons(),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(4, 10, 4, 4),
                             child: Divider(
