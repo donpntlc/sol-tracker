@@ -1722,6 +1722,8 @@ class _MainScreenState extends State<MainScreen> {
       "cut_extra_steps_additional_by_day_v1";
   static const String _kStepSyncEnabledKey = "step_sync_enabled_v1";
   static const String _kAdvancedShowStepsKey = "advanced_show_steps_v1";
+  /// Von SOL-GYM gesetzt: morgens „Gestern richtig getrackt?“ → {Tag: true/false}.
+  static const String _kDayTrackedOkKey = "day_tracked_ok_v1";
   static const String _kLastDeviationWarningKey = "last_deviation_warning_v1";
   static const String _kMealGroupOrderKey = "meal_group_order_v1";
   static const String _kWeekStartWeekdayKey = "week_start_weekday_v1";
@@ -1816,6 +1818,9 @@ class _MainScreenState extends State<MainScreen> {
   bool stepSyncEnabled = false;
   /// Advanced: Schritte-Karte freiwillig zeigen (wie im Aggressiv Cut).
   bool advancedShowSteps = false;
+  /// Tage mit „nicht richtig getrackt“ zählen nicht fürs Defizit / Phasen-Ziel.
+  Map<String, bool> dayTrackedOk = {};
+  bool _dayCounts(String k) => dayTrackedOk[k] != false;
   bool get _showStepsCard =>
       nutritionMode == "Diät" ||
       (nutritionMode == "Advanced" && advancedShowSteps);
@@ -2249,7 +2254,7 @@ class _MainScreenState extends State<MainScreen> {
     var sumG = 0.0, sumE = 0.0;
     for (final k in keys) {
       final gk = _goalKcalForStatsDay(k);
-      if (gk == null) continue;
+      if (gk == null || !_dayCounts(k)) continue;
       sumG += gk;
       sumE += _kcalEatenOnDay(k);
     }
@@ -5715,7 +5720,7 @@ class _MainScreenState extends State<MainScreen> {
       var guardS = 0;
       while (dS.isBefore(today) && guardS < 400) {
         final key = dateKeyFromDate(dS);
-        if (trackedFoods.any((t) => t.dayKey == key)) {
+        if (_dayCounts(key) && trackedFoods.any((t) => t.dayKey == key)) {
           final eat = _kcalEatenOnDay(key);
           kcalSince += bulk ? (eat - maintS) : (maintS - eat);
         }
@@ -5754,7 +5759,7 @@ class _MainScreenState extends State<MainScreen> {
     var guard = 0;
     while (day.isBefore(today) && guard < 1000) {
       final key = dateKeyFromDate(day);
-      if (trackedFoods.any((t) => t.dayKey == key)) {
+      if (_dayCounts(key) && trackedFoods.any((t) => t.dayKey == key)) {
         final eat = _kcalEatenOnDay(key);
         done += bulk ? (eat - maint) : (maint - eat);
       }
@@ -6667,7 +6672,7 @@ class _MainScreenState extends State<MainScreen> {
       final eat = _kcalEatenOnDay(k);
       sumEat += eat;
       final gk = _goalKcalForStatsDay(k);
-      if (gk != null) {
+      if (gk != null && _dayCounts(k)) {
         sumDef += (gk - eat);
         sumGoal += gk;
         nGoal++;
@@ -7460,6 +7465,7 @@ class _MainScreenState extends State<MainScreen> {
         prefs.getString(_kCutExtraStepsAdditionalByDayKey);
     final savedStepSyncEnabled = prefs.getBool(_kStepSyncEnabledKey);
     final savedAdvShowSteps = prefs.getBool(_kAdvancedShowStepsKey);
+    final savedDayTrackedOk = prefs.getString(_kDayTrackedOkKey);
     final savedMealKcalUi = prefs.getString(_kMealKcalUiModeKey);
     final savedAdvMealBandPp = prefs.getDouble(_kAdvancedMealMacroBandPpKey);
     final savedAdvBandByMeal = prefs.getString(_kAdvancedMealMacroBandPpByMealKey);
@@ -7599,6 +7605,17 @@ class _MainScreenState extends State<MainScreen> {
         } catch (_) {}
       }
       if (savedAdvShowSteps != null) advancedShowSteps = savedAdvShowSteps;
+      if (savedDayTrackedOk != null) {
+        try {
+          final m = jsonDecode(savedDayTrackedOk);
+          if (m is Map) {
+            dayTrackedOk = {
+              for (final e in m.entries)
+                if (e.value is bool) e.key.toString(): e.value as bool
+            };
+          }
+        } catch (_) {}
+      }
       if (savedStepSyncEnabled != null) {
         stepSyncEnabled = savedStepSyncEnabled;
       } else if (!kIsWeb && Platform.isIOS) {
