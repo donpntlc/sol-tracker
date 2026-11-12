@@ -3961,6 +3961,7 @@ class _MainScreenState extends State<MainScreen> {
     "Paprika (rot, roh)": "paprika",
     "Rosenkohl (gekocht)": "rosenkohl",
     "Apfel (mit Schale, Mittelwert)": "apfel",
+    "Kaki": "kaki",
     "Heidelbeeren": "heidelbeeren",
     "Bohnen (grün, gekocht)": "gruene_bohnen",
     "Reis (gekocht)": "reis",
