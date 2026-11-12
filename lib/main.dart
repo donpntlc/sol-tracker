@@ -1371,6 +1371,8 @@ class _MainScreenState extends State<MainScreen> {
   List<TrackedFood> trackedFoods = [];
   String searchQuery = "";
   String databaseCategoryFilter = "Alle";
+  /// Nur vegane Lebensmittel (Datenbank & Picker) — kombinierbar mit jeder Kategorie.
+  bool _veganOnly = false;
   String databaseTypeFilter = "Alle";
   /// all | sweet | salty — Geschmacksfilter in der gesamten Datenbank (Süß/Salzig).
   String databaseRecipeFlavorFilter = "all";
@@ -4331,6 +4333,7 @@ class _MainScreenState extends State<MainScreen> {
               }
             }
             var list = (_pickerType == "recent" ? recentOrder : foodDatabase).where((f) {
+              if (_veganOnly && !_isVegan(f)) return false;
               if (_pickerType == "recent") {
                 if (!_recipeMatchesFlavorFilter(f, _pickerFlavor)) return false;
                 return words.isEmpty || match(f.name);
@@ -4639,7 +4642,7 @@ class _MainScreenState extends State<MainScreen> {
                         dd(
                           _pickerCat,
                           [
-                            for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Vegan"])
+                            for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse"])
                               (c, _tCat(c)),
                           ],
                           (v) => _pickerCat = v,
@@ -4670,6 +4673,13 @@ class _MainScreenState extends State<MainScreen> {
                                 }),
                               ),
                             ),
+                          ChoiceChip(
+                            visualDensity: VisualDensity.compact,
+                            showCheckmark: false,
+                            label: const Text("🌱", style: TextStyle(fontSize: 12)),
+                            selected: _veganOnly,
+                            onSelected: (v) => setL(() => _veganOnly = v),
+                          ),
                           const Spacer(),
                           // 100 g ↔ Portion
                           TextButton(
@@ -17800,8 +17810,9 @@ class _MainScreenState extends State<MainScreen> {
     final filteredFoods = foodDatabase.where((food) {
       final matchesSearch =
           food.name.toLowerCase().contains(searchQuery.toLowerCase());
-      final matchesCategory = databaseCategoryFilter == "Alle" ||
-          _inCat(food, databaseCategoryFilter);
+      final matchesCategory = (databaseCategoryFilter == "Alle" ||
+              _inCat(food, databaseCategoryFilter)) &&
+          (!_veganOnly || _isVegan(food));
       // Diät/Aufbau sortiert jetzt nur noch (nach Dichte), filtert nicht.
       const matchesType = true;
       final matchesSource = databaseSourceFilter == "all" ||
@@ -17989,6 +18000,14 @@ class _MainScreenState extends State<MainScreen> {
                             onSelected: (_) => setState(() => databaseTypeFilter = m),
                           ),
                         ),
+                      const Spacer(),
+                      FilterChip(
+                        visualDensity: VisualDensity.compact,
+                        showCheckmark: false,
+                        label: Text(t("cat_vegan"), style: const TextStyle(fontSize: 12)),
+                        selected: _veganOnly,
+                        onSelected: (v) => setState(() => _veganOnly = v),
+                      ),
                     ],
                   ),
                 ],
