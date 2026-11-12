@@ -622,11 +622,15 @@ class TrackedFood {
   String meal;
   String dayKey;
 
+  /// Gemeinsame ID, wenn ein Eintrag über „Tag auffüllen“ auf mehrere Mahlzeiten verteilt wurde.
+  String? batch;
+
   TrackedFood({
     required this.food,
     required this.grams,
     required this.meal,
     required this.dayKey,
+    this.batch,
   });
 
   double get factor => grams / 100;
@@ -644,6 +648,7 @@ class TrackedFood {
       "grams": grams,
       "meal": meal,
       "dayKey": dayKey,
+      if (batch != null) "batch": batch,
     };
   }
 
@@ -653,6 +658,7 @@ class TrackedFood {
       grams: (map["grams"] ?? 0).toDouble(),
       meal: map["meal"] ?? "Main Meal",
       dayKey: map["dayKey"] ?? dateKeyFromDate(DateTime.now()),
+      batch: map["batch"] as String?,
     );
   }
 }
@@ -1886,12 +1892,13 @@ class _MainScreenState extends State<MainScreen> {
       final last = targets.isNotEmpty ? targets.last : meals.last;
       parts[last] = (parts[last] ?? 0) + leftG;
     }
+    final batchId = "d${DateTime.now().millisecondsSinceEpoch}";
     setState(() {
       parts.forEach((m, g) {
         final r = (g * 10).roundToDouble() / 10;
         if (r > 0) {
           trackedFoods.add(TrackedFood(
-              food: food, grams: r, meal: m, dayKey: selectedDayKey));
+              food: food, grams: r, meal: m, dayKey: selectedDayKey, batch: batchId));
         }
       });
     });
@@ -8423,6 +8430,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "dayfoods_view_total": "Zusammengefasst",
+      "dayfoods_view_single": "Einzeln",
+      "dayfoods_via_day": "über Tagesübersicht",
       "gen2_scope_meal": "Diese Mahlzeit",
       "gen2_scope_day": "Rest des Tages",
       "gen2_vegan": "Vegan",
@@ -9750,6 +9760,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "dayfoods_view_total": "Combined",
+      "dayfoods_view_single": "Individual",
+      "dayfoods_via_day": "via daily overview",
       "gen2_scope_meal": "This meal",
       "gen2_scope_day": "Rest of day",
       "gen2_vegan": "Vegan",
@@ -14464,6 +14477,7 @@ class _MainScreenState extends State<MainScreen> {
   void _openDayFoodsSheet() {
     const gold = Color(0xFFC9A24A);
     var sortBy = "kcal"; // kcal | protein | grams
+    var single = false; // false = zusammengefasst, true = jeder Eintrag einzeln
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -14515,8 +14529,8 @@ class _MainScreenState extends State<MainScreen> {
               ),
             );
 
-        Future<void> editGroup(String name) async {
-          final items = groups[name]!;
+        Future<void> editGroup(String name, [List<TrackedFood>? only]) async {
+          final items = only ?? groups[name]!;
           final total = sumOf(items, (e) => e.grams);
           final food = items.first.food;
           final ctrl = TextEditingController(text: total.round().toString());
@@ -14594,6 +14608,69 @@ class _MainScreenState extends State<MainScreen> {
           setS(() {});
         }
 
+        // Einzelne Einträge (neueste zuerst); „Tag auffüllen“-Einträge als ein Block.
+        final entries = <List<TrackedFood>>[];
+        final seenBatch = <String, List<TrackedFood>>{};
+        for (final e in day.reversed) {
+          if (e.batch != null) {
+            final l = seenBatch[e.batch!];
+            if (l != null) {
+              l.add(e);
+              continue;
+            }
+            final nl = [e];
+            seenBatch[e.batch!] = nl;
+            entries.add(nl);
+          } else {
+            entries.add([e]);
+          }
+        }
+        Widget entryRow(List<TrackedFood> l) {
+          final f = l.first.food;
+          final g = sumOf(l, (e) => e.grams);
+          final viaDay = l.first.batch != null;
+          return InkWell(
+            onTap: () => editGroup(f.name, l),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(f.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                    Text("${g.round()} g",
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.edit_outlined, size: 16, color: Colors.white38),
+                  ]),
+                  const SizedBox(height: 3),
+                  Text.rich(TextSpan(children: [
+                    TextSpan(
+                        text: "${sumOf(l, (e) => e.calories).round()} kcal",
+                        style: const TextStyle(color: gold, fontWeight: FontWeight.w700)),
+                    TextSpan(
+                        text:
+                            "  ·  P ${sumOf(l, (e) => e.protein).round()}  ·  K ${sumOf(l, (e) => e.carbs).round()}  ·  F ${sumOf(l, (e) => e.fat).round()}",
+                        style: const TextStyle(color: Colors.white60)),
+                  ]), style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text(
+                    (viaDay ? "${t("dayfoods_via_day")}  ·  " : "") +
+                        l.map((e) => "${_displayMealName(e.meal)} ${e.grams.round()} g").join("  ·  "),
+                    style: TextStyle(
+                        fontSize: 11.5, color: viaDay ? gold.withValues(alpha: 0.8) : Colors.white54),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         return SizedBox(
           height: MediaQuery.of(ctx).size.height * 0.88,
           child: Column(
@@ -14629,6 +14706,32 @@ class _MainScreenState extends State<MainScreen> {
                 ])),
               ),
               Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(children: [
+                  for (final e in [(false, t("dayfoods_view_total")), (true, t("dayfoods_view_single"))])
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setS(() => single = e.$1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                  width: 2, color: single == e.$1 ? gold : Colors.white12),
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(e.$2,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: single == e.$1 ? gold : Colors.white54)),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
+              if (!single) Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -14643,6 +14746,21 @@ class _MainScreenState extends State<MainScreen> {
                   ]),
                 ),
               ),
+              if (single)
+                Expanded(
+                  child: entries.isEmpty
+                      ? Center(
+                          child: Text(t("meal_tracked_empty"),
+                              style: const TextStyle(color: Colors.white54)))
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                          itemCount: entries.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+                          itemBuilder: (_, i) => entryRow(entries[i]),
+                        ),
+                )
+              else
               Expanded(
                 child: keys.isEmpty
                     ? Center(
@@ -14718,9 +14836,10 @@ class _MainScreenState extends State<MainScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    perMeal.entries
-                                        .map((e) => "${_displayMealName(e.key)} ${e.value.round()} g")
-                                        .join("  ·  "),
+                                    (l.length > 1 ? "${l.length}× getrackt  ·  " : "") +
+                                        perMeal.entries
+                                            .map((e) => "${_displayMealName(e.key)} ${e.value.round()} g")
+                                            .join("  ·  "),
                                     style: const TextStyle(fontSize: 11.5, color: Colors.white54),
                                   ),
                                 ],
