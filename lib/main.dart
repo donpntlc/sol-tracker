@@ -20879,11 +20879,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            onPressed: _openWeightSheet,
-            icon: const Icon(Icons.monitor_weight),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
             onPressed: _openDayNoteDialog,
             icon: const Icon(Icons.edit_note),
           ),
