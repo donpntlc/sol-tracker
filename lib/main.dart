@@ -27195,9 +27195,15 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _openSmartMealGenerator(String meal, {bool dayScope = false}) {
-    if (meal == _kMergedMealCardId || !mealMacros.containsKey(meal)) {
-      _openMealGeneratorImpl(meal: meal);
-      return;
+    // Alter Generator wird nicht mehr geöffnet: Sonderkarten auf eine echte Mahlzeit abbilden.
+    if (!mealMacros.containsKey(meal)) {
+      if (meal == _kWorkoutBlockMealId && mealMacros.containsKey("Pre-Workout")) {
+        meal = "Pre-Workout";
+      } else {
+        meal = meals.firstWhere((m) => m != "Snacks" && mealMacros.containsKey(m),
+            orElse: () => "Main Meal");
+        dayScope = true;
+      }
     }
     _updateMealTotals();
     const gold = Color(0xFFC9A24A);
@@ -27651,13 +27657,6 @@ class _MainScreenState extends State<MainScreen> {
                               ? "${t("gen2_title")} · ${t("gen2_scope_day")}"
                               : "${t("gen2_title")} · ${_displayMealName(meal)}",
                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(sheetCtx);
-                        _openMealGeneratorImpl(meal: meal);
-                      },
-                      child: Text(t("gen2_advanced"), style: const TextStyle(fontSize: 12)),
                     ),
                     IconButton(onPressed: () => Navigator.pop(sheetCtx), icon: const Icon(Icons.close)),
                   ],
