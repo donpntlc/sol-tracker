@@ -2383,6 +2383,18 @@ class _MainScreenState extends State<MainScreen> {
               b("add", "day_fill_add_meal", Icons.add_circle_outline),
             ],
           ),
+          Center(
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: const Color(0xFFC9A24A),
+              ),
+              onPressed: () => _openSmartMealGenerator(target, dayScope: true),
+              icon: const Icon(Icons.restaurant_menu, size: 16),
+              label: Text(t("day_fill_generator"),
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+            ),
+          ),
         ],
       ),
     );
@@ -4024,6 +4036,15 @@ class _MainScreenState extends State<MainScreen> {
     "Birne": [("Klein", 140), ("Mittel", 180), ("Groß", 230)],
     "Kiwi": [("1 Stück", 75)],
     "Kaki": [("Klein", 120), ("Mittel", 170), ("Groß", 230)],
+    "Tempeh": [("½ Packung", 100), ("1 Packung", 200)],
+    "Räuchertofu": [("½ Packung", 100), ("1 Packung", 200)],
+    "Sojamilch (ungesüßt)": [("1 Glas", 250), ("½ Liter", 500)],
+    "Sojajoghurt (natur)": [("1 Becher", 150), ("1 Becher groß", 400)],
+    "Sojaprotein-Isolat (Pulver)": [("1 Scoop", 30)],
+    "Erbsenprotein-Isolat (Pulver)": [("1 Scoop", 30)],
+    "Sojaschnetzel (trocken)": [("1 Portion", 60)],
+    "Edamame (gekocht)": [("1 Schale", 150)],
+    "Mykoprotein-Stücke (vegan)": [("½ Packung", 150), ("1 Packung", 300)],
     "Mango": [("½ Mango", 100), ("1 Mango", 200)],
     "Grapefruit": [("½ Grapefruit", 120)],
     "Avocado": [("½ Avocado", 70), ("1 Avocado", 140)],
@@ -4307,7 +4328,11 @@ class _MainScreenState extends State<MainScreen> {
               } else if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) {
                 return false;
               }
-              if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) return false;
+              if (_pickerCat == "Vegan") {
+                if (!_isVegan(f)) return false;
+              } else if (_pickerCat != "Alle" && !f.isInCategory(_pickerCat)) {
+                return false;
+              }
               if (kindOnly != null && f.carbKind != kindOnly) return false;
               if (!_recipeMatchesFlavorFilter(f, _pickerFlavor)) return false;
               return words.isEmpty || match(f.name);
@@ -4384,7 +4409,10 @@ class _MainScreenState extends State<MainScreen> {
                               ? " · ${kcalPerMacro(f).toStringAsFixed(1)} kcal/g"
                               : "");
                   return _pickerRow(
-                    title: f.name,
+                    title: (f.isInCategory("Vegan") ||
+                            (f.category == "Protein" && _isVegan(f)))
+                        ? "${f.name} 🌱"
+                        : f.name,
                     sub: _pickerType == "recent" && recentGrams[f.name] != null
                         ? tFmt("picker_recent_last", {"g": recentGrams[f.name]!.round().toString()})
                         : (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
@@ -4599,7 +4627,7 @@ class _MainScreenState extends State<MainScreen> {
                         dd(
                           _pickerCat,
                           [
-                            for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse"])
+                            for (final c in const ["Alle", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Vegan"])
                               (c, _tCat(c)),
                           ],
                           (v) => _pickerCat = v,
@@ -8395,6 +8423,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_scope_meal": "Diese Mahlzeit",
+      "gen2_scope_day": "Rest des Tages",
+      "gen2_vegan": "Vegan",
+      "cat_vegan": "🌱 Vegan",
+      "day_fill_generator": "Generator: Rest des Tages",
       "picker_type_recent": "🕘 Zuletzt",
       "picker_recent_last": "zuletzt {g} g",
       "dayfoods_button": "Alle Lebensmittel des Tages",
@@ -9717,6 +9750,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_scope_meal": "This meal",
+      "gen2_scope_day": "Rest of day",
+      "gen2_vegan": "Vegan",
+      "cat_vegan": "🌱 Vegan",
+      "day_fill_generator": "Generator: rest of day",
       "picker_type_recent": "🕘 Recent",
       "picker_recent_last": "last {g} g",
       "dayfoods_button": "All foods today",
@@ -10805,6 +10843,8 @@ class _MainScreenState extends State<MainScreen> {
 
   String _tCat(String cat) {
     switch (cat) {
+      case "Vegan":
+        return t("cat_vegan");
       case "Alle":
         return t("cat_all");
       case "Carbs":
@@ -27130,7 +27170,31 @@ class _MainScreenState extends State<MainScreen> {
     return null;
   }
 
-  void _openSmartMealGenerator(String meal) {
+  /// Vegan? Markiert (Kategorie „Vegan“) oder aus dem Namen erkannt.
+  bool _isVegan(Food f) {
+    if (f.isInCategory("Vegan")) return true;
+    final n = f.name.toLowerCase();
+    const plantProtein = [
+      "tofu", "seitan", "tempeh", "soja", "edamame", "linsen", "kichererbsen",
+      "bohnen", "erbsen", "lupine", "mykoprotein", "vegan",
+    ];
+    const plantOverride = ["soja", "hafermilch", "mandelmilch", "erdnuss", "vegan", "kokos"];
+    const animal = [
+      "hähnchen", "huhn", "pute", "rind", "schwein", "fisch", "lachs", "thunfisch",
+      "quark", "skyr", "joghurt", "jogurt", "milch", "käse", "butter", "honig", "whey",
+      "molke", "schinken", "wurst", "hack", "shrimp", "garnele", "seelachs", "schellfisch",
+      "kabeljau", "forelle", "feta", "mozzarella", "sahne", "rahm", "gelatine", "jerky",
+      "nugget", "lasagne", "pudding", "eiweißwolke", "casein", "speck", "salami", "ricotta",
+    ];
+    if (plantOverride.any(n.contains)) return true;
+    if (animal.any(n.contains)) return false;
+    if (RegExp(r"(^|[\s(])eie?r?($|[\s),])").hasMatch(n)) return false;
+    if (f.category == "Rezepte" || f.isRecipe) return false;
+    if (f.category == "Protein") return plantProtein.any(n.contains);
+    return true;
+  }
+
+  void _openSmartMealGenerator(String meal, {bool dayScope = false}) {
     if (meal == _kMergedMealCardId || !mealMacros.containsKey(meal)) {
       _openMealGeneratorImpl(meal: meal);
       return;
@@ -27141,6 +27205,8 @@ class _MainScreenState extends State<MainScreen> {
         ? "cut"
         : (nutritionMode == "Aufbau" ? "bulk" : "normal");
     var flavor = "all";
+    var vegan = false;
+    var scopeDay = dayScope;
     var tab = 0; // 0 = Kombis, 1 = Baukasten
     Food? pickP;
     Food? pickC;
@@ -27150,11 +27216,25 @@ class _MainScreenState extends State<MainScreen> {
     final mm = mealMacros[meal]!;
     final eaten = _mealTotals[meal] ?? const <String, double>{};
     double rem(double v) => v < 0 ? 0 : v;
-    final tP = rem(gDay.protein * (mm["protein"] ?? 0) / 100 - (eaten["protein"] ?? 0));
-    final tC = rem(gDay.carbs * (mm["carbs"] ?? 0) / 100 * _restCarbFactor(meal) -
-        (eaten["carbs"] ?? 0));
-    final tF = rem(gDay.fat * (mm["fat"] ?? 0) / 100 - (eaten["fat"] ?? 0));
-    final tK = tP * 4.1 + tC * 4.1 + tF * 9.3;
+    var tP = 0.0, tC = 0.0, tF = 0.0, tK = 0.0;
+    void computeTargets() {
+      if (scopeDay) {
+        // Rest des Tages: Tagesziel minus alles Gegessene.
+        final day = trackedFoods.where((x) => x.dayKey == selectedDayKey);
+        double sumD(double Function(TrackedFood) v) => day.fold(0.0, (a, x) => a + v(x));
+        tP = rem(gDay.protein - sumD((x) => x.protein));
+        tC = rem(gDay.carbs - _restCarbCutG(selectedDayKey) - sumD((x) => x.carbs));
+        tF = rem(gDay.fat - sumD((x) => x.fat));
+      } else {
+        tP = rem(gDay.protein * (mm["protein"] ?? 0) / 100 - (eaten["protein"] ?? 0));
+        tC = rem(gDay.carbs * (mm["carbs"] ?? 0) / 100 * _restCarbFactor(meal) -
+            (eaten["carbs"] ?? 0));
+        tF = rem(gDay.fat * (mm["fat"] ?? 0) / 100 - (eaten["fat"] ?? 0));
+      }
+      tK = tP * 4.1 + tC * 4.1 + tF * 9.3;
+    }
+
+    computeTargets();
 
     bool typeOk(Food f) {
       if (goal == "cut") return f.type.startsWith("Diät");
@@ -27163,6 +27243,7 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     bool flavorOk(Food f) {
+      if (vegan && !_isVegan(f)) return false;
       if (flavor == "all") return true;
       final fl = _genFlavorOf(f);
       return fl == null || fl == flavor;
@@ -27181,7 +27262,8 @@ class _MainScreenState extends State<MainScreen> {
       return typed.length >= 3 ? typed : base;
     }
 
-    double r5(double g) => (g / 5).round() * 5.0;
+    // Auf 1 g genau (damit die Makros wirklich passen).
+    double r5(double g) => g.roundToDouble();
 
     // Sortierung je Ziel: Cut = wenig kcal pro g Makro (viel Volumen), Aufbau = wenig g (kompakt).
     double rankFor(Food f, double per100) {
@@ -27191,6 +27273,16 @@ class _MainScreenState extends State<MainScreen> {
       if (goal == "cut") return kcalPerMacro;
       if (goal == "bulk") return gramsPerMacro;
       return kcalPerMacro * 0.6 + gramsPerMacro * 0.4;
+    }
+
+    double get0(double day, double meal) => scopeDay ? day : meal;
+    var capP = get0(900, 450), capC = get0(1000, 500), capF = get0(150, 80);
+    void setScope(bool day) {
+      scopeDay = day;
+      capP = get0(900, 450);
+      capC = get0(1000, 500);
+      capF = get0(150, 80);
+      computeTargets();
     }
 
     ({List<(Food, double)> items, double k, double p, double c, double f, double score}) combo(
@@ -27220,15 +27312,53 @@ class _MainScreenState extends State<MainScreen> {
         gc = cF.carbs > 0.5 ? needC / (cF.carbs / 100) : 0;
         gp = pF.protein > 0.5 ? rem(needP - gc * b) / a : 0;
       }
-      gp = r5(gp.clamp(0, 450));
-      gc = r5(gc.clamp(0, 500));
+      // 3×3: Protein, KH und Fett gleichzeitig exakt treffen (wenn lösbar).
+      var exact = false;
+      double gf3 = 0;
+      if (fF != null) {
+        final needF = rem(tF - f0);
+        final m = [
+          [pF.protein / 100, cF.protein / 100, fF.protein / 100],
+          [pF.carbs / 100, cF.carbs / 100, fF.carbs / 100],
+          [pF.fat / 100, cF.fat / 100, fF.fat / 100],
+        ];
+        double d3(List<List<double>> x) =>
+            x[0][0] * (x[1][1] * x[2][2] - x[1][2] * x[2][1]) -
+            x[0][1] * (x[1][0] * x[2][2] - x[1][2] * x[2][0]) +
+            x[0][2] * (x[1][0] * x[2][1] - x[1][1] * x[2][0]);
+        final D = d3(m);
+        if (D.abs() > 1e-6) {
+          final v = [needP, needC, needF];
+          List<List<double>> col(int j) => [
+                for (var i = 0; i < 3; i++)
+                  [for (var k = 0; k < 3; k++) k == j ? v[i] : m[i][k]]
+              ];
+          final x = d3(col(0)) / D, y = d3(col(1)) / D, z = d3(col(2)) / D;
+          if (x >= 0 && y >= 0 && z >= 0 && x < capP && y < capC && z < capF) {
+            gp = x;
+            gc = y;
+            gf3 = z;
+            exact = true;
+          }
+        }
+      }
+      gp = r5(gp.clamp(0, capP));
+      gc = r5(gc.clamp(0, capC));
       if (gp > 0) items.add((pF, gp));
       if (gc > 0) items.add((cF, gc));
       var p = p0 + pF.protein * gp / 100 + cF.protein * gc / 100;
       var cc = c0 + pF.carbs * gp / 100 + cF.carbs * gc / 100;
       var f = f0 + pF.fat * gp / 100 + cF.fat * gc / 100;
-      if (fF != null && tF - f > 4 && fF.fat > 1) {
-        final gf = r5(((tF - f) / (fF.fat / 100)).clamp(0, 80));
+      if (exact && fF != null) {
+        final gf = r5(gf3);
+        if (gf > 0) {
+          items.add((fF, gf));
+          p += fF.protein * gf / 100;
+          cc += fF.carbs * gf / 100;
+          f += fF.fat * gf / 100;
+        }
+      } else if (fF != null && tF - f > 4 && fF.fat > 1) {
+        final gf = r5(((tF - f) / (fF.fat / 100)).clamp(0, capF));
         if (gf > 0) {
           items.add((fF, gf));
           p += fF.protein * gf / 100;
@@ -27258,10 +27388,13 @@ class _MainScreenState extends State<MainScreen> {
         ..sort((x, y) => x.calories.compareTo(y.calories));
       final veg = goal == "cut" && vegs.isNotEmpty && flavor != "sweet" ? vegs.first : null;
       final all = <({List<(Food, double)> items, double k, double p, double c, double f, double score, bool recipe})>[];
+      final fats = fs.isEmpty ? <Food?>[null] : fs.take(3).toList();
       for (final pF in ps.take(10)) {
         for (final cF in cs.take(10)) {
-          final r = combo(pF, cF, fs.isEmpty ? null : fs.first, veg);
-          all.add((items: r.items, k: r.k, p: r.p, c: r.c, f: r.f, score: r.score, recipe: false));
+          for (final fF in fats) {
+            final r = combo(pF, cF, fF, veg);
+            all.add((items: r.items, k: r.k, p: r.p, c: r.c, f: r.f, score: r.score, recipe: false));
+          }
         }
       }
       all.sort((a, b) => a.score.compareTo(b.score));
@@ -27513,7 +27646,10 @@ class _MainScreenState extends State<MainScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text("${t("gen2_title")} · ${_displayMealName(meal)}",
+                      child: Text(
+                          scopeDay
+                              ? "${t("gen2_title")} · ${t("gen2_scope_day")}"
+                              : "${t("gen2_title")} · ${_displayMealName(meal)}",
                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                     ),
                     TextButton(
@@ -27548,6 +27684,11 @@ class _MainScreenState extends State<MainScreen> {
                 child: Column(
                   children: [
                     Row(children: [
+                      pill(t("gen2_scope_meal"), !scopeDay, () => setG(() => setScope(false))),
+                      pill(t("gen2_scope_day"), scopeDay, () => setG(() => setScope(true))),
+                    ]),
+                    const SizedBox(height: 6),
+                    Row(children: [
                       pill(t("gen2_cut"), goal == "cut", () => setG(() => goal = "cut")),
                       pill(t("gen2_normal"), goal == "normal", () => setG(() => goal = "normal")),
                       pill(t("gen2_bulk"), goal == "bulk", () => setG(() => goal = "bulk")),
@@ -27557,6 +27698,7 @@ class _MainScreenState extends State<MainScreen> {
                       pill(t("gen2_any"), flavor == "all", () => setG(() => flavor = "all")),
                       pill(t("recipe_flavor_sweet"), flavor == "sweet", () => setG(() => flavor = "sweet")),
                       pill(t("recipe_flavor_salty"), flavor == "salty", () => setG(() => flavor = "salty")),
+                      pill(t("gen2_vegan"), vegan, () => setG(() => vegan = !vegan)),
                     ]),
                   ],
                 ),
