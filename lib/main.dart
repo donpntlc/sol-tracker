@@ -18020,11 +18020,16 @@ class _MainScreenState extends State<MainScreen> {
                             onSelected: (_) => setState(() => databaseTypeFilter = m),
                           ),
                         ),
-                      const Spacer(),
+                      // Trenner: Vegan ist ein zusätzlicher Filter (kombinierbar).
+                      Container(
+                        width: 1,
+                        height: 22,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        color: Colors.white24,
+                      ),
                       FilterChip(
                         visualDensity: VisualDensity.compact,
-                        showCheckmark: false,
-                        label: Text(t("cat_vegan"), style: const TextStyle(fontSize: 12)),
+                        label: Text(t("gen2_vegan"), style: const TextStyle(fontSize: 12)),
                         selected: _veganOnly,
                         onSelected: (v) => setState(() => _veganOnly = v),
                       ),
