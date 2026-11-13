@@ -8461,6 +8461,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "quick_title": "Schnell eintragen",
+      "quick_sub": "Z. B. auswärts gegessen: Name und ungefähre Nährwerte eingeben (kurz googeln) — ohne Wiegen. Zählt einmalig für heute.",
+      "quick_name": "Name (z. B. Omas Spätzle)",
+      "quick_meal": "Mahlzeit",
+      "quick_save_db": "Auch in der Datenbank speichern",
+      "quick_add": "Eintragen",
+      "quick_portion_hint": "1 Portion = 100 g",
+      "quick_done": "{n} eingetragen: {k} kcal · {m}",
       "day_fill_add_short": "Mahlzeit hinzufügen",
       "day_fill_gen_short": "Generator",
       "dayfoods_view_total": "Zusammengefasst",
@@ -9793,6 +9801,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "quick_title": "Quick add",
+      "quick_sub": "E.g. eating out: enter a name and rough macros (quick search) — no weighing. Counts once for today.",
+      "quick_name": "Name (e.g. Grandma's noodles)",
+      "quick_meal": "Meal",
+      "quick_save_db": "Also save to database",
+      "quick_add": "Add",
+      "quick_portion_hint": "1 portion = 100 g",
+      "quick_done": "{n} added: {k} kcal · {m}",
       "day_fill_add_short": "Add meal",
       "day_fill_gen_short": "Generator",
       "dayfoods_view_total": "Combined",
@@ -20923,6 +20939,12 @@ class _MainScreenState extends State<MainScreen> {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: t("quick_title"),
+            onPressed: _openQuickEntrySheet,
+            icon: const Icon(Icons.flash_on),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _openDayNoteDialog,
             icon: const Icon(Icons.edit_note),
           ),
@@ -31990,6 +32012,170 @@ class _MainScreenState extends State<MainScreen> {
     });
     _saveAppState();
     _applyDailyKcalOverSchedule();
+  }
+
+  /// Schnell eintragen: Name + Makros (z. B. auswärts gegessen, Werte gegoogelt).
+  /// Zählt einmalig; optional in die Datenbank übernehmen.
+  Future<void> _openQuickEntrySheet() async {
+    const gold = Color(0xFFC9A24A);
+    final nameC = TextEditingController();
+    final pC = TextEditingController();
+    final cC = TextEditingController();
+    final fC = TextEditingController();
+    var meal = _nextMealAfterWorkout() ??
+        meals.firstWhere((m) => m != "Snacks", orElse: () => meals.first);
+    var saveToDb = false;
+    double v(TextEditingController c) =>
+        double.tryParse(c.text.trim().replaceAll(",", ".")) ?? 0;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => StatefulBuilder(builder: (c, setQ) {
+        final p = v(pC), cc = v(cC), f = v(fC);
+        final k = p * 4.1 + cc * 4.1 + f * 9.3;
+        final ok = nameC.text.trim().isNotEmpty && k > 0;
+        InputDecoration deco(String label, {String? suffix}) => InputDecoration(
+              labelText: label,
+              suffixText: suffix,
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.04),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: gold)),
+            );
+        Widget num(TextEditingController ctl, String label) => Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: TextField(
+                  controller: ctl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  decoration: deco(label, suffix: "g"),
+                  onChanged: (_) => setQ(() {}),
+                ),
+              ),
+            );
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.flash_on, color: gold, size: 22),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(t("quick_title"),
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(c), icon: const Icon(Icons.close)),
+                  ]),
+                  Text(t("quick_sub"),
+                      style: TextStyle(fontSize: 12, color: context.sol.muted, height: 1.35)),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nameC,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: deco(t("quick_name")),
+                    onChanged: (_) => setQ(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    num(pC, t("protein")),
+                    num(cC, t("amount_fill_carbs_short")),
+                    num(fC, t("fat")),
+                  ]),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: gold.withValues(alpha: 0.35)),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text("= ${k.round()} kcal",
+                        style: const TextStyle(
+                            color: gold, fontSize: 17, fontWeight: FontWeight.w800)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: meal,
+                    decoration: deco(t("quick_meal")),
+                    items: [
+                      for (final m in meals)
+                        DropdownMenuItem(value: m, child: Text(_displayMealName(m))),
+                    ],
+                    onChanged: (x) => setQ(() => meal = x ?? meal),
+                  ),
+                  const SizedBox(height: 6),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: saveToDb,
+                    onChanged: (x) => setQ(() => saveToDb = x ?? false),
+                    title: Text(t("quick_save_db"), style: const TextStyle(fontSize: 13.5)),
+                  ),
+                  const SizedBox(height: 6),
+                  FilledButton(
+                    onPressed: !ok
+                        ? null
+                        : () {
+                            // Werte „pro 100 g“ = ganze Portion → 100 g eintragen.
+                            final food = Food(
+                              name: nameC.text.trim(),
+                              protein: p,
+                              carbs: cc,
+                              sugar: 0,
+                              fiber: 0,
+                              fat: f,
+                              category: "Rezepte",
+                              type: "Aufbau (Wenig Volumen)",
+                              portionHint: t("quick_portion_hint"),
+                              basePortionGrams: 100,
+                            );
+                            setState(() {
+                              if (saveToDb) foodDatabase.add(food);
+                              trackedFoods.add(TrackedFood(
+                                  food: food, grams: 100, meal: meal, dayKey: selectedDayKey));
+                              _updateMealTotals();
+                            });
+                            _saveAppState();
+                            Navigator.pop(c);
+                            _applyDailyKcalOverSchedule();
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(tFmt("quick_done", {
+                                "n": food.name,
+                                "k": k.round().toString(),
+                                "m": _displayMealName(meal),
+                              })),
+                            ));
+                          },
+                    child: Text(t("quick_add")),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   Future<void> _openDayNoteDialog() async {
