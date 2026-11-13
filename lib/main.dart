@@ -31989,38 +31989,116 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _openDayNoteDialog() async {
     final ctrl = TextEditingController(text: dayNotes[selectedDayKey] ?? "");
-    await showDialog(
+    const gold = Color(0xFFC9A24A);
+    void save(BuildContext c) {
+      final text = ctrl.text.trim();
+      setState(() {
+        if (text.isEmpty) {
+          dayNotes.remove(selectedDayKey);
+        } else {
+          dayNotes[selectedDayKey] = text;
+        }
+      });
+      _saveAppState();
+      Navigator.pop(c);
+    }
+
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text("${t("day_note")} ($selectedDayKey)"),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLines: 6,
-          minLines: 3,
-          decoration: _touchInputDecoration(t("note_hint")),
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
+        child: SizedBox(
+          height: MediaQuery.of(c).size.height * 0.75,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 4),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+                child: Row(children: [
+                  const Icon(Icons.edit_note, color: gold, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t("day_note"),
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                        Text(_dayLabelForKey(selectedDayKey),
+                            style: TextStyle(fontSize: 12.5, color: context.sol.muted)),
+                      ],
+                    ),
+                  ),
+                  IconButton(onPressed: () => Navigator.pop(c), icon: const Icon(Icons.close)),
+                ]),
+              ),
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    expands: true,
+                    maxLines: null,
+                    minLines: null,
+                    textAlignVertical: TextAlignVertical.top,
+                    keyboardType: TextInputType.multiline,
+                    textCapitalization: TextCapitalization.sentences,
+                    style: const TextStyle(fontSize: 16, height: 1.5),
+                    decoration: InputDecoration(
+                      hintText: t("note_hint"),
+                      hintStyle: const TextStyle(color: Colors.white30),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      isCollapsed: true,
+                    ),
+                  ),
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Row(children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(c),
+                        child: Text(t("cancel")),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => save(c),
+                        child: Text(t("save")),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(t("cancel")),
-          ),
-          TextButton(
-            onPressed: () {
-              final text = ctrl.text.trim();
-              setState(() {
-                if (text.isEmpty) {
-                  dayNotes.remove(selectedDayKey);
-                } else {
-                  dayNotes[selectedDayKey] = text;
-                }
-              });
-              _saveAppState();
-              Navigator.pop(context);
-            },
-            child: Text(t("save")),
-          ),
-        ],
       ),
     );
   }
