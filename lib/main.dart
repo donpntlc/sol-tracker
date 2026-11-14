@@ -793,7 +793,9 @@ class _ShoppingListEntry {
     this.isNote = false,
     this.linkedFoodName,
     this.recipeSourceName,
-  });
+    List<String>? tags,
+    this.cat,
+  }) : tags = tags ?? <String>[];
   String id;
   String groupId;
   String label;
@@ -802,6 +804,10 @@ class _ShoppingListEntry {
   bool isNote;
   String? linkedFoodName;
   String? recipeSourceName;
+  /// Tags wie „Aldi“, „Monat“ — zum Filtern.
+  List<String> tags;
+  /// Abteilung (z. B. „Kühlregal“); null = automatisch.
+  String? cat;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -812,6 +818,8 @@ class _ShoppingListEntry {
         'n': isNote,
         'f': linkedFoodName,
         'rs': recipeSourceName,
+        if (tags.isNotEmpty) 't': tags,
+        if (cat != null) 'c': cat,
       };
 
   factory _ShoppingListEntry.fromMap(Map<String, dynamic> m) {
@@ -824,6 +832,8 @@ class _ShoppingListEntry {
       isNote: m['n'] == true,
       linkedFoodName: m['f']?.toString(),
       recipeSourceName: m['rs']?.toString(),
+      tags: (m['t'] is List) ? (m['t'] as List).map((e) => e.toString()).toList() : null,
+      cat: m['c']?.toString(),
     );
   }
 
@@ -836,6 +846,8 @@ class _ShoppingListEntry {
         isNote: isNote,
         linkedFoodName: linkedFoodName,
         recipeSourceName: recipeSourceName,
+        tags: List<String>.from(tags),
+        cat: cat,
       );
 }
 
@@ -8903,6 +8915,18 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "shop_qty_hint": "z. B. 2 Packungen, 500 g",
+      "shop_aisle": "Abteilung",
+      "shop_tags": "Tags",
+      "shop_new_tag_hint": "Neuer Tag, z. B. Aldi, Coop …",
+      "shop_view_all": "Alles in einer Liste",
+      "shop_view_aisle": "Nach Abteilung",
+      "shop_quick_hint": "Was brauchst du?",
+      "shop_tag_all": "Alle",
+      "shop_all_done": "Alles erledigt — nichts mehr auf der Liste.",
+      "shop_to_buy": "Einkaufen",
+      "shop_recent": "Zuletzt gekauft",
+      "shop_help": "Antippen = gekauft · Lange drücken = Menge, Abteilung, Tags (z. B. Aldi) · Tags oben filtern.",
       "gen2_own_pick": "Eigenes Lebensmittel wählen …",
       "gen2_own_amount": "Menge (optional)",
       "gen2_own_amount_hint": "Leer = automatisch passend berechnen",
@@ -10268,6 +10292,18 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "shop_qty_hint": "e.g. 2 packs, 500 g",
+      "shop_aisle": "Aisle",
+      "shop_tags": "Tags",
+      "shop_new_tag_hint": "New tag, e.g. Aldi …",
+      "shop_view_all": "One list",
+      "shop_view_aisle": "By aisle",
+      "shop_quick_hint": "What do you need?",
+      "shop_tag_all": "All",
+      "shop_all_done": "All done — nothing left on the list.",
+      "shop_to_buy": "To buy",
+      "shop_recent": "Recently bought",
+      "shop_help": "Tap = bought · Long-press = amount, aisle, tags (e.g. Aldi) · Filter by tags above.",
       "gen2_own_pick": "Choose your own food …",
       "gen2_own_amount": "Amount (optional)",
       "gen2_own_amount_hint": "Empty = calculate automatically",
@@ -34801,42 +34837,187 @@ class _ShoppingListsEditor extends StatefulWidget {
 class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
   late _ShoppingListBundle day;
   late _ShoppingListBundle month;
-  bool isMonthTab = false;
+  String tagFilter = ""; // "" = alle
+  bool byAisle = true; // nach Abteilung gruppieren
+  bool showDone = false;
+  final _addCtrl = TextEditingController();
+  final _addFocus = FocusNode();
+
+  static const gold = Color(0xFFC9A24A);
+
+  /// Abteilungen (Reihenfolge wie im Laden) mit Emoji.
+  static const List<(String, String)> aisles = [
+    ("Obst & Gemüse", "🥦"),
+    ("Brot & Backwaren", "🍞"),
+    ("Kühlregal", "🥛"),
+    ("Fleisch & Fisch", "🥩"),
+    ("Nudeln, Reis & Getreide", "🍝"),
+    ("Konserven & Vorrat", "🥫"),
+    ("Snacks & Süßes", "🍫"),
+    ("Getränke", "🥤"),
+    ("Tiefkühl", "🧊"),
+    ("Supplements", "💪"),
+    ("Haushalt", "🧴"),
+    ("Sonstiges", "📦"),
+  ];
+
+  String _emojiOf(String aisle) =>
+      aisles.firstWhere((a) => a.$1 == aisle, orElse: () => aisles.last).$2;
 
   @override
   void initState() {
     super.initState();
     day = widget.day;
     month = widget.month;
+    _migrate();
+  }
+
+  @override
+  void dispose() {
+    _addCtrl.dispose();
+    _addFocus.dispose();
+    super.dispose();
+  }
+
+  /// Alte Struktur (Tag/Monat, Läden als Gruppen) → eine Liste mit Tags.
+  void _migrate() {
+    var changed = false;
+    for (final b in [day, month]) {
+      for (final e in b.entries) {
+        if (e.groupId != "_def") {
+          final g = b.groups.where((x) => x.id == e.groupId).toList();
+          final name = g.isEmpty ? "" : g.first.name.trim();
+          if (name.isNotEmpty && !e.tags.contains(name)) e.tags.add(name);
+          e.groupId = "_def";
+          changed = true;
+        }
+      }
+    }
+    if (month.entries.isNotEmpty) {
+      for (final e in month.entries) {
+        if (!e.tags.contains(widget.t("shop_tab_month"))) e.tags.add(widget.t("shop_tab_month"));
+        day.entries.add(e);
+      }
+      month.entries.clear();
+      changed = true;
+    }
+    if (changed) WidgetsBinding.instance.addPostFrameCallback((_) => _persist());
   }
 
   void _persist() => widget.onSaved(day, month);
 
-  /// Liste als Text: offene Einträge, nach Gruppe/Laden.
-  String _listAsText(_ShoppingListBundle b) {
+  Food? _foodOf(_ShoppingListEntry e) {
+    final n = e.linkedFoodName ?? e.label;
+    for (final f in widget.foods) {
+      if (f.name == n) return f;
+    }
+    return null;
+  }
+
+  /// Abteilung automatisch aus Name / Lebensmittel-Kategorie.
+  String _aisleOf(_ShoppingListEntry e) {
+    if (e.cat != null && e.cat!.isNotEmpty) return e.cat!;
+    final n = e.label.toLowerCase();
+    bool has(List<String> l) => l.any(n.contains);
+    if (has(["tk ", "tk-", "tiefkühl", "gefroren", "eis "]) || n.startsWith("tk")) return "Tiefkühl";
+    if (has(["whey", "proteinpulver", "protein pulver", "isolat", "eaa", "kreatin", "creatin", "vitamin", "omega"])) {
+      return "Supplements";
+    }
+    final f = _foodOf(e);
+    if (f != null && (f.isInCategory("Obst") || f.isInCategory("Gemüse"))) return "Obst & Gemüse";
+    if (has(["apfel", "banane", "beere", "tomate", "gurke", "paprika", "salat", "zucchini", "brokkoli",
+      "broccoli", "spinat", "karotte", "zwiebel", "knoblauch", "kartoffel", "avocado", "zitrone", "orange",
+      "kaki", "mango", "kiwi", "pilz", "blumenkohl", "trauben"])) {
+      return "Obst & Gemüse";
+    }
+    if (has(["dose", "konserve", "bohnen", "mais", "kichererbsen", "linsen", "passata", "öl", "essig",
+      "gewürz", "salz", "pfeffer", "honig", "marmelade", "erdnussbutter"])) {
+      return "Konserven & Vorrat";
+    }
+    if (has(["quark", "skyr", "joghurt", "jogurt", "milch", "käse", "butter", "sahne", "rahm", "ei ",
+      "eier", "tofu", "tempeh", "hüttenkäse", "mozzarella", "feta"])) {
+      return "Kühlregal";
+    }
+    if (has(["hähnchen", "huhn", "pute", "rind", "schwein", "hack", "lachs", "fisch", "thunfisch",
+      "shrimp", "garnele", "schinken", "wurst", "steak", "seelachs", "schellfisch", "kabeljau"])) {
+      return "Fleisch & Fisch";
+    }
+    if (has(["brot", "toast", "brötchen", "wrap", "tortilla", "bagel", "croissant"])) return "Brot & Backwaren";
+    if (has(["reis", "nudel", "pasta", "hafer", "quinoa", "couscous", "bulgur", "grieß", "cornflakes",
+      "müsli", "mehl", "spaghetti"])) {
+      return "Nudeln, Reis & Getreide";
+    }
+    if (has(["schoko", "riegel", "chips", "cookie", "keks", "gummi", "bonbon", "nüsse", "nuss", "mandel",
+      "reiswaffel", "snack", "datteln"])) {
+      return "Snacks & Süßes";
+    }
+    if (has(["wasser", "saft", "cola", "limo", "getränk", "kaffee", "tee", "energy"])) return "Getränke";
+    if (has(["spülmittel", "klopapier", "toilettenpapier", "waschmittel", "shampoo", "zahnpasta",
+      "müllbeutel", "seife", "duschgel", "küchenrolle"])) {
+      return "Haushalt";
+    }
+    if (f != null) {
+      if (f.category == "Protein") return "Kühlregal";
+      if (f.category == "Carbs") return "Nudeln, Reis & Getreide";
+      if (f.category == "Fett") return "Konserven & Vorrat";
+    }
+    return "Sonstiges";
+  }
+
+  List<String> get _allTags {
+    final s = <String>{};
+    for (final e in day.entries) {
+      s.addAll(e.tags);
+    }
+    return s.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  List<_ShoppingListEntry> get _visible => day.entries
+      .where((e) => tagFilter.isEmpty || e.tags.contains(tagFilter))
+      .toList();
+
+  void _quickAdd([String? text, Food? food]) {
+    final label = (text ?? _addCtrl.text).trim();
+    if (label.isEmpty) return;
+    setState(() {
+      // Schon auf der Liste (erledigt)? → wieder aktiv.
+      final ex = day.entries.where((e) => e.label.toLowerCase() == label.toLowerCase()).toList();
+      if (ex.isNotEmpty) {
+        ex.first.done = false;
+        if (tagFilter.isNotEmpty && !ex.first.tags.contains(tagFilter)) ex.first.tags.add(tagFilter);
+      } else {
+        day.entries.add(_ShoppingListEntry(
+          id: _newShoppingId(),
+          groupId: "_def",
+          label: label,
+          linkedFoodName: food?.name,
+          tags: tagFilter.isEmpty ? null : [tagFilter],
+        ));
+      }
+      _addCtrl.clear();
+    });
+    _persist();
+  }
+
+  String _listAsText() {
     final t = widget.t;
-    final out = StringBuffer(
-        "🛒 ${t("shop_title")} · ${isMonthTab ? t("shop_tab_month") : t("shop_tab_day")}\n");
-    var any = false;
-    for (final g in b.groups) {
-      final items =
-          b.entries.where((e) => e.groupId == g.id && !e.done).toList();
+    final out = StringBuffer("🛒 ${t("shop_title")}${tagFilter.isEmpty ? "" : " · $tagFilter"}\n");
+    final open = _visible.where((e) => !e.done).toList();
+    if (open.isEmpty) out.write("\n${t("shop_empty")}\n");
+    for (final a in aisles) {
+      final items = open.where((e) => _aisleOf(e) == a.$1).toList();
       if (items.isEmpty) continue;
-      any = true;
-      final name = g.name.trim().isEmpty ? t("shop_group_general") : g.name.trim();
-      if (b.groups.length > 1) out.write("\n$name\n");
+      out.write("\n${a.$2} ${a.$1}\n");
       for (final e in items) {
         final q = e.quantity.trim();
         out.write("• ${e.label.trim()}${q.isEmpty ? "" : " — $q"}\n");
       }
     }
-    if (!any) out.write("\n${t("shop_empty")}\n");
     return out.toString().trimRight();
   }
 
-  Future<void> _shareList(_ShoppingListBundle b) async {
-    final text = _listAsText(b);
-    // Teilen-Menü zuerst (ohne await davor), sonst blockt Safari.
+  Future<void> _shareList() async {
+    final text = _listAsText();
     final shared = await shareText(widget.t("shop_title"), text);
     if (shared || !mounted) return;
     await Clipboard.setData(ClipboardData(text: text));
@@ -34846,458 +35027,351 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
     );
   }
 
-  _ShoppingListBundle get _b => isMonthTab ? month : day;
-
-  Future<void> _moveEntryDialog(
-      _ShoppingListBundle b, _ShoppingListEntry e) async {
-    var gid = e.groupId;
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setL) => AlertDialog(
-          title: Text(widget.t("shop_move_group")),
-          content: DropdownButtonFormField<String>(
-            value: gid,
-            isExpanded: true,
-            items: b.groups
-                .map(
-                  (g) => DropdownMenuItem<String>(
-                    value: g.id,
-                    child: Text(
-                      b.resolveGroupLabel(g.id, widget.t),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setL(() => gid = v ?? gid),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(widget.t("shop_cancel")),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() => e.groupId = gid);
-                _persist();
-                Navigator.pop(ctx);
-              },
-              child: Text(widget.t("save")),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _entryTile(_ShoppingListBundle b, _ShoppingListEntry e) {
-    final parts = <String>[];
-    if (e.quantity.isNotEmpty) parts.add(e.quantity);
-    if (e.recipeSourceName != null && e.recipeSourceName!.trim().isNotEmpty) {
-      parts.add("«${e.recipeSourceName}»");
-    }
-    final sub = parts.join(" · ");
-
-    return Dismissible(
-      key: ValueKey<String>(e.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) {
-        setState(() => b.entries.removeWhere((x) => x.id == e.id));
-        _persist();
-      },
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 18),
-        color: Colors.red.withValues(alpha: 0.28),
-        child: const Icon(Icons.delete_outline),
-      ),
-      child: CheckboxListTile(
-        value: e.done,
-        onChanged: (v) {
-          setState(() => e.done = v ?? false);
-          _persist();
-        },
-        title: Text(
-          e.label,
-          style: TextStyle(
-            decoration: e.done ? TextDecoration.lineThrough : null,
-            color: e.done ? Colors.white38 : Colors.white,
-          ),
-        ),
-        subtitle: sub.isEmpty
-            ? null
-            : Text(sub, style: const TextStyle(fontSize: 11.5)),
-        secondary: IconButton(
-          tooltip: widget.t("shop_move_group"),
-          icon: const Icon(Icons.drive_file_move_outline, size: 20),
-          onPressed: () => _moveEntryDialog(b, e),
-        ),
-        controlAffinity: ListTileControlAffinity.leading,
-      ),
-    );
-  }
-
-  Widget _buildGroupSection(_ShoppingListBundle b, _ShoppingListGroup g) {
-    final items = b.entries.where((e) => e.groupId == g.id).toList();
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            title: Text(
-              b.resolveGroupLabel(g.id, widget.t),
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            trailing: g.id != "_def"
-                ? IconButton(
-                    icon:
-                        const Icon(Icons.delete_outline, color: Colors.white60),
-                    tooltip: widget.t("delete"),
-                    onPressed: () {
-                      setState(() {
-                        for (final e in b.entries) {
-                          if (e.groupId == g.id) e.groupId = "_def";
-                        }
-                        b.groups.removeWhere((x) => x.id == g.id);
-                      });
-                      _persist();
-                    },
-                  )
-                : null,
-          ),
-          if (items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              child: Text(
-                widget.t("shop_empty"),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.32),
-                ),
-              ),
-            )
-          else
-            ...items.map((e) => _entryTile(b, e)),
-        ],
-      ),
-    );
-  }
-
-  void _addGroupDialog() {
-    final c = TextEditingController();
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(widget.t("shop_new_group")),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: widget.t("shop_new_group_hint"),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(widget.t("shop_cancel")),
-          ),
-          TextButton(
-            onPressed: () {
-              final n = c.text.trim();
-              if (n.isEmpty) return;
-              setState(() {
-                _b.groups.add(_ShoppingListGroup(id: _newShoppingId(), name: n));
-              });
-              _persist();
-              Navigator.pop(ctx);
-            },
-            child: Text(widget.t("save")),
-          ),
-        ],
-      ),
-    ).then((_) => c.dispose());
-  }
-
-  void _addNoteDialog() {
-    final c = TextEditingController();
-    var gid = _b.groups.first.id;
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setL) => AlertDialog(
-          title: Text(widget.t("shop_add_note")),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: gid,
-                isExpanded: true,
-                decoration: InputDecoration(labelText: widget.t("shop_group_pick")),
-                items: _b.groups
-                    .map(
-                      (g) => DropdownMenuItem<String>(
-                        value: g.id,
-                        child: Text(
-                          _b.resolveGroupLabel(g.id, widget.t),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setL(() => gid = v ?? gid),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: c,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: widget.t("shop_add_note_hint"),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(widget.t("shop_cancel")),
-            ),
-            TextButton(
-              onPressed: () {
-                final text = c.text.trim();
-                if (text.isEmpty) return;
-                setState(() {
-                  _b.entries.add(
-                    _ShoppingListEntry(
-                      id: _newShoppingId(),
-                      groupId: gid,
-                      label: text,
-                      isNote: true,
-                    ),
-                  );
-                });
-                _persist();
-                Navigator.pop(ctx);
-              },
-              child: Text(widget.t("save")),
-            ),
-          ],
-        ),
-      ),
-    ).then((_) => c.dispose());
-  }
-
-  Future<void> _pickFoodFromDb() async {
-    var needle = "";
-    final food = await showModalBottomSheet<Food>(
+  /// Bearbeiten: Menge, Abteilung, Tags, Löschen.
+  Future<void> _editEntry(_ShoppingListEntry e) async {
+    final t = widget.t;
+    final nameC = TextEditingController(text: e.label);
+    final qtyC = TextEditingController(text: e.quantity);
+    final newTagC = TextEditingController();
+    var aisle = _aisleOf(e);
+    final tags = List<String>.from(e.tags);
+    final res = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: const Color(0xFF161618),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setL) {
-            final filtered = widget.foods.where((f) {
-              if (needle.trim().isEmpty) return true;
-              return f.name.toLowerCase().contains(needle.trim().toLowerCase());
-            }).toList();
-            final h = MediaQuery.sizeOf(ctx).height * 0.72;
-            return SafeArea(
-              child: SizedBox(
-                height: h,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: widget.t("search_food"),
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onChanged: (v) => setL(() => needle = v),
-                      ),
-                    ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => StatefulBuilder(builder: (c, setL) {
+        final known = {..._allTags, ...tags}.toList()..sort();
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(children: [
+                    Text(_emojiOf(aisle), style: const TextStyle(fontSize: 26)),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: ListView.builder(
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final f = filtered[i];
-                          return ListTile(
-                            title: Text(f.name),
-                            onTap: () => Navigator.pop(ctx, f),
-                          );
-                        },
+                      child: TextField(
+                        controller: nameC,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                        decoration: const InputDecoration(border: InputBorder.none, isDense: true),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-    if (food == null || !mounted) return;
-
-    var gid = _b.groups.first.id;
-    final qty = TextEditingController(text: "1");
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setL) => AlertDialog(
-          title: Text(food.name),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: gid,
-                isExpanded: true,
-                decoration:
-                    InputDecoration(labelText: widget.t("shop_group_pick")),
-                items: _b.groups
-                    .map(
-                      (g) => DropdownMenuItem<String>(
-                        value: g.id,
-                        child: Text(
-                          _b.resolveGroupLabel(g.id, widget.t),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                  ]),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: qtyC,
+                    decoration: InputDecoration(
+                      labelText: t("shop_quantity"),
+                      hintText: t("shop_qty_hint"),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(t("shop_aisle").toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 10.5, letterSpacing: 1.1, color: Colors.white54, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final a in aisles)
+                      ChoiceChip(
+                        visualDensity: VisualDensity.compact,
+                        showCheckmark: false,
+                        label: Text("${a.$2} ${a.$1}", style: const TextStyle(fontSize: 12)),
+                        selected: aisle == a.$1,
+                        onSelected: (_) => setL(() => aisle = a.$1),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) => setL(() => gid = v ?? gid),
+                  ]),
+                  const SizedBox(height: 14),
+                  Text(t("shop_tags").toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 10.5, letterSpacing: 1.1, color: Colors.white54, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final tg in known)
+                      FilterChip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text(tg, style: const TextStyle(fontSize: 12)),
+                        selected: tags.contains(tg),
+                        onSelected: (v) => setL(() => v ? tags.add(tg) : tags.remove(tg)),
+                      ),
+                  ]),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: newTagC,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.sell_outlined, size: 18),
+                      hintText: t("shop_new_tag_hint"),
+                    ),
+                    onSubmitted: (v) {
+                      final x = v.trim();
+                      if (x.isNotEmpty && !tags.contains(x)) setL(() => tags.add(x));
+                      newTagC.clear();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(foregroundColor: const Color(0xFFE57373)),
+                      onPressed: () => Navigator.pop(c, "delete"),
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: Text(t("delete")),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: () {
+                        final x = newTagC.text.trim();
+                        if (x.isNotEmpty && !tags.contains(x)) tags.add(x);
+                        Navigator.pop(c, "save");
+                      },
+                      child: Text(t("save")),
+                    ),
+                  ]),
+                ],
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: qty,
-                decoration:
-                    InputDecoration(labelText: widget.t("shop_quantity")),
-              ),
-            ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(widget.t("shop_cancel")),
+        );
+      }),
+    );
+    if (res == null) return;
+    setState(() {
+      if (res == "delete") {
+        day.entries.removeWhere((x) => x.id == e.id);
+      } else {
+        e.label = nameC.text.trim().isEmpty ? e.label : nameC.text.trim();
+        e.quantity = qtyC.text.trim();
+        e.tags = tags;
+        e.cat = aisle;
+      }
+    });
+    _persist();
+  }
+
+  Widget _tile(_ShoppingListEntry e) {
+    final aisle = _aisleOf(e);
+    final done = e.done;
+    return GestureDetector(
+      onTap: () {
+        setState(() => e.done = !e.done);
+        HapticFeedback.selectionClick();
+        _persist();
+      },
+      onLongPress: () => _editEntry(e),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+        decoration: BoxDecoration(
+          color: done ? Colors.white.withValues(alpha: 0.03) : const Color(0xFF2A2418),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: done ? Colors.white.withValues(alpha: 0.06) : gold.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Opacity(
+              opacity: done ? 0.35 : 1,
+              child: Text(_emojiOf(aisle), style: const TextStyle(fontSize: 26)),
             ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _b.entries.add(
-                    _ShoppingListEntry(
-                      id: _newShoppingId(),
-                      groupId: gid,
-                      label: food.name,
-                      quantity: qty.text.trim(),
-                      linkedFoodName: food.name,
-                    ),
-                  );
-                });
-                _persist();
-                Navigator.pop(ctx);
-              },
-              child: Text(widget.t("shop_add_to_list")),
+            const SizedBox(height: 6),
+            Text(
+              e.label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.15,
+                color: done ? Colors.white38 : Colors.white,
+              ),
             ),
+            if (e.quantity.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(e.quantity,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: done ? Colors.white24 : gold)),
+              ),
+            if (e.tags.isNotEmpty && !done)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(e.tags.join(" · "),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 9.5, color: Colors.white38)),
+              ),
           ],
         ),
       ),
     );
-    qty.dispose();
   }
+
+  Widget _grid(List<_ShoppingListEntry> items) => GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.95,
+        children: [for (final e in items) _tile(e)],
+      );
+
+  Widget _sectionHead(String text, {int? count}) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
+        child: Row(children: [
+          Text(text,
+              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white)),
+          if (count != null) ...[
+            const SizedBox(width: 6),
+            Text("$count", style: const TextStyle(fontSize: 12, color: Colors.white38)),
+          ],
+          const SizedBox(width: 10),
+          Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.07))),
+        ]),
+      );
 
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
-    final b = _b;
+    final vis = _visible;
+    final open = vis.where((e) => !e.done).toList();
+    final done = vis.where((e) => e.done).toList();
+    final q = _addCtrl.text.trim().toLowerCase();
+    final sugg = q.length < 2
+        ? <Food>[]
+        : widget.foods.where((f) => f.name.toLowerCase().contains(q)).take(8).toList();
+    final tags = _allTags;
     return Scaffold(
       appBar: AppBar(
         title: Text(t("shop_title")),
         actions: [
           IconButton(
+            tooltip: byAisle ? t("shop_view_all") : t("shop_view_aisle"),
+            icon: Icon(byAisle ? Icons.grid_view_rounded : Icons.view_agenda_outlined),
+            onPressed: () => setState(() => byAisle = !byAisle),
+          ),
+          IconButton(
             tooltip: t("shop_share"),
             icon: const Icon(Icons.ios_share),
-            onPressed: () => _shareList(b),
+            onPressed: _shareList,
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (v) {
-              if (v == "clear") {
-                setState(() => b.entries.removeWhere((e) => e.done));
-                _persist();
-              }
+        ],
+      ),
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(14, 6, 14, 30 + MediaQuery.paddingOf(context).bottom),
+        children: [
+          // ── Schnell hinzufügen ──
+          TextField(
+            controller: _addCtrl,
+            focusNode: _addFocus,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: t("shop_quick_hint"),
+              prefixIcon: const Icon(Icons.add, color: gold),
+              suffixIcon: _addCtrl.text.isEmpty
+                  ? null
+                  : IconButton(icon: const Icon(Icons.keyboard_return, color: gold), onPressed: () => _quickAdd()),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.05),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            ),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) {
+              _quickAdd();
+              _addFocus.requestFocus();
             },
-            itemBuilder: (ctx) => [
-              PopupMenuItem(
-                value: "clear",
-                child: Text(t("shop_clear_done")),
+          ),
+          if (sugg.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final f in sugg)
+                  ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.add, size: 16, color: gold),
+                    label: Text(f.name, style: const TextStyle(fontSize: 12)),
+                    onPressed: () => _quickAdd(f.name, f),
+                  ),
+              ]),
+            ),
+          // ── Tags (filtern) ──
+          if (tags.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final tg in ["", ...tags])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        visualDensity: VisualDensity.compact,
+                        showCheckmark: false,
+                        avatar: tg.isEmpty ? null : const Icon(Icons.sell_outlined, size: 14),
+                        label: Text(tg.isEmpty ? t("shop_tag_all") : tg, style: const TextStyle(fontSize: 12.5)),
+                        selected: tagFilter == tg,
+                        onSelected: (_) => setState(() => tagFilter = tg),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (open.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Column(children: [
+                const Text("🛒", style: TextStyle(fontSize: 42)),
+                const SizedBox(height: 8),
+                Text(t("shop_all_done"),
+                    textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54)),
+              ]),
+            )
+          else if (byAisle) ...[
+            for (final a in aisles)
+              if (open.any((e) => _aisleOf(e) == a.$1)) ...[
+                _sectionHead("${a.$2}  ${a.$1}", count: open.where((e) => _aisleOf(e) == a.$1).length),
+                _grid(open.where((e) => _aisleOf(e) == a.$1).toList()),
+              ],
+          ] else ...[
+            _sectionHead(t("shop_to_buy"), count: open.length),
+            _grid(open),
+          ],
+          if (done.isNotEmpty) ...[
+            InkWell(
+              onTap: () => setState(() => showDone = !showDone),
+              child: _sectionHead("${showDone ? "▾" : "▸"}  ${t("shop_recent")}", count: done.length),
+            ),
+            if (showDone) ...[
+              _grid(done),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() => day.entries.removeWhere((e) => e.done && done.contains(e)));
+                    _persist();
+                  },
+                  child: Text(t("shop_clear_done")),
+                ),
               ),
             ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-            child: SegmentedButton<bool>(
-              segments: [
-                ButtonSegment<bool>(
-                  value: false,
-                  label: Text(t("shop_tab_day")),
-                ),
-                ButtonSegment<bool>(
-                  value: true,
-                  label: Text(t("shop_tab_month")),
-                ),
-              ],
-              selected: {isMonthTab},
-              onSelectionChanged: (s) =>
-                  setState(() => isMonthTab = s.first),
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.only(
-                bottom: 20 + MediaQuery.paddingOf(context).bottom,
-              ),
-              children: [
-                for (final g in b.groups) _buildGroupSection(b, g),
-              ],
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: "shop_note",
-            tooltip: t("shop_add_note"),
-            onPressed: _addNoteDialog,
-            child: const Icon(Icons.sticky_note_2_outlined),
-          ),
+          ],
           const SizedBox(height: 10),
-          FloatingActionButton.small(
-            heroTag: "shop_grp",
-            tooltip: t("shop_new_group"),
-            onPressed: _addGroupDialog,
-            child: const Icon(Icons.create_new_folder_outlined),
-          ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: "shop_db",
-            tooltip: t("shop_add_from_db"),
-            onPressed: _pickFoodFromDb,
-            child: const Icon(Icons.add_shopping_cart),
-          ),
+          Text(t("shop_help"),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11.5, color: Colors.white30, height: 1.4)),
         ],
       ),
     );
