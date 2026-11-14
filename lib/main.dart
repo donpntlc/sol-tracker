@@ -9204,6 +9204,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "food_detail_amount": "Menge",
       "food_group_portions": "Mengenangaben (optional)",
       "portion_add_row": "Menge hinzufügen",
       "portion_name_hint": "z. B. 1 Pizza",
@@ -10617,6 +10618,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "food_detail_amount": "Amount",
       "food_group_portions": "Portions (optional)",
       "portion_add_row": "Add portion",
       "portion_name_hint": "e.g. 1 pizza",
@@ -20613,6 +20615,7 @@ _pickField(
   /// Lebensmittel als Fenster öffnen (statt aufklappen).
   void _openFoodDetailSheet(Food food) {
     const gold = Color(0xFFC9A24A);
+    (String, double)? selPortion;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -20671,12 +20674,88 @@ _pickField(
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 30),
-                  child: _foodCardDetailContent(
-                    food,
-                    showUserDelete: !food.isDefault,
-                    useDatabasePcfStyling: true,
-                    imageHeight: 210,
-                  ),
+                  child: StatefulBuilder(builder: (c2, setP) {
+                    final portions = _portionsFor(food);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (portions.isNotEmpty) ...[
+                          _dlgGroup(t("food_detail_amount")),
+                          Wrap(spacing: 8, runSpacing: 8, children: [
+                            for (final p in <(String, double)?>[null, ...portions])
+                              ChoiceChip(
+                                showCheckmark: false,
+                                label: Text(p == null
+                                    ? "100 g"
+                                    : "${p.$1} · ${p.$2.round()} g"),
+                                selected: selPortion == p,
+                                selectedColor: gold.withValues(alpha: 0.18),
+                                side: BorderSide(
+                                    color: selPortion == p
+                                        ? gold
+                                        : Colors.white24),
+                                labelStyle: TextStyle(
+                                    color: selPortion == p ? gold : Colors.white70,
+                                    fontWeight: FontWeight.w600),
+                                onSelected: (_) => setP(() => selPortion = p),
+                              ),
+                          ]),
+                          if (selPortion != null) ...[
+                            const SizedBox(height: 12),
+                            Builder(builder: (_) {
+                              final f = selPortion!.$2 / 100.0;
+                              Widget col(String v, String l) => Expanded(
+                                    child: Column(children: [
+                                      Text(v,
+                                          style: const TextStyle(
+                                              fontSize: 19,
+                                              fontWeight: FontWeight.w800,
+                                              color: gold)),
+                                      const SizedBox(height: 2),
+                                      Text(l,
+                                          style: const TextStyle(
+                                              fontSize: 11.5, color: Colors.white54)),
+                                    ]),
+                                  );
+                              return Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: gold.withValues(alpha: 0.5)),
+                                  color: gold.withValues(alpha: 0.06),
+                                ),
+                                child: Column(children: [
+                                  Text(
+                                      "${selPortion!.$1} · ${selPortion!.$2.round()} g",
+                                      style: const TextStyle(
+                                          fontSize: 12.5, color: Colors.white70)),
+                                  const SizedBox(height: 8),
+                                  Row(children: [
+                                    col("${(food.protein * f).round()} g", "P"),
+                                    col("${(food.carbs * f).round()} g", "K"),
+                                    col("${(food.fat * f).round()} g", "F"),
+                                    col("${(food.calories * f).round()}", "kcal"),
+                                  ]),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                      "${t("of_which_sugar")} ${(food.sugar * f).round()} g · ${t("of_which_fiber")} ${(food.fiber * f).round()} g${diabetic ? " · ${fmtKE(food.carbs * f)} $carbUnitLabel" : ""}",
+                                      style: const TextStyle(
+                                          fontSize: 11.5, color: Colors.white54)),
+                                ]),
+                              );
+                            }),
+                          ],
+                          const SizedBox(height: 14),
+                        ],
+                        _foodCardDetailContent(
+                          food,
+                          showUserDelete: !food.isDefault,
+                          useDatabasePcfStyling: true,
+                          imageHeight: 210,
+                        ),
+                      ],
+                    );
+                  }),
                 ),
               ),
             ],
