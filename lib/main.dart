@@ -8962,6 +8962,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_still_open": "Noch offen",
       "gen2_own_fits": "Passt genau: {g} g",
       "gen2_own_take": "Übernehmen",
       "shop_aisle_hint": "Tippen = hinzufügen/entfernen · Lange drücken = Haupt-Abteilung (gold)",
@@ -10344,6 +10345,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_still_open": "Still open",
       "gen2_own_fits": "Exact fit: {g} g",
       "gen2_own_take": "Use",
       "shop_aisle_hint": "Tap = add/remove · Long-press = main aisle (gold)",
@@ -28787,9 +28789,20 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 child: Row(
                   children: [
-                    Text(t("gen2_open"), style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                    // Beim Zusammenstellen: zeigt, was nach der Auswahl noch offen ist.
+                    Text(tab == 1 && sel.isNotEmpty ? t("gen2_still_open") : t("gen2_open"),
+                        style: const TextStyle(fontSize: 12, color: Colors.white70)),
                     const SizedBox(width: 10),
-                    Expanded(child: macroLine(tK, tP, tC, tF, big: true)),
+                    Expanded(
+                      child: tab == 1 && sel.isNotEmpty
+                          ? macroLine(
+                              rem(tK - sum((f) => f.calories)),
+                              rem(tP - sum((f) => f.protein)),
+                              rem(tC - sum((f) => f.carbs)),
+                              rem(tF - sum((f) => f.fat)),
+                              big: true)
+                          : macroLine(tK, tP, tC, tF, big: true),
+                    ),
                   ],
                 ),
               ),
