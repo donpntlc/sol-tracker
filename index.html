@@ -109,28 +109,80 @@
     };
   </script>
   <script>
-    // Lädt immer die neueste Version: latest.json nie aus dem Cache,
-    // jede Version liegt in einem eigenen Ordner (b/<version>/).
+    // Versionen: Beim Öffnen wird die neueste Version geladen. Klappt sie nicht
+    // (z. B. noch nicht fertig veröffentlicht → schwarzer Bildschirm), wird automatisch
+    // die letzte funktionierende Version gestartet. Während die App offen ist,
+    // wird nie gewechselt — nur ein Hinweis „Neue Version verfügbar“.
     (function () {
-      function start(base) {
+      var OK = 'sol_tracker_ok_base', LAST = 'sol_tracker_latest_base', SKIP = 'sol_tracker_skip_base';
+      function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+      function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+      var running = null;
+
+      function start(base, fallback) {
+        running = base;
         var b = document.createElement('base');
         b.href = base;
         document.head.appendChild(b);
+        var shown = false;
+        window.addEventListener('flutter-first-frame', function () {
+          shown = true;
+          set(OK, base);
+          try { sessionStorage.removeItem(SKIP); } catch (e) {}
+        });
+        function bail() {
+          if (shown || !fallback || fallback === base) return;
+          try { sessionStorage.setItem(SKIP, base); } catch (e) {}
+          location.reload();
+        }
         var s = document.createElement('script');
         s.src = base + 'flutter_bootstrap.js';
         s.async = true;
+        s.onerror = bail;
         document.body.appendChild(s);
+        setTimeout(bail, 15000);
       }
+
+      function showUpdateBanner() {
+        if (document.getElementById('sol-update')) return;
+        var d = document.createElement('div');
+        d.id = 'sol-update';
+        d.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 8px);' +
+          'z-index:99999;background:#1c1c1e;color:#eee;border:1px solid rgba(201,162,74,.55);border-radius:14px;' +
+          'padding:12px 40px 12px 14px;font:600 14px -apple-system,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.5)';
+        d.innerHTML = '<span style="color:#C9A24A">Neue Version verfügbar</span><br>' +
+          '<span style="font-weight:400;font-size:12.5px;color:#aaa">App ganz schließen und neu öffnen, um sie zu laden.</span>' +
+          '<span id="sol-update-x" style="position:absolute;right:12px;top:10px;font-size:18px;color:#888;cursor:pointer">✕</span>';
+        document.body.appendChild(d);
+        document.getElementById('sol-update-x').onclick = function () { d.remove(); };
+      }
+
+      function checkForUpdate() {
+        if (!running) return;
+        fetch('latest.json?t=' + Date.now(), { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (j) { if (j.base && j.base !== running) showUpdateBanner(); })
+          .catch(function () {});
+      }
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) setTimeout(checkForUpdate, 800);
+      });
+      setInterval(checkForUpdate, 10 * 60 * 1000);
+
+      var ok = get(OK);
+      var skip = null;
+      try { skip = sessionStorage.getItem(SKIP); } catch (e) {}
       fetch('latest.json?t=' + Date.now(), { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          try { localStorage.setItem('sol_tracker_latest_base', j.base); } catch (e) {}
-          start(j.base);
+          set(LAST, j.base);
+          // Neue Version ist eben fehlgeschlagen → diesmal die funktionierende nehmen.
+          if (skip && skip === j.base && ok) start(ok, null);
+          else start(j.base, ok);
         })
         .catch(function () {
-          var last = null;
-          try { last = localStorage.getItem('sol_tracker_latest_base'); } catch (e) {}
-          if (last) start(last);
+          var last = ok || get(LAST);
+          if (last) start(last, null);
         });
     })();
   </script>
