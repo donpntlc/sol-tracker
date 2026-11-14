@@ -15209,6 +15209,94 @@ class _MainScreenState extends State<MainScreen> {
         ),
       );
 
+  /// Auswahlfeld (statt Standard-Dropdown): Label klein, Wert, Pfeil, feine Linie.
+  Widget _pickField({
+    required String label,
+    required String valueLabel,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0x22FFFFFF))),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+                const SizedBox(height: 2),
+                Text(valueLabel,
+                    style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Colors.white38),
+        ]),
+      ),
+    );
+  }
+
+  /// Auswahl als Blatt mit Linien zwischen den Optionen; null = abgebrochen.
+  Future<String?> _pickOptionSheet(
+      String title, List<(String, String)> opts, String current) {
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (c) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(c).size.height * 0.75),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 12, 6),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(title,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  ),
+                  _sheetCloseButton(c),
+                ]),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: opts.length,
+                  separatorBuilder: (_, __) => const Divider(
+                      height: 1, indent: 18, endIndent: 18, color: Color(0x22FFFFFF)),
+                  itemBuilder: (_, i) {
+                    final o = opts[i];
+                    final sel = o.$1 == current;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 18),
+                      title: Text(o.$2,
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                              color: sel ? const Color(0xFFC9A24A) : null)),
+                      trailing: sel
+                          ? const Icon(Icons.check, color: Color(0xFFC9A24A), size: 20)
+                          : null,
+                      onTap: () => Navigator.pop(c, o.$1),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Name mit optionalem Hersteller/Variante klein darunter.
   Widget _foodNameBrand(Food f, TextStyle style, {int maxLines = 2}) {
     final b = (f.brand ?? "").trim();
@@ -18243,42 +18331,16 @@ class _MainScreenState extends State<MainScreen> {
                     onStagedPickPathChanged: (v) => setD(() => stagedPickPath = v),
                   ),
                   const SizedBox(height: 10),
-                  Text(
-                    t("db_off_category"),
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.white60),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButton<String>(
-                    dropdownColor: const Color(0xFF1C1C1E),
-                    borderRadius: BorderRadius.circular(14),
-                    isExpanded: true,
-                    value: category,
-                    items: [
-                      "Carbs",
-                      "Protein",
-                      "Fett",
-                      "Ballaststoffe",
-                      "Obst",
-                      "Gemüse",
-                      "Rezepte",
-                    ]
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e,
-                            child: Text(_tCat(e)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      if (val == null) return;
-                      setD(() {
-                        category = val;
-                        if (val == "Obst") alsoFruit = false;
-                        if (val == "Gemüse") alsoVeg = false;
-                      });
-                    },
-                  ),
+_pickField(
+                  label: t("db_off_category"),
+                  valueLabel: _tCat(category),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("db_off_category"),
+                        [for (final c in const ["Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Mahlzeiten", "Rezepte"]) (c, _tCat(c))], category);
+                    if (v == null) return;
+                    setD(() { category = v; if (v == "Obst") alsoFruit = false; if (v == "Gemüse") alsoVeg = false; });
+                  },
+                ),
                   if (category == "Carbs")
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -18322,64 +18384,33 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Text(
-                    t("recipe_flavor_filter_label"),
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.white60),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButton<String?>(
-                    dropdownColor: const Color(0xFF1C1C1E),
-                    borderRadius: BorderRadius.circular(14),
-                    isExpanded: true,
-                    value: flavor,
-                    items: <DropdownMenuItem<String?>>[
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text(t("food_flavor_none")),
-                      ),
-                      DropdownMenuItem<String?>(
-                        value: "sweet",
-                        child: Text(t("recipe_flavor_sweet")),
-                      ),
-                      DropdownMenuItem<String?>(
-                        value: "salty",
-                        child: Text(t("recipe_flavor_salty")),
-                      ),
-                    ],
-                    onChanged: (v) => setD(() => flavor = v),
-                  ),
+_pickField(
+                  label: t("recipe_flavor_filter_label"),
+                  valueLabel: flavor == "sweet" ? t("recipe_flavor_sweet") : (flavor == "salty" ? t("recipe_flavor_salty") : t("food_flavor_none")),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("recipe_flavor_filter_label"), [
+                      ("", t("food_flavor_none")),
+                      ("sweet", t("recipe_flavor_sweet")),
+                      ("salty", t("recipe_flavor_salty")),
+                    ], flavor ?? "");
+                    if (v == null) return;
+                    setD(() => flavor = v.isEmpty ? null : v);
+                  },
+                ),
                   const SizedBox(height: 10),
-                  Text(
-                    t("type"),
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.white60),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButton<String>(
-                    dropdownColor: const Color(0xFF1C1C1E),
-                    borderRadius: BorderRadius.circular(14),
-                    isExpanded: true,
-                    value: (type.startsWith("Diät") || type.startsWith("Aufbau"))
-                        ? (type.startsWith("Diät") ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)")
-                        : "",
-                    items: [
-                      "",
-                      "Diät (Viel Volumen)",
-                      "Aufbau (Wenig Volumen)",
-                    ]
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e,
-                            child: Text(e.isEmpty ? t("food_flavor_none") : _tFullType(e)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      if (val == null) return;
-                      setD(() => type = val);
-                    },
-                  ),
+_pickField(
+                  label: t("type"),
+                  valueLabel: (type.startsWith("Diät") ? "Diät (Viel Volumen)" : (type.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : "")).isEmpty ? t("food_flavor_none") : _tFullType((type.startsWith("Diät") ? "Diät (Viel Volumen)" : (type.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : ""))),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("type"), [
+                      ("", t("food_flavor_none")),
+                      ("Diät (Viel Volumen)", _tFullType("Diät (Viel Volumen)")),
+                      ("Aufbau (Wenig Volumen)", _tFullType("Aufbau (Wenig Volumen)")),
+                    ], (type.startsWith("Diät") ? "Diät (Viel Volumen)" : (type.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : "")));
+                    if (v == null) return;
+                    setD(() => type = v);
+                  },
+                ),
                 ],
               ),
             ),
@@ -19667,29 +19698,14 @@ class _MainScreenState extends State<MainScreen> {
                       .copyWith(hintText: t("food_brand_hint")),
                 ),
                 const SizedBox(height: 14),
-                DropdownButtonFormField<String>(
-                  dropdownColor: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(14),
-                  value: saveCat,
-                  decoration: _touchInputDecoration(t("db_off_category")),
-                  items: [
-                    "Carbs",
-                    "Protein",
-                    "Fett",
-                    "Ballaststoffe",
-                  ]
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(_tCat(e)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
+_pickField(
+                  label: t("db_off_category"),
+                  valueLabel: _tCat(saveCat),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("db_off_category"),
+                        [for (final c in const ["Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Mahlzeiten", "Rezepte"]) (c, _tCat(c))], saveCat);
                     if (v == null) return;
-                    setL(() {
-                      saveCat = v;
-                    });
+                    setL(() { saveCat = v;  });
                   },
                 ),
                 if (saveCat == "Carbs")
@@ -19714,51 +19730,31 @@ class _MainScreenState extends State<MainScreen> {
                     },
                   ),
                 const SizedBox(height: 14),
-                DropdownButtonFormField<String>(
-                  dropdownColor: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(14),
-                  value: saveType,
-                  decoration: _touchInputDecoration(t("type")),
-                  items: [
-                    "",
-                    "Diät (Viel Volumen)",
-                    "Aufbau (Wenig Volumen)",
-                  ]
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(e.isEmpty ? t("food_flavor_none") : _tFullType(e)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
+_pickField(
+                  label: t("type"),
+                  valueLabel: (saveType.startsWith("Diät") ? "Diät (Viel Volumen)" : (saveType.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : "")).isEmpty ? t("food_flavor_none") : _tFullType((saveType.startsWith("Diät") ? "Diät (Viel Volumen)" : (saveType.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : ""))),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("type"), [
+                      ("", t("food_flavor_none")),
+                      ("Diät (Viel Volumen)", _tFullType("Diät (Viel Volumen)")),
+                      ("Aufbau (Wenig Volumen)", _tFullType("Aufbau (Wenig Volumen)")),
+                    ], (saveType.startsWith("Diät") ? "Diät (Viel Volumen)" : (saveType.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : "")));
                     if (v == null) return;
                     setL(() => saveType = v);
                   },
                 ),
                 const SizedBox(height: 14),
-                DropdownButtonFormField<String?>(
-                  dropdownColor: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(14),
-                  value: saveFlavor,
-                  decoration: _touchInputDecoration(
-                      t("recipe_flavor_filter_label")),
-                  items: <DropdownMenuItem<String?>>[
-                    DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text(t("food_flavor_none")),
-                    ),
-                    DropdownMenuItem<String?>(
-                      value: "sweet",
-                      child: Text(t("recipe_flavor_sweet")),
-                    ),
-                    DropdownMenuItem<String?>(
-                      value: "salty",
-                      child: Text(t("recipe_flavor_salty")),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    setL(() => saveFlavor = v);
+_pickField(
+                  label: t("recipe_flavor_filter_label"),
+                  valueLabel: saveFlavor == "sweet" ? t("recipe_flavor_sweet") : (saveFlavor == "salty" ? t("recipe_flavor_salty") : t("food_flavor_none")),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("recipe_flavor_filter_label"), [
+                      ("", t("food_flavor_none")),
+                      ("sweet", t("recipe_flavor_sweet")),
+                      ("salty", t("recipe_flavor_salty")),
+                    ], saveFlavor ?? "");
+                    if (v == null) return;
+                    setL(() => saveFlavor = v.isEmpty ? null : v);
                   },
                 ),
                 const SizedBox(height: 14),
@@ -21599,35 +21595,14 @@ class _MainScreenState extends State<MainScreen> {
                       setDialogState(() => stagedPickPath = v),
                 ),
                 _dlgGroup(t("food_group_class")),
-                Text(
-                  t("db_off_category"),
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.white60),
-                ),
-                const SizedBox(height: 4),
-                DropdownButton<String>(
-                  dropdownColor: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(14),
-                  isExpanded: true,
-                  value: category,
-                  items: [
-                    "Carbs",
-                    "Protein",
-                    "Fett",
-                    "Ballaststoffe",
-                    "Obst",
-                    "Gemüse",
-                    "Rezepte",
-                  ]
-                      .map((e) => DropdownMenuItem(value: e, child: Text(_tCat(e))))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val == null) return;
-                    setDialogState(() {
-                      category = val;
-                      if (val == "Obst") alsoFruit = false;
-                      if (val == "Gemüse") alsoVeg = false;
-                    });
+_pickField(
+                  label: t("db_off_category"),
+                  valueLabel: _tCat(category),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("db_off_category"),
+                        [for (final c in const ["Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Mahlzeiten", "Rezepte"]) (c, _tCat(c))], category);
+                    if (v == null) return;
+                    setDialogState(() { category = v; if (v == "Obst") alsoFruit = false; if (v == "Gemüse") alsoVeg = false; });
                   },
                 ),
                 if (category == "Carbs")
@@ -21681,61 +21656,33 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  t("recipe_flavor_filter_label"),
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.white60),
-                ),
-                const SizedBox(height: 4),
-                DropdownButton<String?>(
-                  dropdownColor: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(14),
-                  isExpanded: true,
-                  value: flavor,
-                  items: <DropdownMenuItem<String?>>[
-                    DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text(t("food_flavor_none")),
-                    ),
-                    DropdownMenuItem<String?>(
-                      value: "sweet",
-                      child: Text(t("recipe_flavor_sweet")),
-                    ),
-                    DropdownMenuItem<String?>(
-                      value: "salty",
-                      child: Text(t("recipe_flavor_salty")),
-                    ),
-                  ],
-                  onChanged: (v) => setDialogState(() => flavor = v),
+_pickField(
+                  label: t("recipe_flavor_filter_label"),
+                  valueLabel: flavor == "sweet" ? t("recipe_flavor_sweet") : (flavor == "salty" ? t("recipe_flavor_salty") : t("food_flavor_none")),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("recipe_flavor_filter_label"), [
+                      ("", t("food_flavor_none")),
+                      ("sweet", t("recipe_flavor_sweet")),
+                      ("salty", t("recipe_flavor_salty")),
+                    ], flavor ?? "");
+                    if (v == null) return;
+                    setDialogState(() => flavor = v.isEmpty ? null : v);
+                  },
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  t("type"),
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.white60),
-                ),
-                const SizedBox(height: 4),
-                DropdownButton<String>(
-                  dropdownColor: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(14),
-                  isExpanded: true,
-                  value: (type.startsWith("Diät") || type.startsWith("Aufbau"))
-                      ? (type.startsWith("Diät") ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)")
-                      : "",
-                  items: [
-                    "",
-                    "Diät (Viel Volumen)",
-                    "Aufbau (Wenig Volumen)",
-                  ]
-                      .map((e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(e.isEmpty ? t("food_flavor_none") : _tFullType(e))))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val == null) return;
-                    setDialogState(() => type = val);
+_pickField(
+                  label: t("type"),
+                  valueLabel: (type.startsWith("Diät") ? "Diät (Viel Volumen)" : (type.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : "")).isEmpty ? t("food_flavor_none") : _tFullType((type.startsWith("Diät") ? "Diät (Viel Volumen)" : (type.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : ""))),
+                  onTap: () async {
+                    final v = await _pickOptionSheet(t("type"), [
+                      ("", t("food_flavor_none")),
+                      ("Diät (Viel Volumen)", _tFullType("Diät (Viel Volumen)")),
+                      ("Aufbau (Wenig Volumen)", _tFullType("Aufbau (Wenig Volumen)")),
+                    ], (type.startsWith("Diät") ? "Diät (Viel Volumen)" : (type.startsWith("Aufbau") ? "Aufbau (Wenig Volumen)" : "")));
+                    if (v == null) return;
+                    setDialogState(() => type = v);
                   },
-                )
+                ),
               ],
             ),
           ),
