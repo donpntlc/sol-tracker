@@ -3038,7 +3038,13 @@ class _MainScreenState extends State<MainScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final e in items.whereType<PopupMenuItem<String>>())
+                      for (final (i, e) in items.whereType<PopupMenuItem<String>>().indexed) ...[
+                        if (i > 0)
+                          Divider(
+                              height: 1,
+                              indent: 62,
+                              endIndent: 16,
+                              color: Colors.white.withValues(alpha: 0.07)),
                         InkWell(
                           onTap: () => Navigator.pop(c, e.value),
                           child: SizedBox(
@@ -3049,6 +3055,7 @@ class _MainScreenState extends State<MainScreen> {
                             ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ),
@@ -12543,6 +12550,8 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
+                dropdownColor: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(14),
                 initialValue: pickMeal,
                 decoration: _touchInputDecoration(t("track_move_target_label")),
                 items: meals
@@ -13263,6 +13272,8 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
+                        dropdownColor: const Color(0xFF1C1C1E),
+                        borderRadius: BorderRadius.circular(14),
                         value: groupId,
                         isExpanded: true,
                         decoration:
@@ -13390,6 +13401,8 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
+                      dropdownColor: const Color(0xFF1C1C1E),
+                      borderRadius: BorderRadius.circular(14),
                       value: groupId,
                       isExpanded: true,
                       decoration:
@@ -18163,6 +18176,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButton<String>(
+                    dropdownColor: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(14),
                     isExpanded: true,
                     value: category,
                     items: [
@@ -18240,6 +18255,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButton<String?>(
+                    dropdownColor: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(14),
                     isExpanded: true,
                     value: flavor,
                     items: <DropdownMenuItem<String?>>[
@@ -18266,6 +18283,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButton<String>(
+                    dropdownColor: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(14),
                     isExpanded: true,
                     value: (type.startsWith("Diät") || type.startsWith("Aufbau"))
                         ? (type.startsWith("Diät") ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)")
@@ -19340,6 +19359,8 @@ class _MainScreenState extends State<MainScreen> {
               const SizedBox(height: 10),
               if (useMealPicker) ...[
                 DropdownButtonFormField<String>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   value: meal,
                   isExpanded: true,
                   decoration: _touchInputDecoration(t("meal")),
@@ -19379,6 +19400,8 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const SizedBox(height: 4),
               DropdownButtonFormField<String>(
+                dropdownColor: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(14),
                 value: inputMode,
                 isExpanded: true,
                 decoration: _touchInputDecoration(t("track_input_mode")),
@@ -19562,6 +19585,8 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   value: saveCat,
                   decoration: _touchInputDecoration(t("db_off_category")),
                   items: [
@@ -19607,6 +19632,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   value: saveType,
                   decoration: _touchInputDecoration(t("type")),
                   items: [
@@ -19628,6 +19655,8 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String?>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   value: saveFlavor,
                   decoration: _touchInputDecoration(
                       t("recipe_flavor_filter_label")),
@@ -21464,6 +21493,8 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 4),
                 DropdownButton<String>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   isExpanded: true,
                   value: category,
                   items: [
@@ -21544,6 +21575,8 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 4),
                 DropdownButton<String?>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   isExpanded: true,
                   value: flavor,
                   items: <DropdownMenuItem<String?>>[
@@ -21570,6 +21603,8 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 4),
                 DropdownButton<String>(
+                  dropdownColor: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
                   isExpanded: true,
                   value: (type.startsWith("Diät") || type.startsWith("Aufbau"))
                       ? (type.startsWith("Diät") ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)")
@@ -24469,6 +24504,7 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
+                  borderRadius: BorderRadius.circular(14),
                   key: ValueKey("mode_drop_${nutritionMode}_$_modeDropdownRevision"),
                   initialValue: nutritionMode,
                   decoration: _touchInputDecoration(t("mode")),
@@ -25364,6 +25400,7 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
+                  borderRadius: BorderRadius.circular(14),
                   value: weekStartWeekday,
                   decoration: _touchInputDecoration(t("week_start_settings")),
                   style: TextStyle(color: context.sol.onCard, fontSize: 16),
@@ -25519,6 +25556,7 @@ class _MainScreenState extends State<MainScreen> {
           _sectionCard(
             title: t("language"),
             child: DropdownButtonFormField<String>(
+              borderRadius: BorderRadius.circular(14),
               initialValue: languageCode,
               decoration: _touchInputDecoration(t("language")),
               style: TextStyle(color: context.sol.onCard, fontSize: 16),
@@ -29826,6 +29864,8 @@ class _MainScreenState extends State<MainScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DropdownButtonFormField<String>(
+                      dropdownColor: const Color(0xFF1C1C1E),
+                      borderRadius: BorderRadius.circular(14),
                       initialValue: generatorMode,
                       items: ["Normal", "Diät", "Aufbau"]
                           .map((m) => DropdownMenuItem(
@@ -29854,6 +29894,8 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
+                      dropdownColor: const Color(0xFF1C1C1E),
+                      borderRadius: BorderRadius.circular(14),
                       initialValue: selectedMeal,
                       items: meals
                           .map((m) => DropdownMenuItem(
@@ -30472,6 +30514,8 @@ class _MainScreenState extends State<MainScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               DropdownButtonFormField<Food?>(
+                                dropdownColor: const Color(0xFF1C1C1E),
+                                borderRadius: BorderRadius.circular(14),
                                 value: resolvedRecipe,
                                 items: [
                                   const DropdownMenuItem<Food?>(
@@ -31084,6 +31128,8 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButton<String>(
+                    dropdownColor: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(14),
                     isExpanded: true,
                     value: selectedCategory,
                     items: [
@@ -31340,6 +31386,7 @@ class _MainScreenState extends State<MainScreen> {
                     children: [
                       Expanded(
                         child: DropdownButton<Food>(
+                          borderRadius: BorderRadius.circular(14),
                           isExpanded: true,
                           value: fInList,
                           hint: Text(
@@ -31522,6 +31569,7 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       const SizedBox(height: 4),
                       DropdownButton<String>(
+                        borderRadius: BorderRadius.circular(14),
                         isExpanded: true,
                         value: advInputMode,
                         style: const TextStyle(
@@ -33351,6 +33399,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
+                    dropdownColor: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(14),
                     initialValue: meal,
                     decoration: deco(t("quick_meal")),
                     items: [
@@ -34229,6 +34279,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
                           children: [
                             Expanded(
                               child: DropdownButtonFormField<Food>(
+                                borderRadius: BorderRadius.circular(14),
                                 isExpanded: true,
                                 value: f,
                                 decoration: widget.touchInputDecoration(
@@ -34257,6 +34308,8 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
                             SizedBox(
                               width: 100,
                               child: DropdownButtonFormField<String>(
+                                dropdownColor: const Color(0xFF1C1C1E),
+                                borderRadius: BorderRadius.circular(14),
                                 isExpanded: true,
                                 value: _inputMode[i],
                                 decoration: widget.touchInputDecoration(""),
