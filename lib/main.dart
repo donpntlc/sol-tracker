@@ -795,7 +795,9 @@ class _ShoppingListEntry {
     this.recipeSourceName,
     List<String>? tags,
     this.cat,
-  }) : tags = tags ?? <String>[];
+    List<String>? cats2,
+  })  : tags = tags ?? <String>[],
+        cats2 = cats2 ?? <String>[];
   String id;
   String groupId;
   String label;
@@ -808,6 +810,8 @@ class _ShoppingListEntry {
   List<String> tags;
   /// Abteilung (z. B. „Kühlregal“); null = automatisch.
   String? cat;
+  /// Weitere Abteilungen (zusätzlich zur Haupt-Abteilung).
+  List<String> cats2;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -820,6 +824,7 @@ class _ShoppingListEntry {
         'rs': recipeSourceName,
         if (tags.isNotEmpty) 't': tags,
         if (cat != null) 'c': cat,
+        if (cats2.isNotEmpty) 'c2': cats2,
       };
 
   factory _ShoppingListEntry.fromMap(Map<String, dynamic> m) {
@@ -834,6 +839,7 @@ class _ShoppingListEntry {
       recipeSourceName: m['rs']?.toString(),
       tags: (m['t'] is List) ? (m['t'] as List).map((e) => e.toString()).toList() : null,
       cat: m['c']?.toString(),
+      cats2: (m['c2'] is List) ? (m['c2'] as List).map((e) => e.toString()).toList() : null,
     );
   }
 
@@ -848,6 +854,7 @@ class _ShoppingListEntry {
         recipeSourceName: recipeSourceName,
         tags: List<String>.from(tags),
         cat: cat,
+        cats2: List<String>.from(cats2),
       );
 }
 
@@ -8956,6 +8963,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "shop_aisle_hint": "Tippen = hinzufügen/entfernen · Lange drücken = Haupt-Abteilung (gold)",
+      "shop_tag_delete_q": "Tag „{t}“ löschen?",
       "shop_qty_hint": "z. B. 2 Packungen, 500 g",
       "shop_aisle": "Abteilung",
       "shop_tags": "Tags",
@@ -8967,7 +8976,7 @@ class _MainScreenState extends State<MainScreen> {
       "shop_all_done": "Alles erledigt — nichts mehr auf der Liste.",
       "shop_to_buy": "Einkaufen",
       "shop_recent": "Zuletzt gekauft",
-      "shop_help": "Antippen = gekauft · Lange drücken = Menge, Abteilung, Tags (z. B. Aldi) · Tags oben filtern.",
+      "shop_help": "Antippen = gekauft · Lange drücken = Menge, Abteilungen, Tags (z. B. Aldi) · Tags oben filtern, lange drücken = Tag löschen.",
       "gen2_own_pick": "Eigenes Lebensmittel wählen …",
       "gen2_own_amount": "Menge (optional)",
       "gen2_own_amount_hint": "Leer = automatisch passend berechnen",
@@ -10333,6 +10342,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "shop_aisle_hint": "Tap = add/remove · Long-press = main aisle (gold)",
+      "shop_tag_delete_q": "Delete tag “{t}”?",
       "shop_qty_hint": "e.g. 2 packs, 500 g",
       "shop_aisle": "Aisle",
       "shop_tags": "Tags",
@@ -34905,12 +34916,55 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
   String _emojiOf(String aisle) =>
       aisles.firstWhere((a) => a.$1 == aisle, orElse: () => aisles.last).$2;
 
+  /// Einmal angelegte Tags bleiben gespeichert (auch wenn gerade nichts damit getaggt ist).
+  List<String> savedTags = [];
+  static const _kShopTagsKey = "shop_tags_v1";
+
+  Future<void> _loadTags() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final l = prefs.getStringList(_kShopTagsKey) ?? const <String>[];
+      if (mounted) setState(() => savedTags = List<String>.from(l));
+    } catch (_) {}
+  }
+
+  Future<void> _saveTags() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_kShopTagsKey, savedTags);
+    } catch (_) {}
+  }
+
+  Future<void> _deleteTag(String tg) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(widget.t("shop_tag_delete_q").replaceAll("{t}", tg)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(widget.t("shop_cancel"))),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(widget.t("delete"))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      savedTags.remove(tg);
+      for (final e in day.entries) {
+        e.tags.remove(tg);
+      }
+      if (tagFilter == tg) tagFilter = "";
+    });
+    _saveTags();
+    _persist();
+  }
+
   @override
   void initState() {
     super.initState();
     day = widget.day;
     month = widget.month;
     _migrate();
+    _loadTags();
   }
 
   @override
@@ -35005,8 +35059,11 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
     return "Sonstiges";
   }
 
+  List<String> _aislesOf(_ShoppingListEntry e) =>
+      [_aisleOf(e), ...e.cats2.where((c) => c != _aisleOf(e))];
+
   List<String> get _allTags {
-    final s = <String>{};
+    final s = <String>{...savedTags};
     for (final e in day.entries) {
       s.addAll(e.tags);
     }
@@ -35075,6 +35132,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
     final qtyC = TextEditingController(text: e.quantity);
     final newTagC = TextEditingController();
     var aisle = _aisleOf(e);
+    final extra = List<String>.from(e.cats2);
     final tags = List<String>.from(e.tags);
     final res = await showModalBottomSheet<String>(
       context: context,
@@ -35119,14 +35177,41 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
                       style: const TextStyle(
                           fontSize: 10.5, letterSpacing: 1.1, color: Colors.white54, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
+                  Text(t("shop_aisle_hint"),
+                      style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                  const SizedBox(height: 6),
                   Wrap(spacing: 6, runSpacing: 6, children: [
                     for (final a in aisles)
-                      ChoiceChip(
-                        visualDensity: VisualDensity.compact,
-                        showCheckmark: false,
-                        label: Text("${a.$2} ${a.$1}", style: const TextStyle(fontSize: 12)),
-                        selected: aisle == a.$1,
-                        onSelected: (_) => setL(() => aisle = a.$1),
+                      GestureDetector(
+                        // Lange drücken → Haupt-Abteilung.
+                        onLongPress: () => setL(() {
+                          extra.remove(a.$1);
+                          if (aisle != a.$1) extra.add(aisle);
+                          aisle = a.$1;
+                        }),
+                        child: FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          showCheckmark: aisle != a.$1 && extra.contains(a.$1),
+                          selectedColor: aisle == a.$1 ? gold : gold.withValues(alpha: 0.18),
+                          label: Text("${a.$2} ${a.$1}",
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: aisle == a.$1 ? FontWeight.w800 : FontWeight.w500,
+                                  color: aisle == a.$1 ? Colors.black : null)),
+                          selected: aisle == a.$1 || extra.contains(a.$1),
+                          onSelected: (_) => setL(() {
+                            if (aisle == a.$1) {
+                              // Haupt abwählen → erste Zusatz-Abteilung wird Haupt.
+                              if (extra.isNotEmpty) aisle = extra.removeAt(0);
+                            } else if (extra.contains(a.$1)) {
+                              extra.remove(a.$1);
+                            } else if (aisle == "Sonstiges" && extra.isEmpty) {
+                              aisle = a.$1;
+                            } else {
+                              extra.add(a.$1);
+                            }
+                          }),
+                        ),
                       ),
                   ]),
                   const SizedBox(height: 14),
@@ -35136,11 +35221,17 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
                   const SizedBox(height: 6),
                   Wrap(spacing: 6, runSpacing: 6, children: [
                     for (final tg in known)
-                      FilterChip(
-                        visualDensity: VisualDensity.compact,
-                        label: Text(tg, style: const TextStyle(fontSize: 12)),
-                        selected: tags.contains(tg),
-                        onSelected: (v) => setL(() => v ? tags.add(tg) : tags.remove(tg)),
+                      GestureDetector(
+                        onLongPress: () async {
+                          await _deleteTag(tg);
+                          setL(() => tags.remove(tg));
+                        },
+                        child: FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text(tg, style: const TextStyle(fontSize: 12)),
+                          selected: tags.contains(tg),
+                          onSelected: (v) => setL(() => v ? tags.add(tg) : tags.remove(tg)),
+                        ),
                       ),
                   ]),
                   const SizedBox(height: 6),
@@ -35183,6 +35274,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
       }),
     );
     if (res == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _saveTags());
     setState(() {
       if (res == "delete") {
         day.entries.removeWhere((x) => x.id == e.id);
@@ -35191,6 +35283,10 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
         e.quantity = qtyC.text.trim();
         e.tags = tags;
         e.cat = aisle;
+        e.cats2 = extra.where((x) => x != aisle).toList();
+        for (final tg in tags) {
+          if (!savedTags.contains(tg)) savedTags.add(tg);
+        }
       }
     });
     _persist();
@@ -35357,13 +35453,16 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
                   for (final tg in ["", ...tags])
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
+                      child: GestureDetector(
+                        onLongPress: tg.isEmpty ? null : () => _deleteTag(tg),
+                        child: ChoiceChip(
                         visualDensity: VisualDensity.compact,
                         showCheckmark: false,
                         avatar: tg.isEmpty ? null : const Icon(Icons.sell_outlined, size: 14),
                         label: Text(tg.isEmpty ? t("shop_tag_all") : tg, style: const TextStyle(fontSize: 12.5)),
                         selected: tagFilter == tg,
                         onSelected: (_) => setState(() => tagFilter = tg),
+                      ),
                       ),
                     ),
                 ],
@@ -35382,9 +35481,10 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
             )
           else if (byAisle) ...[
             for (final a in aisles)
-              if (open.any((e) => _aisleOf(e) == a.$1)) ...[
-                _sectionHead("${a.$2}  ${a.$1}", count: open.where((e) => _aisleOf(e) == a.$1).length),
-                _grid(open.where((e) => _aisleOf(e) == a.$1).toList()),
+              if (open.any((e) => _aislesOf(e).contains(a.$1))) ...[
+                _sectionHead("${a.$2}  ${a.$1}",
+                    count: open.where((e) => _aislesOf(e).contains(a.$1)).length),
+                _grid(open.where((e) => _aislesOf(e).contains(a.$1)).toList()),
               ],
           ] else ...[
             _sectionHead(t("shop_to_buy"), count: open.length),
