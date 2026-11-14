@@ -2940,6 +2940,22 @@ class _MainScreenState extends State<MainScreen> {
     return grams;
   }
 
+  /// Kleines ✕ im Kreis zum Schließen von Blättern/Dialogen.
+  Widget _sheetCloseButton(BuildContext c) => InkResponse(
+        radius: 22,
+        onTap: () => Navigator.pop(c),
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.08),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          ),
+          child: const Icon(Icons.close, size: 17, color: Colors.white70),
+        ),
+      );
+
   Future<void> _openMealTemplatesSheet(String meal) async {
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -2995,11 +3011,16 @@ class _MainScreenState extends State<MainScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(t("meal_tpl_title"),
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: context.sol.onCard)),
+                  Row(children: [
+                    Expanded(
+                      child: Text(t("meal_tpl_title"),
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: context.sol.onCard)),
+                    ),
+                    _sheetCloseButton(ctx),
+                  ]),
                   const SizedBox(height: 4),
                   Text(t("meal_tpl_sub"),
                       style: TextStyle(fontSize: 12.5, color: context.sol.muted, height: 1.35)),
@@ -3393,9 +3414,14 @@ class _MainScreenState extends State<MainScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.stretch,
                                         children: [
                                           Padding(
-                                            padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
-                                            child: Text(tFmt("tpl_swap_title", {"n": foods[i].name}),
-                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                                            padding: const EdgeInsets.fromLTRB(18, 12, 10, 4),
+                                            child: Row(children: [
+                                              Expanded(
+                                                child: Text(tFmt("tpl_swap_title", {"n": foods[i].name}),
+                                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                                              ),
+                                              _sheetCloseButton(sc),
+                                            ]),
                                           ),
                                           Padding(
                                             padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
