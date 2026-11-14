@@ -1033,7 +1033,11 @@ class _SolScrollBehavior extends MaterialScrollBehavior {
       controller: details.controller,
       thickness: 3.5,
       radius: const Radius.circular(4),
-      child: child,
+      // Inhalt rückt etwas ein → die Leiste liegt immer im freien Rand, nie über Elementen.
+      child: Padding(
+        padding: const EdgeInsets.only(right: 9),
+        child: child,
+      ),
     );
   }
 }
@@ -9026,6 +9030,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "type": "Typ (Diät / Aufbau)",
       "food_brand_label": "Hersteller / Variante (optional)",
       "food_brand_hint": "z. B. Dr. Oetker",
       "food_group_photo": "Foto",
@@ -10435,6 +10440,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "type": "Type (diet / bulk)",
       "food_brand_label": "Brand / variant (optional)",
       "food_brand_hint": "e.g. Dr. Oetker",
       "food_group_photo": "Photo",
