@@ -20,3 +20,26 @@ Future<bool> shareText(String title, String text) async {
     return false;
   }
 }
+
+Future<bool> openIcsFile(String filename, String ics) async {
+  try {
+    final blobCtor = globalContext['Blob'] as JSFunction;
+    final opts = JSObject();
+    opts['type'] = 'text/calendar;charset=utf-8'.toJS;
+    final blob = blobCtor.callAsConstructor<JSObject>(<JSAny>[ics.toJS].toJS, opts);
+    final urlObj = globalContext['URL'] as JSObject;
+    final url = urlObj.callMethod<JSString>('createObjectURL'.toJS, blob);
+    final doc = globalContext['document'] as JSObject;
+    final a = doc.callMethod<JSObject>('createElement'.toJS, 'a'.toJS);
+    a['href'] = url;
+    a['download'] = filename.toJS;
+    a['target'] = '_blank'.toJS;
+    final body = doc['body'] as JSObject;
+    body.callMethod<JSAny?>('appendChild'.toJS, a);
+    a.callMethod<JSAny?>('click'.toJS);
+    body.callMethod<JSAny?>('removeChild'.toJS, a);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}

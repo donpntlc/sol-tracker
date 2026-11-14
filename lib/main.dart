@@ -1887,6 +1887,226 @@ class _MainScreenState extends State<MainScreen> {
 
   /// 3 Mahlzeiten (Pre, Post, Haupt): Abendessen fällt weg, sein Anteil geht in die Snacks.
   bool threeMeals = false;
+
+  // ───────────── Essenszeiten / Erinnerungen ─────────────
+  static const String _kMealTimesKey = "meal_times_v1";
+  bool mealTimesOn = false;
+  int mealStartMin = 7 * 60 + 30;
+  int? mealIntervalMin; // null = automatisch (3 Mahlzeiten → 4 h, sonst 3 h)
+  int mealWindowMin = 30; // ± Minuten
+  final Map<String, int> mealTimeOverride = {};
+
+  List<String> get _timedMeals => meals.where((m) => m != "Snacks").toList();
+
+  int get _effMealIntervalMin =>
+      mealIntervalMin ?? (_timedMeals.length <= 3 ? 240 : 180);
+
+  /// Geplante Uhrzeit (Minuten ab Mitternacht) pro Mahlzeit.
+  Map<String, int> _mealTimesPlan() {
+    final out = <String, int>{};
+    final list = _timedMeals;
+    var tm = mealStartMin;
+    for (var i = 0; i < list.length; i++) {
+      final m = list[i];
+      tm = mealTimeOverride[m] ?? tm;
+      out[m] = tm;
+      final next = i + 1 < list.length ? list[i + 1] : null;
+      tm += (m == "Pre-Workout" && next == "Post-Workout") ? 120 : _effMealIntervalMin;
+    }
+    return out;
+  }
+
+  String _hm(int min) {
+    final v = ((min % 1440) + 1440) % 1440;
+    return "${(v ~/ 60).toString().padLeft(2, "0")}:${(v % 60).toString().padLeft(2, "0")}";
+  }
+
+  String? _mealTimeLabel(String meal) {
+    if (!mealTimesOn) return null;
+    final tm = _mealTimesPlan()[meal];
+    if (tm == null) return null;
+    return "${_hm(tm)}  ·  ${_hm(tm - mealWindowMin)}–${_hm(tm + mealWindowMin)}";
+  }
+
+  String _mealTimesIcs() {
+    final now = DateTime.now();
+    final d = "${now.year}${now.month.toString().padLeft(2, "0")}${now.day.toString().padLeft(2, "0")}";
+    String hmS(int min) {
+      final v = ((min % 1440) + 1440) % 1440;
+      return "${(v ~/ 60).toString().padLeft(2, "0")}${(v % 60).toString().padLeft(2, "0")}00";
+    }
+    final b = StringBuffer()
+      ..write("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PREPIT//Mahlzeiten//DE\r\nCALSCALE:GREGORIAN\r\n");
+    final plan = _mealTimesPlan();
+    for (final e in plan.entries) {
+      final name = _displayMealName(e.key);
+      b
+        ..write("BEGIN:VEVENT\r\n")
+        ..write("UID:prepit-${e.key.replaceAll(" ", "-")}-$d@prepit\r\n")
+        ..write("DTSTAMP:${d}T000000Z\r\n")
+        ..write("DTSTART:${d}T${hmS(e.value)}\r\n")
+        ..write("DTEND:${d}T${hmS(e.value + math.max(15, mealWindowMin))}\r\n")
+        ..write("RRULE:FREQ=DAILY\r\n")
+        ..write("SUMMARY:PREPIT · $name\r\n")
+        ..write("DESCRIPTION:${tFmt("meal_times_ics_desc", {"m": name})}\r\n")
+        ..write("BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:$name\r\nTRIGGER:PT0M\r\nEND:VALARM\r\n")
+        ..write("END:VEVENT\r\n");
+    }
+    b.write("END:VCALENDAR\r\n");
+    return b.toString();
+  }
+
+  Future<int?> _pickTimeMin(int current) async {
+    final r = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: (current ~/ 60) % 24, minute: current % 60),
+      builder: (c, child) => MediaQuery(
+        data: MediaQuery.of(c).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (r == null) return null;
+    return r.hour * 60 + r.minute;
+  }
+
+  Widget _mealTimesCard() {
+    const gold = Color(0xFFC9A24A);
+    final plan = _mealTimesPlan();
+    void save() {
+      _saveAppState();
+    }
+
+    Widget chip(String label, bool on, VoidCallback tap) => ChoiceChip(
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          label: Text(label, style: const TextStyle(fontSize: 12.5)),
+          selected: on,
+          selectedColor: gold.withValues(alpha: 0.18),
+          side: BorderSide(color: on ? gold : Colors.white24),
+          labelStyle: TextStyle(color: on ? gold : Colors.white70, fontWeight: FontWeight.w600),
+          onSelected: (_) => tap(),
+        );
+    Widget row(String label, String value, VoidCallback tap, {Widget? trailing}) => InkWell(
+          onTap: tap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Row(children: [
+              Expanded(child: Text(label, style: const TextStyle(fontSize: 14.5))),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700, color: gold,
+                      fontFeatures: [FontFeature.tabularFigures()])),
+              if (trailing != null) trailing else const Icon(Icons.chevron_right, color: Colors.white38),
+            ]),
+          ),
+        );
+    const div = Divider(height: 1, color: Color(0x1FFFFFFF));
+    return _sectionCard(
+      title: t("meal_times_title"),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(t("meal_times_switch")),
+            subtitle: Text(t("meal_times_switch_sub"),
+                style: const TextStyle(fontSize: 12, color: Colors.white60, height: 1.35)),
+            value: mealTimesOn,
+            onChanged: (v) {
+              setState(() => mealTimesOn = v);
+              save();
+            },
+          ),
+          if (mealTimesOn) ...[
+            div,
+            row(t("meal_times_start"), _hm(mealStartMin), () async {
+              final v = await _pickTimeMin(mealStartMin);
+              if (v == null) return;
+              setState(() => mealStartMin = v);
+              save();
+            }),
+            div,
+            const SizedBox(height: 10),
+            Text(t("meal_times_interval"), style: const TextStyle(fontSize: 12.5, color: Colors.white70)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              chip(tFmt("meal_times_auto", {"h": (_effMealIntervalMin / 60).toStringAsFixed(_effMealIntervalMin % 60 == 0 ? 0 : 1)}),
+                  mealIntervalMin == null, () {
+                setState(() => mealIntervalMin = null);
+                save();
+              }),
+              for (final v in const [120, 150, 180, 210, 240, 300])
+                chip("${(v / 60).toStringAsFixed(v % 60 == 0 ? 0 : 1)} h", mealIntervalMin == v, () {
+                  setState(() => mealIntervalMin = v);
+                  save();
+                }),
+            ]),
+            const SizedBox(height: 12),
+            Text(t("meal_times_window"), style: const TextStyle(fontSize: 12.5, color: Colors.white70)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final v in const [15, 30, 45, 60])
+                chip("± $v min", mealWindowMin == v, () {
+                  setState(() => mealWindowMin = v);
+                  save();
+                }),
+            ]),
+            _dlgGroup(t("meal_times_plan")),
+            for (var i = 0; i < plan.length; i++) ...[
+              if (i > 0) div,
+              Builder(builder: (_) {
+                final m = plan.keys.elementAt(i);
+                final tm = plan[m]!;
+                final manual = mealTimeOverride.containsKey(m);
+                return row(
+                  _displayMealName(m),
+                  "${_hm(tm)}${manual ? " *" : ""}",
+                  () async {
+                    final v = await _pickTimeMin(tm);
+                    if (v == null) return;
+                    setState(() => mealTimeOverride[m] = v);
+                    save();
+                  },
+                  trailing: manual
+                      ? IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: t("meal_times_reset_one"),
+                          icon: const Icon(Icons.undo, size: 18, color: Colors.white54),
+                          onPressed: () {
+                            setState(() => mealTimeOverride.remove(m));
+                            save();
+                          },
+                        )
+                      : null,
+                );
+              }),
+            ],
+            const SizedBox(height: 6),
+            Text(t("meal_times_plan_hint"),
+                style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.35)),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: gold,
+                side: BorderSide(color: gold.withValues(alpha: 0.4)),
+              ),
+              onPressed: () async {
+                final ok = await openIcsFile("prepit-mahlzeiten.ics", _mealTimesIcs());
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(ok ? t("meal_times_cal_ok") : t("meal_times_cal_fail"))));
+              },
+              icon: const Icon(Icons.notifications_active_outlined, size: 18),
+              label: Text(t("meal_times_cal_btn")),
+            ),
+            const SizedBox(height: 6),
+            Text(t("meal_times_cal_hint"),
+                style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.35)),
+          ],
+        ],
+      ),
+    );
+  }
   /// Diabetes-Hilfe: KE/BE anzeigen, schnelle/langsame KH markieren, Generator bevorzugt langsame KH.
   bool diabetic = false;
   /// 10 = KE (Kohlenhydrateinheit), 12 = BE (Broteinheit).
@@ -8263,6 +8483,20 @@ class _MainScreenState extends State<MainScreen> {
     final savedLastDeviationWarning = prefs.getString(_kLastDeviationWarningKey);
     final savedMealGroupOrder = prefs.getString(_kMealGroupOrderKey);
     threeMeals = prefs.getBool(_kThreeMealsKey) ?? false;
+    try {
+      final rawMt = prefs.getString(_kMealTimesKey);
+      if (rawMt != null && rawMt.isNotEmpty) {
+        final m = Map<String, dynamic>.from(jsonDecode(rawMt) as Map);
+        mealTimesOn = m["on"] == true;
+        mealStartMin = (m["start"] as num?)?.toInt() ?? mealStartMin;
+        mealIntervalMin = (m["interval"] as num?)?.toInt();
+        mealWindowMin = (m["window"] as num?)?.toInt() ?? mealWindowMin;
+        mealTimeOverride
+          ..clear()
+          ..addAll(Map<String, dynamic>.from((m["ovr"] as Map?) ?? {})
+              .map((k, v) => MapEntry(k, (v as num).toInt())));
+      }
+    } catch (_) {}
     diabetic = prefs.getBool(_kDiabeticKey) ?? false;
     carbUnitG = prefs.getInt(_kCarbUnitKey) ?? 10;
     final savedMealCustomNames = prefs.getString(_kMealCustomNamesKey);
@@ -8850,6 +9084,13 @@ class _MainScreenState extends State<MainScreen> {
     }
     await prefs.setString(_kMealGroupOrderKey, jsonEncode(mealGroupOrder));
     await prefs.setBool(_kThreeMealsKey, threeMeals);
+    await prefs.setString(_kMealTimesKey, jsonEncode({
+      "on": mealTimesOn,
+      "start": mealStartMin,
+      "interval": mealIntervalMin,
+      "window": mealWindowMin,
+      "ovr": mealTimeOverride,
+    }));
     await prefs.setBool(_kDiabeticKey, diabetic);
     await prefs.setInt(_kCarbUnitKey, carbUnitG);
     await prefs.setString(_kMealCustomNamesKey, jsonEncode(mealCustomNames));
@@ -9212,6 +9453,21 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "meal_times_title": "Essenszeiten",
+      "meal_times_switch": "Essenszeiten planen",
+      "meal_times_switch_sub": "Uhrzeit + Zeitfenster an jeder Mahlzeit anzeigen, optional als Erinnerung im Kalender.",
+      "meal_times_start": "Erste Mahlzeit um",
+      "meal_times_interval": "Abstand zwischen den Mahlzeiten",
+      "meal_times_auto": "Auto ({h} h)",
+      "meal_times_window": "Zeitfenster",
+      "meal_times_plan": "Dein Plan",
+      "meal_times_plan_hint": "Auto: 3 Mahlzeiten → alle 4 h, 4 Mahlzeiten → alle 3 h. Zwischen Pre- und Post-Workout liegen 2 h (Training). Antippen = Uhrzeit selbst setzen (*).",
+      "meal_times_reset_one": "Automatisch",
+      "meal_times_cal_btn": "Erinnerungen in Kalender übernehmen",
+      "meal_times_cal_hint": "Lädt eine Kalender-Datei: täglich wiederholte Termine mit Benachrichtigung zur Essenszeit. Auf dem iPhone „Alle hinzufügen“ tippen. Bei Änderungen alte Termine löschen und neu übernehmen.",
+      "meal_times_cal_ok": "Kalender-Datei erstellt",
+      "meal_times_cal_fail": "Kalender-Datei geht hier leider nicht",
+      "meal_times_ics_desc": "Zeit für {m} – in PREPIT eintragen.",
       "day_open_banner": "Noch frei heute",
       "merge_end_title": "Gesamtmahlzeit beenden",
       "merge_end_sub": "Wohin sollen die Einträge aus der Gesamtmahlzeit?",
@@ -10652,6 +10908,21 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "meal_times_title": "Meal times",
+      "meal_times_switch": "Plan meal times",
+      "meal_times_switch_sub": "Show time + window on each meal, optionally as calendar reminders.",
+      "meal_times_start": "First meal at",
+      "meal_times_interval": "Gap between meals",
+      "meal_times_auto": "Auto ({h} h)",
+      "meal_times_window": "Time window",
+      "meal_times_plan": "Your plan",
+      "meal_times_plan_hint": "Auto: 3 meals → every 4 h, 4 meals → every 3 h. Pre- to post-workout = 2 h (training). Tap to set a time yourself (*).",
+      "meal_times_reset_one": "Automatic",
+      "meal_times_cal_btn": "Add reminders to calendar",
+      "meal_times_cal_hint": "Downloads a calendar file: daily repeating events with a notification at meal time. On iPhone tap “Add All”. After changes, delete the old events and add again.",
+      "meal_times_cal_ok": "Calendar file created",
+      "meal_times_cal_fail": "Calendar file isn't available here",
+      "meal_times_ics_desc": "Time for {m} – log it in PREPIT.",
       "day_open_banner": "Still free today",
       "merge_end_title": "End combined meal",
       "merge_end_sub": "Where should the combined meal's entries go?",
@@ -24299,6 +24570,23 @@ _pickField(
                                             fontWeight: FontWeight.w700,
                                             color: Color(0xFF81C784)),
                                       ),
+                                    if (_mealTimeLabel(meal) != null) ...[
+                                      const TextSpan(text: "\n"),
+                                      const WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: Padding(
+                                          padding: EdgeInsets.only(right: 4),
+                                          child: Icon(Icons.schedule, size: 13, color: Colors.white54),
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: _mealTimeLabel(meal),
+                                        style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white54),
+                                      ),
+                                    ],
                                   ]),
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
@@ -25749,6 +26037,7 @@ _pickField(
               ],
             ),
           ),
+          _mealTimesCard(),
           if (nutritionMode == "Advanced")
             _sectionCard(
               title: t("settings_meal_macro_section_title"),
