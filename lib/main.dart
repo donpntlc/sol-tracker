@@ -2740,6 +2740,7 @@ class _MainScreenState extends State<MainScreen> {
                             dayTotalGoalG: mGoals.protein,
                             recommendVal: recP,
                           ),
+                          const Divider(height: 18, color: Color(0x1FFFFFFF)),
                           _macroTargetKpiLine(
                             toggleKey: "day|carbs",
                             label: t("carbs"),
@@ -2757,6 +2758,7 @@ class _MainScreenState extends State<MainScreen> {
                             dayTotalGoalG: mGoals.carbs,
                             recommendVal: recC,
                           ),
+                          const Divider(height: 18, color: Color(0x1FFFFFFF)),
                           _macroTargetKpiLine(
                             toggleKey: "day|fat",
                             label: t("fat"),
@@ -5314,6 +5316,10 @@ class _MainScreenState extends State<MainScreen> {
                       ],
                     ),
                   ),
+                  if (meal == _kMergedMealCardId ||
+                      (meal == _anchoredLastMealIdForKcal() &&
+                          (lastMealKcalByDay[selectedDayKey]?.useRemainder ?? false)))
+                    _dayOpenBanner(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                     child: TextField(
@@ -9206,6 +9212,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "day_open_banner": "Noch frei heute",
+      "merge_end_title": "Gesamtmahlzeit beenden",
+      "merge_end_sub": "Wohin sollen die Einträge aus der Gesamtmahlzeit?",
+      "merge_end_all": "Alle in",
+      "merge_end_each": "Oder einzeln",
+      "merge_end_confirm": "Verschieben & beenden",
       "ke_calc_sugar_part": "davon {g} g Zucker",
       "ke_calc_sugar_in": "davon Zucker (optional)",
       "ke_calc_sugar_note": "Für die KE zählen alle Kohlenhydrate – nicht nur der Zucker. Zucker zeigt nur, wie schnell es ins Blut geht.",
@@ -10640,6 +10652,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "day_open_banner": "Still free today",
+      "merge_end_title": "End combined meal",
+      "merge_end_sub": "Where should the combined meal's entries go?",
+      "merge_end_all": "All into",
+      "merge_end_each": "Or one by one",
+      "merge_end_confirm": "Move & end",
       "ke_calc_sugar_part": "of which {g} g sugar",
       "ke_calc_sugar_in": "of which sugar (optional)",
       "ke_calc_sugar_note": "All carbs count for the units – not just sugar. Sugar only shows how fast it hits the blood.",
@@ -16144,7 +16162,8 @@ class _MainScreenState extends State<MainScreen> {
                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
           ),
         ),
-        for (final meal in meals)
+        for (final meal in meals) ...[
+          const Divider(height: 1, color: Color(0x1FFFFFFF)),
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
@@ -16183,6 +16202,8 @@ class _MainScreenState extends State<MainScreen> {
               ],
             ),
           ),
+        ],
+        const Divider(height: 1, color: Color(0x1FFFFFFF)),
       ],
     );
   }
@@ -27498,6 +27519,181 @@ _pickField(
     );
   }
 
+  /// „Noch frei heute“: Tages-Rest (kcal + P/K/F) — z. B. im Auswahl-Fenster der Gesamtmahlzeit.
+  Widget _dayOpenBanner() {
+    return ValueListenableBuilder<int>(
+      valueListenable: _liveRev,
+      builder: (_, __, ___) {
+        const gold = Color(0xFFC9A24A);
+        final mg0 = effectiveMacroGoalsForDay(selectedDayKey);
+        final gp = mg0.protein, gc = mg0.carbs - _restCarbCutG(selectedDayKey), gf = mg0.fat;
+        double p = 0, c = 0, f = 0, k = 0;
+        for (final tf in trackedFoods) {
+          if (tf.dayKey != selectedDayKey) continue;
+          p += tf.protein;
+          c += tf.carbs;
+          f += tf.fat;
+          k += tf.calories;
+        }
+        final gk = gp * 4.1 + gc * 4.1 + gf * 9.3;
+        String o(double goal, double eaten) => math.max(0, goal - eaten).round().toString();
+        Widget cell(String v, String l, {bool big = false}) => Expanded(
+              child: Column(children: [
+                Text(v,
+                    style: TextStyle(
+                        fontSize: big ? 18 : 15,
+                        fontWeight: FontWeight.w800,
+                        color: big ? gold : Colors.white)),
+                Text(l, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              ]),
+            );
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: gold.withValues(alpha: 0.4)),
+          ),
+          child: Column(children: [
+            Text(t("day_open_banner").toUpperCase(),
+                style: const TextStyle(
+                    fontSize: 10.5, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: gold)),
+            const SizedBox(height: 6),
+            Row(children: [
+              cell(o(gk, k), "kcal", big: true),
+              cell("${o(gp, p)} g", "P"),
+              cell("${o(gc, c)} g", "K"),
+              cell("${o(gf, f)} g", "F"),
+            ]),
+          ]),
+        );
+      },
+    );
+  }
+
+  /// Gesamtmahlzeit beenden: Einträge daraus auf die einzelnen Mahlzeiten verteilen.
+  Future<void> _endMergedMeal() async {
+    final merged = _mergedMealsByDay[selectedDayKey] ?? <String>{};
+    final items = trackedFoods
+        .where((tf) => tf.dayKey == selectedDayKey && tf.meal == _kMergedMealCardId)
+        .toList();
+    if (items.isEmpty) {
+      setState(() => _mergedMealsByDay.remove(selectedDayKey));
+      _saveAppState();
+      return;
+    }
+    final targets = merged.isNotEmpty ? merged.toList() : List<String>.from(meals);
+    targets.sort((a, b) => meals.indexOf(a).compareTo(meals.indexOf(b)));
+    final pick = <TrackedFood, String>{for (final tf in items) tf: targets.first};
+    const gold = Color(0xFFC9A24A);
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => StatefulBuilder(builder: (c, setM) {
+        Widget mealChips(String cur, ValueChanged<String> on) => Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final m in targets)
+                  ChoiceChip(
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    label: Text(_displayMealName(m), style: const TextStyle(fontSize: 12)),
+                    selected: cur == m,
+                    selectedColor: gold.withValues(alpha: 0.18),
+                    side: BorderSide(color: cur == m ? gold : Colors.white24),
+                    labelStyle: TextStyle(color: cur == m ? gold : Colors.white70),
+                    onSelected: (_) => on(m),
+                  ),
+              ],
+            );
+        return SizedBox(
+          height: MediaQuery.of(c).size.height * 0.8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 12, 0),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(t("merge_end_title"),
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  ),
+                  _sheetCloseButton(c),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 2, 18, 0),
+                child: Text(t("merge_end_sub"),
+                    style: const TextStyle(fontSize: 12.5, color: Colors.white60)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
+                child: _dlgGroup(t("merge_end_all")),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: mealChips(
+                    pick.values.toSet().length == 1 ? pick.values.first : "",
+                    (m) => setM(() {
+                          for (final k in pick.keys) {
+                            pick[k] = m;
+                          }
+                        })),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
+                child: _dlgGroup(t("merge_end_each")),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 18, color: Color(0x22FFFFFF)),
+                  itemBuilder: (_, i) {
+                    final tf = items[i];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("${tf.food.name} · ${tf.grams.round()} g · ${tf.calories.round()} kcal",
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        mealChips(pick[tf]!, (m) => setM(() => pick[tf] = m)),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(c, true),
+                    child: Text(t("merge_end_confirm")),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      for (final e in pick.entries) {
+        e.key.meal = e.value;
+      }
+      _mergedMealsByDay.remove(selectedDayKey);
+    });
+    _updateMealTotals();
+    _saveAppState();
+  }
+
   Widget _buildMergedMealSectionCard(Set<String> mergedMeals) {
     final kcal = _combinedMealKcalFor(mergedMeals);
     final p = _combinedMealMacroFor(mergedMeals, "protein");
@@ -27557,6 +27753,15 @@ _pickField(
                       ),
                     ),
                   ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: const Color(0xFFC9A24A),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  onPressed: () => unawaited(_endMergedMeal()),
+                  child: Text(t("kcal_merge_mode_off"), style: const TextStyle(fontSize: 12.5)),
                 ),
                 IconButton(
           padding: EdgeInsets.zero,
@@ -27793,11 +27998,8 @@ _pickField(
                 ),
                 TextButton(
                   onPressed: () {
-                    setState(() {
-                      _mergedMealsByDay.remove(selectedDayKey);
-                    });
-                    _saveAppState();
                     Navigator.pop(ctx);
+                    unawaited(_endMergedMeal());
                   },
                   child: Text(t("kcal_merge_mode_off")),
                 ),
