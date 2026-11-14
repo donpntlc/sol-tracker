@@ -4299,7 +4299,21 @@ class _MainScreenState extends State<MainScreen> {
                       style: const TextStyle(
                           color: gold, fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
                 );
+            final ownMeals = foodDatabase
+                .where((f) => f.category == "Mahlzeiten" && match(f.name))
+                .toList();
             rows = [
+              if (ownMeals.isNotEmpty) head(t("cat_meals")),
+              for (final f in ownMeals)
+                _pickerRow(
+                  title: f.name,
+                  sub: "P ${f.protein.round()} · K ${f.carbs.round()} · F ${f.fat.round()}",
+                  trailing: "${f.calories.round()} kcal",
+                  onTap: () async {
+                    final added = await _openAmountDialog(f, meal);
+                    if (added && ctx.mounted) Navigator.pop(ctx);
+                  },
+                ),
               if (fitCount > 0) head(tFmt("tpl_fits_head", {"m": _displayMealName(meal)})),
               for (var i = 0; i < tpls.length; i++) ...[
                 if (i == fitCount && fitCount > 0 && i < tpls.length) head(t("tpl_more_head")),
@@ -8461,6 +8475,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "cat_meals": "Mahlzeiten",
+      "db_tpl_add_to": "„{n}“ eintragen in …",
       "quick_title": "Schnell eintragen",
       "quick_sub": "Z. B. auswärts gegessen: Name und ungefähre Nährwerte eingeben (kurz googeln) — ohne Wiegen. Zählt einmalig für heute.",
       "quick_name": "Name (z. B. Omas Spätzle)",
@@ -9801,6 +9817,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "cat_meals": "Meals",
+      "db_tpl_add_to": "Add “{n}” to …",
       "quick_title": "Quick add",
       "quick_sub": "E.g. eating out: enter a name and rough macros (quick search) — no weighing. Counts once for today.",
       "quick_name": "Name (e.g. Grandma's noodles)",
@@ -10907,6 +10925,8 @@ class _MainScreenState extends State<MainScreen> {
 
   String _tCat(String cat) {
     switch (cat) {
+      case "Mahlzeiten":
+        return t("cat_meals");
       case "Vegan":
         return t("cat_vegan");
       case "Alle":
@@ -17834,7 +17854,15 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget databaseScreen() {
+    // Alte Schnell-Einträge (früher „Rezepte“) → „Mahlzeiten“.
+    for (final f in foodDatabase) {
+      if (!f.isDefault && f.category == "Rezepte" && !f.isRecipe &&
+          f.basePortionGrams == 100 && (f.portionHint ?? "").contains("100 g")) {
+        f.category = "Mahlzeiten";
+      }
+    }
     const categoryOrder = [
+      "Mahlzeiten",
       "Carbs",
       "Protein",
       "Fett",
@@ -17964,7 +17992,7 @@ class _MainScreenState extends State<MainScreen> {
                       ], (v) => databaseSourceFilter = v),
                       const SizedBox(width: 10),
                       _dbDd(t("db_category_label"), databaseCategoryFilter, [
-                        for (final c in const ["Alle", "Favoriten", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Rezepte"])
+                        for (final c in const ["Alle", "Favoriten", "Mahlzeiten", "Carbs", "Protein", "Fett", "Ballaststoffe", "Obst", "Gemüse", "Rezepte"])
                           (c, _tCat(c)),
                       ], (v) => databaseCategoryFilter = v),
                     ],
@@ -18078,7 +18106,18 @@ class _MainScreenState extends State<MainScreen> {
                           .toLowerCase()
                           .compareTo(b.name.toLowerCase());
                     });
-                  if (foodsInCategory.isEmpty) {
+                  // Eigene gespeicherte Mahlzeiten (Vorlagen) gehören auch hierher.
+                  final tplsHere = category == "Mahlzeiten" &&
+                          databaseSourceFilter != "sol" &&
+                          !_veganOnly
+                      ? userMealTemplates
+                          .where((t) => t["name"]
+                              .toString()
+                              .toLowerCase()
+                              .contains(searchQuery.toLowerCase()))
+                          .toList()
+                      : <Map<String, dynamic>>[];
+                  if (foodsInCategory.isEmpty && tplsHere.isEmpty) {
                     return const SizedBox.shrink();
                   }
                   final firstVisible = visibleCategories.indexWhere(
@@ -18099,10 +18138,12 @@ class _MainScreenState extends State<MainScreen> {
                         horizontal: 8.0, vertical: 4.0),
                     child: ExpansionTile(
                       title: Text(
-                          "${_tCat(category)} (${foodsInCategory.length})"),
+                          "${_tCat(category)} (${foodsInCategory.length + tplsHere.length})"),
                       initiallyExpanded: databaseCategoryFilter != "Alle",
-                      children: _withFoodDividers(
-                          foodsInCategory.map(_buildFoodCard).toList()),
+                      children: _withFoodDividers([
+                        ...tplsHere.map(_dbMealTemplateTile),
+                        ...foodsInCategory.map(_buildFoodCard),
+                      ]),
                     ),
                       ),
                     ],
@@ -18114,6 +18155,41 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Gespeicherte eigene Mahlzeit (Vorlage) in der Datenbank: antippen → eintragen.
+  Widget _dbMealTemplateTile(Map<String, dynamic> tpl) {
+    final name = tpl["name"].toString();
+    return ListTile(
+      leading: const Icon(Icons.restaurant, color: Color(0xFFC9A24A)),
+      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text((tpl["items"] as List).join(" + "),
+          maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: context.sol.muted)),
+      trailing: IconButton(
+        icon: const Icon(Icons.edit_outlined, size: 20),
+        onPressed: () async {
+          await _editMealTemplate(tpl);
+          if (mounted) setState(() {});
+        },
+      ),
+      onTap: () async {
+        final m = await showDialog<String>(
+          context: context,
+          builder: (d) => SimpleDialog(
+            title: Text(tFmt("db_tpl_add_to", {"n": name})),
+            children: [
+              for (final m in meals)
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(d, m),
+                  child: Text(_displayMealName(m)),
+                ),
+            ],
+          ),
+        );
+        if (m != null) await _applyMealTemplate(m, tpl);
+      },
     );
   }
 
@@ -32145,7 +32221,7 @@ class _MainScreenState extends State<MainScreen> {
                               sugar: 0,
                               fiber: 0,
                               fat: f,
-                              category: "Rezepte",
+                              category: "Mahlzeiten",
                               type: "Aufbau (Wenig Volumen)",
                               portionHint: t("quick_portion_hint"),
                               basePortionGrams: 100,
