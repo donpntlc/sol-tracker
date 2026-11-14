@@ -2955,7 +2955,14 @@ class _MainScreenState extends State<MainScreen> {
           Widget tile(Map<String, dynamic> tpl) {
             final items = (tpl["items"] as List).map((e) => e.toString()).toList();
             final isSol = tpl["sol"] == true;
-            return ListTile(
+            return Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                      color: context.sol.muted.withValues(alpha: 0.18), width: 0.8),
+                ),
+              ),
+              child: ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               title: Text(tpl["name"].toString(),
                   style: TextStyle(color: context.sol.onCard, fontWeight: FontWeight.w600)),
@@ -2976,6 +2983,7 @@ class _MainScreenState extends State<MainScreen> {
                 Navigator.pop(ctx);
                 _applyMealTemplate(meal, tpl);
               },
+            ),
             );
           }
 
@@ -3097,11 +3105,57 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// süß/salzig einer Vorlage: gesetzt, sonst aus den Zutaten geschätzt (null = keine Angabe).
+  String? _tplFlavor(Map<String, dynamic> tpl) {
+    final set = tpl["flavor"];
+    if (set is String && set.isNotEmpty) return set;
+    var sw = 0, sa = 0;
+    for (final n in (tpl["items"] as List? ?? const [])) {
+      final f = _foodByName(n.toString());
+      if (f == null) continue;
+      final fl = _genFlavorOf(f);
+      if (fl == "sweet") sw++;
+      if (fl == "salty") sa++;
+    }
+    if (sw == 0 && sa == 0) return null;
+    return sw > sa ? "sweet" : "salty";
+  }
+
+  /// Diät/Aufbau einer Vorlage: gesetzt, sonst Mehrheit der Zutaten (null = keine Angabe).
+  String? _tplType(Map<String, dynamic> tpl) {
+    final set = tpl["type"];
+    if (set is String && set.isNotEmpty) return set;
+    var d = 0, a = 0;
+    for (final n in (tpl["items"] as List? ?? const [])) {
+      final f = _foodByName(n.toString());
+      if (f == null) continue;
+      if (f.type.startsWith("Diät")) d++;
+      if (f.type.startsWith("Aufbau")) a++;
+    }
+    if (d == 0 && a == 0) return null;
+    return d >= a ? "Diät" : "Aufbau";
+  }
+
   Future<void> _editMealTemplate(Map<String, dynamic>? existing) async {
     final nameCtrl = TextEditingController(text: existing?["name"]?.toString() ?? "");
     final items = <String>[
       ...((existing?["items"] as List?) ?? const []).map((e) => e.toString())
     ];
+    String? tplFlavor = existing?["flavor"] as String?;
+    String? tplType = existing?["type"] as String?;
+    Widget optChips(List<(String?, String)> opts, String? cur, void Function(String?) on) => Wrap(
+          spacing: 6,
+          children: [
+            for (final o in opts)
+              ChoiceChip(
+                visualDensity: VisualDensity.compact,
+                showCheckmark: false,
+                label: Text(o.$2, style: const TextStyle(fontSize: 12)),
+                selected: cur == o.$1,
+                onSelected: (_) => on(o.$1),
+              ),
+          ],
+        );
     final res = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -3155,6 +3209,23 @@ class _MainScreenState extends State<MainScreen> {
                       }
                     },
                   ),
+                  const SizedBox(height: 10),
+                  Text(t("recipe_flavor_filter_label"),
+                      style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                  const SizedBox(height: 4),
+                  optChips([
+                    (null, t("food_flavor_none")),
+                    ("sweet", t("recipe_flavor_sweet")),
+                    ("salty", t("recipe_flavor_salty")),
+                  ], tplFlavor, (v) => setL(() => tplFlavor = v)),
+                  const SizedBox(height: 8),
+                  Text(t("type"), style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                  const SizedBox(height: 4),
+                  optChips([
+                    (null, t("food_flavor_none")),
+                    ("Diät", t("type_cut_full")),
+                    ("Aufbau", t("type_bulk_full")),
+                  ], tplType, (v) => setL(() => tplType = v)),
                 ],
               ),
             ),
@@ -3187,11 +3258,15 @@ class _MainScreenState extends State<MainScreen> {
         if (existing != null) {
           existing["name"] = name;
           existing["items"] = items;
+          existing["flavor"] = tplFlavor;
+          existing["type"] = tplType;
         } else {
           userMealTemplates.add({
             "id": "u${DateTime.now().millisecondsSinceEpoch}",
             "name": name,
             "items": items,
+            "flavor": tplFlavor,
+            "type": tplType,
           });
         }
       }
@@ -3332,7 +3407,15 @@ class _MainScreenState extends State<MainScreen> {
                                               shrinkWrap: true,
                                               children: [
                                                 for (final a in alts)
-                                                  ListTile(
+                                                  Container(
+                                                    decoration: BoxDecoration(
+                                                      border: Border(
+                                                        bottom: BorderSide(
+                                                            color: context.sol.muted.withValues(alpha: 0.18),
+                                                            width: 0.8),
+                                                      ),
+                                                    ),
+                                                    child: ListTile(
                                                     dense: true,
                                                     title: Text(a.name, style: const TextStyle(fontSize: 14)),
                                                     subtitle: Text(
@@ -3340,6 +3423,7 @@ class _MainScreenState extends State<MainScreen> {
                                                         style: TextStyle(fontSize: 11.5, color: context.sol.muted)),
                                                     trailing: const Icon(Icons.chevron_right),
                                                     onTap: () => Navigator.pop(sc, a),
+                                                  ),
                                                   ),
                                               ],
                                             ),
@@ -4374,10 +4458,20 @@ class _MainScreenState extends State<MainScreen> {
           if (_pickerType == "meals") {
             int score(Map<String, dynamic> t) =>
                 (_isFavTpl(t["name"].toString()) ? 2 : 0) + (_tplFits(t, meal) ? 1 : 0);
+            bool tplOk(Map<String, dynamic> tp) {
+              if (_pickerFlavor != "all" && _tplFlavor(tp) != _pickerFlavor) return false;
+              if (_pickerMode != "Alle" && _tplType(tp) != _pickerMode) return false;
+              return true;
+            }
             final tpls = [...userMealTemplates, ..._solMealTemplates]
-                .where((t) => match(t["name"].toString()))
+                .where((t) => match(t["name"].toString()) && tplOk(t))
                 .toList()
-              ..sort((a, b) => score(b).compareTo(score(a)));
+              ..sort((a, b) {
+                final sc = score(b).compareTo(score(a));
+                return sc != 0
+                    ? sc
+                    : a["name"].toString().toLowerCase().compareTo(b["name"].toString().toLowerCase());
+              });
             final fitCount = tpls.where((t) => _tplFits(t, meal) || _isFavTpl(t["name"].toString())).length;
             Widget head(String x) => Padding(
                   padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
@@ -4386,7 +4480,11 @@ class _MainScreenState extends State<MainScreen> {
                           color: gold, fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
                 );
             final ownMeals = foodDatabase
-                .where((f) => f.category == "Mahlzeiten" && match(f.name))
+                .where((f) =>
+                    f.category == "Mahlzeiten" &&
+                    match(f.name) &&
+                    _recipeMatchesFlavorFilter(f, _pickerFlavor) &&
+                    (_pickerMode == "Alle" || f.type.startsWith(_pickerMode)))
                 .toList();
             rows = [
               if (ownMeals.isNotEmpty) head(t("cat_meals")),
@@ -4767,7 +4865,7 @@ class _MainScreenState extends State<MainScreen> {
                       ],
                     ),
                   ),
-                  if (_pickerType != "meals")
+                  if (true)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                       child: Row(
@@ -4844,7 +4942,7 @@ class _MainScreenState extends State<MainScreen> {
                         ],
                       ),
                     ),
-                  if (_pickerType != "meals")
+                  if (true)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                       child: Row(
@@ -17654,15 +17752,18 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(height: 14),
                   DropdownButton<String>(
                     isExpanded: true,
-                    value: type,
+                    value: (type.startsWith("Diät") || type.startsWith("Aufbau"))
+                        ? (type.startsWith("Diät") ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)")
+                        : "",
                     items: [
+                      "",
                       "Diät (Viel Volumen)",
                       "Aufbau (Wenig Volumen)",
                     ]
                         .map(
                           (e) => DropdownMenuItem(
                             value: e,
-                            child: Text(_tFullType(e)),
+                            child: Text(e.isEmpty ? t("food_flavor_none") : _tFullType(e)),
                           ),
                         )
                         .toList(),
@@ -18922,7 +19023,7 @@ class _MainScreenState extends State<MainScreen> {
     if (!mounted) return null;
     String saveCat = "Carbs";
     String saveCK = "komplex";
-    String saveType = "Diät (Viel Volumen)";
+    String saveType = "";
     String? saveFlavor;
     String? savedImagePath;
     String? stagedPickPath;
@@ -18994,13 +19095,14 @@ class _MainScreenState extends State<MainScreen> {
                   value: saveType,
                   decoration: _touchInputDecoration(t("type")),
                   items: [
+                    "",
                     "Diät (Viel Volumen)",
                     "Aufbau (Wenig Volumen)",
                   ]
                       .map(
                         (e) => DropdownMenuItem(
                           value: e,
-                          child: Text(_tFullType(e)),
+                          child: Text(e.isEmpty ? t("food_flavor_none") : _tFullType(e)),
                         ),
                       )
                       .toList(),
@@ -19476,7 +19578,7 @@ class _MainScreenState extends State<MainScreen> {
                         _dbcListPcfFrame(food, compact: true),
                         const SizedBox(height: 4),
                         Text(
-                          "${_foodCategoryLabelsLine(food)} · ${_tFullType(food.type)}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
+                          "${_foodCategoryLabelsLine(food)}${food.type.isEmpty ? "" : " · ${_tFullType(food.type)}"}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
                           style: const TextStyle(
                             fontSize: 10.5,
                             color: Colors.white38,
@@ -19522,7 +19624,7 @@ class _MainScreenState extends State<MainScreen> {
             _dbcListPcfFrame(food, compact: true),
             const SizedBox(height: 4),
             Text(
-              "${_foodCategoryLabelsLine(food)} · ${_tFullType(food.type)}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
+              "${_foodCategoryLabelsLine(food)}${food.type.isEmpty ? "" : " · ${_tFullType(food.type)}"}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
               style: const TextStyle(
                 fontSize: 10.5,
                 color: Colors.white38,
@@ -20067,7 +20169,7 @@ class _MainScreenState extends State<MainScreen> {
           _foodPcfRow(f, compact: true),
           const SizedBox(height: 6),
           Text(
-            "${_foodCategoryLabelsLine(f)} · ${_tFullType(f.type)}"
+            "${_foodCategoryLabelsLine(f)}${f.type.isEmpty ? "" : " · ${_tFullType(f.type)}"}"
             "${f.calories > 0 ? " · ${f.calories.toStringAsFixed(0)} kcal/100g" : ""}",
             style: const TextStyle(fontSize: 11, color: Colors.white60),
           ),
@@ -20826,12 +20928,17 @@ class _MainScreenState extends State<MainScreen> {
                 const SizedBox(height: 4),
                 DropdownButton<String>(
                   isExpanded: true,
-                  value: type,
+                  value: (type.startsWith("Diät") || type.startsWith("Aufbau"))
+                      ? (type.startsWith("Diät") ? "Diät (Viel Volumen)" : "Aufbau (Wenig Volumen)")
+                      : "",
                   items: [
+                    "",
                     "Diät (Viel Volumen)",
                     "Aufbau (Wenig Volumen)",
                   ]
-                      .map((e) => DropdownMenuItem(value: e, child: Text(_tFullType(e))))
+                      .map((e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e.isEmpty ? t("food_flavor_none") : _tFullType(e))))
                       .toList(),
                   onChanged: (val) {
                     if (val == null) return;
