@@ -8765,6 +8765,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_own_pick": "Eigenes Lebensmittel wählen …",
+      "gen2_own_amount": "Menge (optional)",
+      "gen2_own_amount_hint": "Leer = automatisch passend berechnen",
+      "gen2_own_auto": "Automatisch",
       "gen2_recipes_head": "Rezepte",
       "gen2_grp_scope": "Für",
       "gen2_grp_goal": "Ziel",
@@ -10126,6 +10130,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_own_pick": "Choose your own food …",
+      "gen2_own_amount": "Amount (optional)",
+      "gen2_own_amount_hint": "Empty = calculate automatically",
+      "gen2_own_auto": "Automatic",
       "gen2_recipes_head": "Recipes",
       "gen2_grp_scope": "For",
       "gen2_grp_goal": "Goal",
@@ -27900,6 +27908,7 @@ class _MainScreenState extends State<MainScreen> {
     Food? pickP;
     Food? pickC;
     Food? pickF;
+    double? ovP, ovC, ovF; // eigene feste Mengen
 
     final gDay = effectiveMacroGoalsForDay(selectedDayKey);
     final mm = mealMacros[meal]!;
@@ -28309,52 +28318,138 @@ class _MainScreenState extends State<MainScreen> {
         }
 
         // ── Inhalt: Baukasten ──
+        double gFor(Food f, double need, double per100) =>
+            per100 > 0.5 ? r5((need / (per100 / 100)).clamp(0, 600)) : 0;
+        // Mengen der gewählten Quellen (eigene feste Menge hat Vorrang).
+        ({double gP, double afterC, double gC, double afterF, double gF}) amounts() {
+          final gP = pickP == null ? 0.0 : (ovP ?? gFor(pickP!, tP, pickP!.protein));
+          final afterC = rem(tC - (pickP?.carbs ?? 0) * gP / 100);
+          final gC = pickC == null ? 0.0 : (ovC ?? gFor(pickC!, afterC, pickC!.carbs));
+          final afterF = rem(tF - (pickP?.fat ?? 0) * gP / 100 - (pickC?.fat ?? 0) * gC / 100);
+          final gF = pickF == null ? 0.0 : (ovF ?? gFor(pickF!, afterF, pickF!.fat));
+          return (gP: gP, afterC: afterC, gC: gC, afterF: afterF, gF: gF);
+        }
+
+        // Eigenes Lebensmittel wählen (z. B. was im Kühlschrank ist), optional feste Menge.
+        Future<void> pickOwn(int step) async {
+          final f = await _pickFoodBySearch();
+          if (f == null) return;
+          final gCtrl = TextEditingController();
+          final g = await showDialog<double?>(
+            context: ctx,
+            builder: (d) => AlertDialog(
+              title: Text(f.name, style: const TextStyle(fontSize: 17)),
+              content: TextField(
+                controller: gCtrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: t("gen2_own_amount"),
+                  helperText: t("gen2_own_amount_hint"),
+                  suffixText: "g",
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(d, -1.0),
+                  child: Text(t("gen2_own_auto")),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(
+                      d, double.tryParse(gCtrl.text.replaceAll(",", ".")) ?? -1.0),
+                  child: Text(t("save")),
+                ),
+              ],
+            ),
+          );
+          if (g == null) return;
+          final ov = g > 0 ? g : null;
+          setG(() {
+            if (step == 0) {
+              pickP = f;
+              ovP = ov;
+            } else if (step == 1) {
+              pickC = f;
+              ovC = ov;
+            } else {
+              pickF = f;
+              ovF = ov;
+            }
+          });
+        }
+
+        Widget ownRow(int step) => InkWell(
+              onTap: () => pickOwn(step),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: gold.withValues(alpha: 0.35)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.search, size: 18, color: gold),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(t("gen2_own_pick"),
+                        style: const TextStyle(color: gold, fontWeight: FontWeight.w600, fontSize: 13.5)),
+                  ),
+                ]),
+              ),
+            );
+
+        // ── Inhalt: Baukasten ──
         List<Widget> builderView() {
+          final a = amounts();
           final ps = sources("Protein", (f) => f.protein, 12)
             ..sort((x, y) => rankFor(x, x.protein).compareTo(rankFor(y, y.protein)));
-          double gFor(Food f, double need, double per100) =>
-              per100 > 0.5 ? r5((need / (per100 / 100)).clamp(0, 600)) : 0;
-          final gP = pickP == null ? 0.0 : gFor(pickP!, tP, pickP!.protein);
-          final afterC = rem(tC - (pickP?.carbs ?? 0) * gP / 100);
           final cs = sources("Carbs", (f) => f.carbs, 15)
             ..sort((x, y) => rankFor(x, x.carbs).compareTo(rankFor(y, y.carbs)));
-          final gC = pickC == null ? 0.0 : gFor(pickC!, afterC, pickC!.carbs);
-          final afterF = rem(tF - (pickP?.fat ?? 0) * gP / 100 - (pickC?.fat ?? 0) * gC / 100);
           final fs = sources("Fett", (f) => f.fat, 20)
             ..sort((x, y) => (100 / x.fat).compareTo(100 / y.fat));
-          final gF = pickF == null ? 0.0 : gFor(pickF!, afterF, pickF!.fat);
+          List<Food> withPick(List<Food> l, int n, Food? pick) =>
+              [if (pick != null && !l.take(n).contains(pick)) pick, ...l.take(n)];
           return [
             sectionLabel("1 · ${t("gen2_step_p")} — ${t("gen2_need")} ${tP.round()} g"),
-            for (final f in ps.take(8))
-              foodRow(f, gFor(f, tP, f.protein),
+            for (final f in withPick(ps, 8, pickP))
+              foodRow(f, pickP == f ? a.gP : gFor(f, tP, f.protein),
                   selected: pickP == f,
-                  onTap: () => setG(() => pickP = pickP == f ? null : f)),
-            sectionLabel("2 · ${t("gen2_step_c")} — ${t("gen2_need")} ${afterC.round()} g"),
-            for (final f in cs.take(8))
-              foodRow(f, gFor(f, afterC, f.carbs),
+                  onTap: () => setG(() {
+                        pickP = pickP == f ? null : f;
+                        ovP = null;
+                      })),
+            ownRow(0),
+            sectionLabel("2 · ${t("gen2_step_c")} — ${t("gen2_need")} ${a.afterC.round()} g"),
+            for (final f in withPick(cs, 8, pickC))
+              foodRow(f, pickC == f ? a.gC : gFor(f, a.afterC, f.carbs),
                   selected: pickC == f,
-                  onTap: () => setG(() => pickC = pickC == f ? null : f)),
-            if (afterF > 3) ...[
-              sectionLabel("3 · ${t("gen2_step_f")} — ${t("gen2_need")} ${afterF.round()} g"),
-              for (final f in fs.take(5))
-                foodRow(f, gFor(f, afterF, f.fat),
+                  onTap: () => setG(() {
+                        pickC = pickC == f ? null : f;
+                        ovC = null;
+                      })),
+            ownRow(1),
+            if (a.afterF > 3 || pickF != null) ...[
+              sectionLabel("3 · ${t("gen2_step_f")} — ${t("gen2_need")} ${a.afterF.round()} g"),
+              for (final f in withPick(fs, 5, pickF))
+                foodRow(f, pickF == f ? a.gF : gFor(f, a.afterF, f.fat),
                     selected: pickF == f,
-                    onTap: () => setG(() => pickF = pickF == f ? null : f)),
+                    onTap: () => setG(() {
+                          pickF = pickF == f ? null : f;
+                          ovF = null;
+                        })),
+              ownRow(2),
             ],
             const SizedBox(height: 70),
           ];
         }
 
         List<(Food, double)> picked() {
-          final gP = pickP == null ? 0.0 : r5(tP / (pickP!.protein / 100));
-          final afterC = rem(tC - (pickP?.carbs ?? 0) * gP / 100);
-          final gC = pickC == null || pickC!.carbs < 0.5 ? 0.0 : r5(afterC / (pickC!.carbs / 100));
-          final afterF = rem(tF - (pickP?.fat ?? 0) * gP / 100 - (pickC?.fat ?? 0) * gC / 100);
-          final gF = pickF == null || pickF!.fat < 0.5 ? 0.0 : r5(afterF / (pickF!.fat / 100));
+          final a = amounts();
           return [
-            if (pickP != null && gP > 0) (pickP!, gP),
-            if (pickC != null && gC > 0) (pickC!, gC),
-            if (pickF != null && gF > 0) (pickF!, gF),
+            if (pickP != null && a.gP > 0) (pickP!, a.gP),
+            if (pickC != null && a.gC > 0) (pickC!, a.gC),
+            if (pickF != null && a.gF > 0) (pickF!, a.gF),
           ];
         }
 
