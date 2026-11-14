@@ -5043,7 +5043,9 @@ class _MainScreenState extends State<MainScreen> {
               }
               if (_pickerType == "fav") {
                 if (!_isFav(f)) return false;
-              } else if (_pickerType == "recipes" ? !f.isRecipe : f.isRecipe) {
+              } else if (_pickerType == "recipes"
+                  ? !(f.isRecipe || f.category == "Rezepte")
+                  : (f.isRecipe || f.category == "Rezepte")) {
                 return false;
               }
               if (_pickerCat == "Vegan") {
@@ -9204,6 +9206,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "ke_calc_sugar_part": "davon {g} g Zucker",
+      "ke_calc_sugar_in": "davon Zucker (optional)",
+      "ke_calc_sugar_note": "Für die KE zählen alle Kohlenhydrate – nicht nur der Zucker. Zucker zeigt nur, wie schnell es ins Blut geht.",
+      "carb_info_title": "Kohlenhydrate & Diabetes",
+      "carb_info_body": "Was passiert: Kohlenhydrate werden im Körper zu Zucker (Glukose) – der Blutzucker steigt. Egal ob aus Brot, Reis, Obst oder Süssem.\nZucker vs. Kohlenhydrate: Zucker ist nur ein Teil der Kohlenhydrate. Für den Blutzucker zählen alle Kohlenhydrate, nicht nur der Zucker.\nEinfach (schnell): Zucker, Weissmehl, Säfte, Süssigkeiten – gehen schnell ins Blut, der Blutzucker steigt rasch.\nKomplex (langsam): Vollkorn, Haferflocken, Hülsenfrüchte, Kartoffeln – langsamer und gleichmässiger.\nBremsen: Ballaststoffe, Eiweiss und Fett in derselben Mahlzeit verlangsamen den Anstieg.\nKE / BE: Schätzeinheit für Kohlenhydrate – 1 KE = 10 g, 1 BE = 12 g. Damit planen viele Diabetiker Mahlzeiten und Insulin.\nIn PREPIT: Diabetes-Modus in den Einstellungen einschalten – dann siehst du KE pro Lebensmittel, pro Mahlzeit, pro Tag und hast den KE-Rechner.\nWichtig: PREPIT berechnet keine Insulin-Dosen. Dosis und Ziele immer mit Arzt bzw. Diabetes-Team festlegen.",
+      "food_per100_header": "Pro 100 g · {k} kcal",
       "ke_calc_title": "{u}-Rechner",
       "ke_calc_sub": "1 {u} = {g} g Kohlenhydrate",
       "ke_calc_from": "aus {g} g Kohlenhydraten",
@@ -10632,6 +10640,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "ke_calc_sugar_part": "of which {g} g sugar",
+      "ke_calc_sugar_in": "of which sugar (optional)",
+      "ke_calc_sugar_note": "All carbs count for the units – not just sugar. Sugar only shows how fast it hits the blood.",
+      "carb_info_title": "Carbs & diabetes",
+      "carb_info_body": "What happens: carbs turn into sugar (glucose) in the body – blood sugar rises. Whether from bread, rice, fruit or sweets.\nSugar vs. carbs: sugar is only part of the carbs. For blood sugar all carbs count, not just sugar.\nSimple (fast): sugar, white flour, juice, sweets – enter the blood quickly.\nComplex (slow): whole grain, oats, legumes, potatoes – slower and steadier.\nBrakes: fibre, protein and fat in the same meal slow the rise.\nKE / BE: estimation units for carbs – 1 KE = 10 g, 1 BE = 12 g. Many diabetics plan meals and insulin with them.\nIn PREPIT: enable diabetes mode in settings – you'll see units per food, meal and day plus the calculator.\nImportant: PREPIT does not calculate insulin doses. Always set doses and targets with your doctor / diabetes team.",
+      "food_per100_header": "Per 100 g · {k} kcal",
       "ke_calc_title": "{u} calculator",
       "ke_calc_sub": "1 {u} = {g} g carbs",
       "ke_calc_from": "from {g} g carbs",
@@ -12969,6 +12983,10 @@ class _MainScreenState extends State<MainScreen> {
     bool hideTopImage = false,
     /// Datenbank-Liste: P/C/F-Rahmen grau / SOL-Gold / eigener Favorit.
     bool useDatabasePcfStyling = false,
+    /// Detail-Blatt: Inhalt direkt über den Nährwerten (z. B. Mengen-Auswahl).
+    Widget? aboveMacros,
+    /// „Pro 100 g · kcal“ als Überschrift über den Nährwerten statt Fusszeile.
+    bool per100Header = false,
   }) {
     final pcfBlock = useDatabasePcfStyling
         ? _dbPcfFrameForKind(
@@ -12995,6 +13013,16 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const SizedBox(height: 12),
         ],
+        if (aboveMacros != null) aboveMacros,
+        if (per100Header)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              tFmt("food_per100_header", {"k": food.calories.toStringAsFixed(0)}),
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white60),
+            ),
+          ),
         pcfBlock,
         const SizedBox(height: 6),
         Padding(
@@ -13049,6 +13077,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
         const SizedBox(height: 4),
+        if (!per100Header)
         Center(
           child: Text(
             "∑ ${food.calories.toStringAsFixed(0)} kcal / 100 g",
@@ -14362,6 +14391,7 @@ class _MainScreenState extends State<MainScreen> {
             t("intro_terms_cut_bulk_body"),
           ),
       () => _introExpandCard(t("intro_mode_title"), t("intro_mode_body")),
+      () => _introExpandCard(t("carb_info_title"), t("carb_info_body")),
       () => _introSectionHeader(
             "intro_section_bildung_title",
             subtitleKey: "intro_section_bildung_sub",
@@ -20704,7 +20734,7 @@ _pickField(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 30),
                   child: StatefulBuilder(builder: (c2, setP) {
                     final portions = _portionsFor(food);
-                    return Column(
+                    final menge = Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (portions.isNotEmpty) ...[
@@ -20775,11 +20805,18 @@ _pickField(
                           ],
                           const SizedBox(height: 14),
                         ],
+                      ],
+                    );
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                         _foodCardDetailContent(
                           food,
                           showUserDelete: !food.isDefault,
                           useDatabasePcfStyling: true,
                           imageHeight: 210,
+                          aboveMacros: menge,
+                          per100Header: true,
                         ),
                       ],
                     );
@@ -33762,6 +33799,7 @@ _pickField(
     var direct = false;
     final gC = TextEditingController(text: "100");
     final khC = TextEditingController();
+    final suC = TextEditingController();
     double num(TextEditingController c) =>
         double.tryParse(c.text.trim().replaceAll(",", ".")) ?? 0;
     var goQuick = false;
@@ -33775,6 +33813,9 @@ _pickField(
         final carbs = direct
             ? num(khC)
             : (food != null ? food!.carbs * num(gC) / 100 : 0.0);
+        final sugar = direct
+            ? num(suC)
+            : (food != null ? food!.sugar * num(gC) / 100 : 0.0);
         final portions = food == null ? const <(String, double)>[] : _portionsFor(food!);
         Widget modeChip(String label, bool on, VoidCallback tap) => Expanded(
               child: InkWell(
@@ -33815,6 +33856,11 @@ _pickField(
                         ],
                       ),
                     ),
+                    IconButton(
+                      tooltip: t("carb_info_title"),
+                      icon: const Icon(Icons.info_outline, color: Colors.white60),
+                      onPressed: _showCarbDiabetesInfo,
+                    ),
                     _sheetCloseButton(c),
                   ]),
                   const SizedBox(height: 14),
@@ -33833,7 +33879,10 @@ _pickField(
                       const SizedBox(height: 2),
                       Text(
                           carbs > 0
-                              ? tFmt("ke_calc_from", {"g": carbs.toStringAsFixed(0)})
+                              ? tFmt("ke_calc_from", {"g": carbs.toStringAsFixed(0)}) +
+                                  (sugar > 0
+                                      ? " · ${tFmt("ke_calc_sugar_part", {"g": sugar.toStringAsFixed(0)})}"
+                                      : "")
                               : t("ke_calc_empty"),
                           style: const TextStyle(fontSize: 12.5, color: Colors.white60)),
                     ]),
@@ -33895,7 +33944,7 @@ _pickField(
                         ]),
                       ],
                     ],
-                  ] else
+                  ] else ...[
                     TextField(
                       controller: khC,
                       autofocus: true,
@@ -33903,6 +33952,17 @@ _pickField(
                       decoration: _touchInputDecoration(t("ke_calc_carbs_in")).copyWith(suffixText: "g"),
                       onChanged: (_) => setK(() {}),
                     ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: suC,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: _touchInputDecoration(t("ke_calc_sugar_in")).copyWith(suffixText: "g"),
+                      onChanged: (_) => setK(() {}),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(t("ke_calc_sugar_note"),
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.35)),
+                  ],
                   const SizedBox(height: 18),
                   const Divider(height: 1, color: Color(0x22FFFFFF)),
                   InkWell(
@@ -33948,6 +34008,38 @@ _pickField(
       }),
     );
     if (goQuick && mounted) await _openQuickEntrySheet();
+  }
+
+  void _showCarbDiabetesInfo() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => SizedBox(
+        height: MediaQuery.of(c).size.height * 0.8,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 12, 4),
+            child: Row(children: [
+              Expanded(
+                child: Text(t("carb_info_title"),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              ),
+              _sheetCloseButton(c),
+            ]),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
+              child: _introExpandCard(t("carb_info_title"), t("carb_info_body"),
+                  initiallyExpanded: true),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
   Future<void> _openQuickEntrySheet() async {
