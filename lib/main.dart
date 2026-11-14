@@ -9204,6 +9204,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "ke_calc_title": "{u}-Rechner",
+      "ke_calc_sub": "1 {u} = {g} g Kohlenhydrate. Wähle ein Lebensmittel und die Menge – oder gib die Kohlenhydrate direkt ein.",
+      "ke_calc_food": "Lebensmittel + Menge",
+      "ke_calc_pick": "Lebensmittel suchen …",
+      "ke_calc_direct": "Kohlenhydrate direkt",
+      "ke_calc_carbs_in": "Kohlenhydrate",
+      "ke_calc_hint": "Nicht in der Datenbank? Nährwerte und Portionsgrössen kurz online oder mit einer KI nachschlagen (Verpackung, Hersteller-Seite) und unten schnell eintragen – auf Wunsch gleich in die Datenbank speichern.",
+      "ke_calc_quick": "Schnell eintragen (nur Nährwerte)",
       "food_detail_amount": "Menge",
       "food_group_portions": "Mengenangaben (optional)",
       "portion_add_row": "Menge hinzufügen",
@@ -10618,6 +10626,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "ke_calc_title": "{u} calculator",
+      "ke_calc_sub": "1 {u} = {g} g carbohydrates. Pick a food and amount – or enter carbs directly.",
+      "ke_calc_food": "Food + amount",
+      "ke_calc_pick": "Search food …",
+      "ke_calc_direct": "Carbs directly",
+      "ke_calc_carbs_in": "Carbohydrates",
+      "ke_calc_hint": "Not in the database? Look up nutrition and portion sizes online or with an AI (package, maker's site) and quick-add below – optionally saving it to the database.",
+      "ke_calc_quick": "Quick add (nutrients only)",
       "food_detail_amount": "Amount",
       "food_group_portions": "Portions (optional)",
       "portion_add_row": "Add portion",
@@ -22507,16 +22523,25 @@ _pickField(
                           fat: totalFat,
                         ),
                         if (diabetic)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2, bottom: 2),
-                            child: Text(
-                              tFmt("diab_day_line", {
-                                "v": fmtKE(totalCarbs),
-                                "u": carbUnitLabel,
-                              }),
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  fontSize: 12.5, color: Color(0xFF81C784), fontWeight: FontWeight.w600),
+                          Center(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: _openKeCalculator,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Text(
+                                    tFmt("diab_day_line", {
+                                      "v": fmtKE(totalCarbs),
+                                      "u": carbUnitLabel,
+                                    }),
+                                    style: const TextStyle(
+                                        fontSize: 12.5, color: Color(0xFF81C784), fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.calculate_outlined, size: 17, color: Color(0xFF81C784)),
+                                ]),
+                              ),
                             ),
                           ),
                         _dayMacroDetails(
@@ -24193,8 +24218,18 @@ _pickField(
                               _mealSlotLeading(meal),
                               const SizedBox(width: 10),
                               Expanded(
-                                child: Text(
-                                  _displayMealName(meal),
+                                child: Text.rich(
+                                  TextSpan(children: [
+                                    TextSpan(text: _displayMealName(meal)),
+                                    if (diabetic && (totals["carbs"] ?? 0) > 0)
+                                      TextSpan(
+                                        text: "   ${fmtKE(totals["carbs"]!)} $carbUnitLabel",
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF81C784)),
+                                      ),
+                                  ]),
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 14,
@@ -25615,6 +25650,12 @@ _pickField(
                     ),
                     child: Text(t("diab_disclaimer"),
                         style: const TextStyle(fontSize: 11.5, color: Colors.white70, height: 1.4)),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _openKeCalculator,
+                    icon: const Icon(Icons.calculate_outlined, size: 18),
+                    label: Text(tFmt("ke_calc_title", {"u": carbUnitLabel})),
                   ),
                 ],
               ],
@@ -33701,6 +33742,152 @@ _pickField(
 
   /// Schnell eintragen: Name + Makros (z. B. auswärts gegessen, Werte gegoogelt).
   /// Zählt einmalig; optional in die Datenbank übernehmen.
+  /// KE/BE-Rechner: Lebensmittel + Menge oder KH direkt → Einheiten.
+  Future<void> _openKeCalculator() async {
+    const gold = Color(0xFFC9A24A);
+    const green = Color(0xFF81C784);
+    Food? food;
+    final gC = TextEditingController(text: "100");
+    final khC = TextEditingController();
+    double num(TextEditingController c) =>
+        double.tryParse(c.text.trim().replaceAll(",", ".")) ?? 0;
+    var goQuick = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => StatefulBuilder(builder: (c, setK) {
+        final g = num(gC);
+        final kh = food != null ? food!.carbs * g / 100 : 0.0;
+        final kh2 = num(khC);
+        Widget result(double carbs) => Container(
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: green.withValues(alpha: 0.5)),
+                color: green.withValues(alpha: 0.06),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Text("${carbs.toStringAsFixed(1)} g ${t("carbs")}",
+                      style: const TextStyle(fontSize: 14, color: Colors.white70)),
+                ),
+                Text("${fmtKE(carbs)} $carbUnitLabel",
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w800, color: green)),
+              ]),
+            );
+        final portions = food == null ? const <(String, double)>[] : _portionsFor(food!);
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(tFmt("ke_calc_title", {"u": carbUnitLabel}),
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    ),
+                    _sheetCloseButton(c),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(tFmt("ke_calc_sub", {"u": carbUnitLabel, "g": "$carbUnitG"}),
+                      style: const TextStyle(fontSize: 12, color: Colors.white60, height: 1.35)),
+                  _dlgGroup(t("ke_calc_food")),
+                  InkWell(
+                    onTap: () async {
+                      final f = await _pickFoodBySearch();
+                      if (f == null) return;
+                      setK(() {
+                        food = f;
+                        final d = _defaultPortion(f);
+                        gC.text = d.$2.round().toString();
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: const BoxDecoration(
+                        border: Border(bottom: BorderSide(color: Color(0x22FFFFFF))),
+                      ),
+                      child: Row(children: [
+                        const Icon(Icons.search, color: gold, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: food == null
+                              ? Text(t("ke_calc_pick"),
+                                  style: const TextStyle(fontSize: 15, color: Colors.white70))
+                              : _foodNameBrand(food!,
+                                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                        ),
+                        const Icon(Icons.chevron_right, color: Colors.white38),
+                      ]),
+                    ),
+                  ),
+                  if (food != null) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: gC,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: _touchInputDecoration(t("portion_grams")).copyWith(suffixText: "g"),
+                      onChanged: (_) => setK(() {}),
+                    ),
+                    if (portions.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 6, runSpacing: 6, children: [
+                        for (final p in portions)
+                          ActionChip(
+                            label: Text("${p.$1} · ${p.$2.round()} g",
+                                style: const TextStyle(fontSize: 12)),
+                            side: const BorderSide(color: Colors.white24),
+                            onPressed: () => setK(() => gC.text = p.$2.round().toString()),
+                          ),
+                      ]),
+                    ],
+                    result(kh),
+                  ],
+                  _dlgGroup(t("ke_calc_direct")),
+                  TextField(
+                    controller: khC,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _touchInputDecoration(t("ke_calc_carbs_in")).copyWith(suffixText: "g"),
+                    onChanged: (_) => setK(() {}),
+                  ),
+                  if (kh2 > 0) result(kh2),
+                  const SizedBox(height: 14),
+                  Text(t("ke_calc_hint"),
+                      style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.4)),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: gold,
+                      side: BorderSide(color: gold.withValues(alpha: 0.4)),
+                    ),
+                    onPressed: () {
+                      goQuick = true;
+                      Navigator.pop(c);
+                    },
+                    icon: const Icon(Icons.bolt, size: 18),
+                    label: Text(t("ke_calc_quick")),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(t("diab_disclaimer"),
+                      style: const TextStyle(fontSize: 10.5, color: Colors.white38, height: 1.35)),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+    if (goQuick && mounted) await _openQuickEntrySheet();
+  }
+
   Future<void> _openQuickEntrySheet() async {
     const gold = Color(0xFFC9A24A);
     final nameC = TextEditingController();
