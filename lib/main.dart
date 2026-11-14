@@ -6880,10 +6880,29 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
     if (r == null || !mounted) return false;
+    final prev = lastMealKcalByDay[selectedDayKey];
+    final dayK = selectedDayKey;
     setState(() {
       lastMealKcalByDay[selectedDayKey] = r;
     });
     unawaited(_saveAppState());
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(r.useRemainder ? t("last_meal_mode_rest") : t("last_meal_mode_normal")),
+      action: SnackBarAction(
+        label: t("undo"),
+        onPressed: () {
+          setState(() {
+            if (prev == null) {
+              lastMealKcalByDay.remove(dayK);
+            } else {
+              lastMealKcalByDay[dayK] = prev;
+            }
+          });
+          unawaited(_saveAppState());
+        },
+      ),
+    ));
     return true;
   }
 
@@ -8659,6 +8678,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "undo": "Rückgängig",
+      "last_meal_mode_rest": "Letzte Mahlzeit: Rest des Tages",
+      "last_meal_mode_normal": "Letzte Mahlzeit: normaler Anteil",
+      "last_meal_change": "Ändern",
+      "last_meal_reset": "Zurücksetzen",
       "tpl_swap": "Austauschen",
       "tpl_swap_title": "{n} austauschen",
       "tpl_swap_sub": "Ähnliche Nährwerte zuerst — Mengen werden neu berechnet.",
@@ -10004,6 +10028,11 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "undo": "Undo",
+      "last_meal_mode_rest": "Last meal: rest of the day",
+      "last_meal_mode_normal": "Last meal: normal share",
+      "last_meal_change": "Change",
+      "last_meal_reset": "Reset",
       "tpl_swap": "Swap",
       "tpl_swap_title": "Swap {n}",
       "tpl_swap_sub": "Most similar macros first — amounts are recalculated.",
@@ -26994,13 +27023,57 @@ class _MainScreenState extends State<MainScreen> {
     ];
 
 
+    final lastChoice = meal == _anchoredLastMealIdForKcal()
+        ? lastMealKcalByDay[selectedDayKey]
+        : null;
     final rangeLine = showRange
         ? Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              tFmt("meal_range_line", {"r": rangeStr}),
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 11.5, color: tx.range),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  tFmt("meal_range_line", {"r": rangeStr}),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(fontSize: 11.5, color: tx.range),
+                ),
+                // Letzte-Mahlzeit-Wahl sichtbar + änderbar / rückgängig.
+                if (lastChoice != null)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          lastChoice.useRemainder
+                              ? t("last_meal_mode_rest")
+                              : t("last_meal_mode_normal"),
+                          style: TextStyle(fontSize: 11.5, color: tx.range),
+                        ),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          foregroundColor: const Color(0xFFC9A24A),
+                        ),
+                        onPressed: () => unawaited(_showLastMealKcalChoiceDialog()),
+                        child: Text(t("last_meal_change"), style: const TextStyle(fontSize: 11.5)),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          foregroundColor: const Color(0xFFC9A24A),
+                        ),
+                        onPressed: () {
+                          setState(() => lastMealKcalByDay.remove(selectedDayKey));
+                          unawaited(_saveAppState());
+                        },
+                        child: Text(t("last_meal_reset"), style: const TextStyle(fontSize: 11.5)),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           )
         : const SizedBox.shrink();
