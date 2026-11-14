@@ -3177,10 +3177,18 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Future<Food?> _pickFoodBySearch() async {
+  /// Lebensmittel aus der Datenbank wählen: durchblättern nach Kategorie, optional suchen.
+  Future<Food?> _pickFoodBySearch({String initialCat = "Alle"}) async {
     var q = "";
-    return showDialog<Food>(
+    var cat = initialCat;
+    const gold = Color(0xFFC9A24A);
+    const cats = ["Alle", "Protein", "Carbs", "Fett", "Obst", "Gemüse", "Ballaststoffe", "Rezepte", "Mahlzeiten"];
+    return showModalBottomSheet<Food>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setL) {
           String norm(String x) => x
@@ -3190,54 +3198,125 @@ class _MainScreenState extends State<MainScreen> {
               .replaceAll("ü", "u")
               .replaceAll("ß", "ss");
           final words = norm(q).split(RegExp(r"\s+")).where((w) => w.isNotEmpty).toList();
-          final hits = words.isEmpty
-              ? <Food>[]
-              : foodDatabase.where((f) => words.every(norm(f.name).contains)).take(12).toList();
-          return AlertDialog(
-            title: Text(t("meal_tpl_add_food")),
-            content: SizedBox(
-              width: 340,
+          final hits = foodDatabase
+              .where((f) =>
+                  (cat == "Alle" || _inCat(f, cat)) &&
+                  (!_veganOnly || _isVegan(f)) &&
+                  words.every(norm(f.name).contains))
+              .toList()
+            ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.8,
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextField(
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      hintText: t("track_search_hint"),
-                      isDense: true,
-                    ),
-                    onChanged: (v) => setL(() => q = v),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 12, 6),
+                    child: Row(children: [
+                      Expanded(
+                        child: Text(t("meal_tpl_add_food"),
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                      ),
+                      _sheetCloseButton(ctx),
+                    ]),
                   ),
-                  const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 320),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: TextField(
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        hintText: t("track_search_hint"),
+                        isDense: true,
+                      ),
+                      onChanged: (v) => setL(() => q = v),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 38,
                     child: ListView(
-                      shrinkWrap: true,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
                       children: [
-                        for (final f in hits)
-                          ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(f.name),
-                            subtitle: Text(f.isRecipe
-                                ? t("meal_tpl_recipe_fixed")
-                                : "${f.calories.round()} kcal / 100 g"),
-                            onTap: () => Navigator.pop(ctx, f),
+                        for (final c in cats)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              visualDensity: VisualDensity.compact,
+                              showCheckmark: false,
+                              label: Text(_tCat(c), style: const TextStyle(fontSize: 12.5)),
+                              selected: cat == c,
+                              onSelected: (_) => setL(() => cat = c),
+                            ),
                           ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: hits.isEmpty
+                        ? Center(
+                            child: Text(t("meal_tracked_empty"),
+                                style: const TextStyle(color: Colors.white54)))
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                            itemCount: hits.length,
+                            itemBuilder: (_, i) {
+                              final f = hits[i];
+                              return InkWell(
+                                onTap: () => Navigator.pop(ctx, f),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 9),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(
+                                          color: context.sol.muted.withValues(alpha: 0.18),
+                                          width: 0.8),
+                                    ),
+                                  ),
+                                  child: Row(children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: (f.imagePath != null && f.imagePath!.isNotEmpty)
+                                          ? _foodImageWidget(f.imagePath!,
+                                              width: 40,
+                                              height: 40,
+                                              error: Container(
+                                                  width: 40, height: 40, color: Colors.white10))
+                                          : Container(
+                                              width: 40,
+                                              height: 40,
+                                              color: Colors.white.withValues(alpha: 0.05),
+                                              child: const Icon(Icons.restaurant,
+                                                  size: 18, color: Colors.white24)),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(f.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontSize: 14, fontWeight: FontWeight.w600)),
+                                          Text(
+                                              "P ${f.protein.round()} · K ${f.carbs.round()} · F ${f.fat.round()} · ${f.calories.round()} kcal / 100 g",
+                                              style: TextStyle(fontSize: 11.5, color: context.sol.muted)),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.chevron_right, color: gold, size: 20),
+                                  ]),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(t("cancel")),
-              ),
-            ],
           );
         },
       ),
@@ -28378,7 +28457,8 @@ class _MainScreenState extends State<MainScreen> {
 
         // Eigenes Lebensmittel wählen (z. B. was im Kühlschrank ist), optional feste Menge.
         Future<void> pickOwn(int step) async {
-          final f = await _pickFoodBySearch();
+          final f = await _pickFoodBySearch(
+              initialCat: step == 0 ? "Protein" : (step == 1 ? "Carbs" : "Fett"));
           if (f == null) return;
           final gCtrl = TextEditingController();
           final g = await showDialog<double?>(
