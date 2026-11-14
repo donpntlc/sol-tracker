@@ -8460,6 +8460,8 @@ class _MainScreenState extends State<MainScreen> {
         "sol_gym_bridge_v1",
         jsonEncode({
           "maint": _maintenanceKcalFromBody().round(),
+          "factor": _activityFactor(),
+          "level": activityLevel,
           "goal": goalCalories.round(),
           "mode": nutritionMode,
           "at": dateKeyFromDate(DateTime.now()),
