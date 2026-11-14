@@ -23,7 +23,15 @@
         if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
       }
       window.addEventListener('scroll', reset, { passive: true });
-      document.addEventListener('focusout', function () { setTimeout(reset, 50); setTimeout(reset, 400); });
+      // Nach dem Schließen der Tastatur: Flutter neu messen lassen,
+      // sonst bleibt unten ein schwarzer Streifen und die Leiste rutscht hoch.
+      function nudge() { reset(); window.dispatchEvent(new Event('resize')); }
+      document.addEventListener('focusout', function () {
+        setTimeout(reset, 50); setTimeout(nudge, 400); setTimeout(nudge, 900);
+      });
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) setTimeout(nudge, 200);
+      });
       window.addEventListener('resize', function () { setTimeout(reset, 50); });
       window.addEventListener('pageshow', reset);
       if (window.visualViewport) {
