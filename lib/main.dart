@@ -8765,6 +8765,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_recipes_head": "Rezepte",
       "gen2_grp_scope": "Für",
       "gen2_grp_goal": "Ziel",
       "gen2_grp_taste": "Geschmack",
@@ -10125,6 +10126,7 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_recipes_head": "Recipes",
       "gen2_grp_scope": "For",
       "gen2_grp_goal": "Goal",
       "gen2_grp_taste": "Taste",
@@ -23278,7 +23280,8 @@ class _MainScreenState extends State<MainScreen> {
                   padding: EdgeInsets.zero,
                   tooltip: t("meal_add_menu"),
                   color: context.sol.card,
-                  position: PopupMenuPosition.under,
+                  position: PopupMenuPosition.over,
+                  offset: const Offset(0, -200),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                     side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
@@ -26469,7 +26472,8 @@ class _MainScreenState extends State<MainScreen> {
                 PopupMenuButton<String>(
                   tooltip: t("meal_add_menu"),
                   color: context.sol.card,
-                  position: PopupMenuPosition.under,
+                  position: PopupMenuPosition.over,
+                  offset: const Offset(0, -144),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                     side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
@@ -27087,7 +27091,8 @@ class _MainScreenState extends State<MainScreen> {
           padding: EdgeInsets.zero,
           tooltip: t("meal_add_menu"),
           color: context.sol.card,
-          position: PopupMenuPosition.under,
+          position: PopupMenuPosition.over,
+          offset: const Offset(0, -200),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
             side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
@@ -28240,7 +28245,25 @@ class _MainScreenState extends State<MainScreen> {
             ];
           }
           return [
-            for (var i = 0; i < list.length; i++)
+            for (var i = 0; i < list.length; i++) ...[
+              // Trenner zwischen Kombis und Rezepten.
+              if (list[i].recipe && (i == 0 || !list[i - 1].recipe))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 12),
+                  child: Row(children: [
+                    Expanded(child: Container(height: 1, color: gold.withValues(alpha: 0.35))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Text(t("gen2_recipes_head").toUpperCase(),
+                          style: const TextStyle(
+                              fontSize: 11,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w800,
+                              color: gold)),
+                    ),
+                    Expanded(child: Container(height: 1, color: gold.withValues(alpha: 0.35))),
+                  ]),
+                ),
               Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
@@ -28281,6 +28304,7 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
               ),
+            ],
           ];
         }
 
