@@ -977,11 +977,29 @@ class MyApp extends StatelessWidget {
       builder: (context, isLight, _) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
+          scrollBehavior: const _SolScrollBehavior(),
           theme: _buildSolAppThemeData(isLight),
           home: const MainScreen(),
           builder: (context, child) => _webZoom(context, child),
         );
       },
+    );
+  }
+}
+
+/// Überall eine dünne Scroll-Leiste an der Seite (beim Scrollen sichtbar),
+/// damit man sieht, wie weit es noch geht. Nur vertikal.
+class _SolScrollBehavior extends MaterialScrollBehavior {
+  const _SolScrollBehavior();
+
+  @override
+  Widget buildScrollbar(BuildContext context, Widget child, ScrollableDetails details) {
+    if (axisDirectionToAxis(details.direction) != Axis.vertical) return child;
+    return Scrollbar(
+      controller: details.controller,
+      thickness: 3.5,
+      radius: const Radius.circular(4),
+      child: child,
     );
   }
 }
@@ -8747,6 +8765,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_grp_scope": "Für",
+      "gen2_grp_goal": "Ziel",
+      "gen2_grp_taste": "Geschmack",
       "menu_add_food": "Lebensmittel",
       "menu_add_food_sub": "Suchen, scannen, zuletzt",
       "menu_add_tpl": "Mahlzeit",
@@ -10104,6 +10125,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_grp_scope": "For",
+      "gen2_grp_goal": "Goal",
+      "gen2_grp_taste": "Taste",
       "menu_add_food": "Food",
       "menu_add_food_sub": "Search, scan, recent",
       "menu_add_tpl": "Meal",
@@ -28147,7 +28171,8 @@ class _MainScreenState extends State<MainScreen> {
               ]),
             );
         Widget foodRow(Food f, double g, {bool selected = false, VoidCallback? onTap}) => InkWell(
-              onTap: onTap,
+              // Kombis: antippen → Details (Bild, Zutaten, Nährwerte).
+              onTap: onTap ?? () => _showRecipeInfoDialog(f),
               borderRadius: BorderRadius.circular(10),
               child: Container(
                 margin: const EdgeInsets.symmetric(vertical: 3),
@@ -28166,6 +28191,15 @@ class _MainScreenState extends State<MainScreen> {
                       child: Text("${g.round()} g",
                           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                     ),
+                    if (f.imagePath != null && f.imagePath!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _foodImageWidget(f.imagePath!,
+                              width: 40, height: 40, error: const SizedBox(width: 40, height: 40)),
+                        ),
+                      ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -28179,9 +28213,16 @@ class _MainScreenState extends State<MainScreen> {
                         ],
                       ),
                     ),
-                    if (onTap != null)
+                    if (onTap != null) ...[
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.info_outline, size: 18, color: Colors.white38),
+                        onPressed: () => _showRecipeInfoDialog(f),
+                      ),
                       Icon(selected ? Icons.check_circle : Icons.radio_button_unchecked,
                           size: 20, color: selected ? gold : Colors.white24),
+                    ] else
+                      const Icon(Icons.chevron_right, size: 18, color: Colors.white24),
                   ],
                 ),
               ),
@@ -28336,23 +28377,49 @@ class _MainScreenState extends State<MainScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 13),
                 child: Column(
                   children: [
-                    Row(children: [
-                      pill(t("gen2_scope_meal"), !scopeDay, () => setG(() => setScope(false))),
-                      pill(t("gen2_scope_day"), scopeDay, () => setG(() => setScope(true))),
-                    ]),
-                    const SizedBox(height: 6),
-                    Row(children: [
-                      pill(t("gen2_cut"), goal == "cut", () => setG(() => goal = "cut")),
-                      pill(t("gen2_normal"), goal == "normal", () => setG(() => goal = "normal")),
-                      pill(t("gen2_bulk"), goal == "bulk", () => setG(() => goal = "bulk")),
-                    ]),
-                    const SizedBox(height: 6),
-                    Row(children: [
-                      pill(t("gen2_any"), flavor == "all", () => setG(() => flavor = "all")),
-                      pill(t("recipe_flavor_sweet"), flavor == "sweet", () => setG(() => flavor = "sweet")),
-                      pill(t("recipe_flavor_salty"), flavor == "salty", () => setG(() => flavor = "salty")),
-                      pill(t("gen2_vegan"), vegan, () => setG(() => vegan = !vegan)),
-                    ]),
+                    // Drei Gruppen, je eine Auswahl — mit Überschrift und Linie getrennt.
+                    for (final g in [
+                      (t("gen2_grp_scope"), [
+                        pill(t("gen2_scope_meal"), !scopeDay, () => setG(() => setScope(false))),
+                        pill(t("gen2_scope_day"), scopeDay, () => setG(() => setScope(true))),
+                      ]),
+                      (t("gen2_grp_goal"), [
+                        pill(t("gen2_cut"), goal == "cut", () => setG(() => goal = "cut")),
+                        pill(t("gen2_normal"), goal == "normal", () => setG(() => goal = "normal")),
+                        pill(t("gen2_bulk"), goal == "bulk", () => setG(() => goal = "bulk")),
+                      ]),
+                      (t("gen2_grp_taste"), [
+                        pill(t("gen2_any"), flavor == "all", () => setG(() => flavor = "all")),
+                        pill(t("recipe_flavor_sweet"), flavor == "sweet", () => setG(() => flavor = "sweet")),
+                        pill(t("recipe_flavor_salty"), flavor == "salty", () => setG(() => flavor = "salty")),
+                        Container(
+                          width: 1,
+                          height: 22,
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          color: Colors.white24,
+                        ),
+                        pill(vegan ? "✓ ${t("gen2_vegan")}" : t("gen2_vegan"), vegan,
+                            () => setG(() => vegan = !vegan)),
+                      ]),
+                    ]) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+                        child: Row(children: [
+                          Text(g.$1.toUpperCase(),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  letterSpacing: 1.1,
+                                  fontWeight: FontWeight.w700,
+                                  color: context.sol.muted)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                                height: 1, color: Colors.white.withValues(alpha: 0.08)),
+                          ),
+                        ]),
+                      ),
+                      Row(children: g.$2),
+                    ],
                   ],
                 ),
               ),
