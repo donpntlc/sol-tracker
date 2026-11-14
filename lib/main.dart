@@ -3070,6 +3070,28 @@ class _MainScreenState extends State<MainScreen> {
     ];
   }
 
+  /// Symbol für Lebensmittel ohne Foto (nach Kategorie / Name).
+  String _foodEmoji(Food f) {
+    final n = f.name.toLowerCase();
+    bool has(List<String> l) => l.any(n.contains);
+    if (f.category == "Mahlzeiten") return "🍽️";
+    if (f.category == "Rezepte" || f.isRecipe) return "🍳";
+    if (has(["pulver", "isolat", "whey", "eaa", "shake"])) return "🥤";
+    if (has(["milch", "joghurt", "quark", "skyr"])) return "🥛";
+    if (has(["tofu", "tempeh", "edamame", "soja", "seitan", "myko", "linsen", "kichererbsen", "bohnen"])) return "🌱";
+    if (has(["fisch", "lachs", "thunfisch", "seelachs", "shrimp", "garnele", "kabeljau"])) return "🐟";
+    if (has(["ei", "eier"])) return "🥚";
+    if (f.isInCategory("Obst")) return "🍎";
+    if (f.isInCategory("Gemüse")) return "🥦";
+    if (f.category == "Protein") return "🍗";
+    if (f.category == "Fett") return "🥑";
+    if (has(["brot", "toast", "wrap"])) return "🍞";
+    if (has(["nudel", "pasta"])) return "🍝";
+    if (has(["kartoffel"])) return "🥔";
+    if (f.category == "Carbs") return "🍚";
+    return "🍴";
+  }
+
   /// Kleines ✕ im Kreis zum Schließen von Blättern/Dialogen.
   Widget _sheetCloseButton(BuildContext c) => InkResponse(
         radius: 22,
@@ -4882,6 +4904,7 @@ class _MainScreenState extends State<MainScreen> {
                         : (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
                     trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
+                    placeholder: _foodEmoji(f),
                     fav: _isFav(f),
                     onFav: () async {
                       await _toggleFavKey("f:${f.name}");
@@ -5264,6 +5287,7 @@ class _MainScreenState extends State<MainScreen> {
     required String sub,
     required String trailing,
     String? image,
+    String? placeholder,
     required VoidCallback onTap,
     bool? fav,
     VoidCallback? onFav,
@@ -5298,6 +5322,23 @@ class _MainScreenState extends State<MainScreen> {
                     filterQuality: FilterQuality.high,
                     errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46)),
               ),
+              ),
+              const SizedBox(width: 12),
+            ] else if (placeholder != null) ...[
+              // Noch kein Foto: ruhige Kachel mit Symbol statt Lücke.
+              GestureDetector(
+                onTap: onInfo,
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2418),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFC9A24A).withValues(alpha: 0.25)),
+                  ),
+                  child: Text(placeholder, style: const TextStyle(fontSize: 22)),
+                ),
               ),
               const SizedBox(width: 12),
             ],
