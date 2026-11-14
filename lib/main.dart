@@ -1023,6 +1023,180 @@ class MyApp extends StatelessWidget {
 
 /// Überall eine dünne Scroll-Leiste an der Seite (beim Scrollen sichtbar),
 /// damit man sieht, wie weit es noch geht. Nur vertikal.
+/// Ersatz für Standard-Dropdowns: Feld wie gewohnt, Auswahl als Blatt mit feinen Linien.
+class SolDropdown<T> extends StatefulWidget {
+  const SolDropdown({
+    super.key,
+    required this.items,
+    required this.onChanged,
+    this.value,
+    this.initialValue,
+    this.decoration,
+    this.isExpanded = true,
+    this.dropdownColor,
+    this.borderRadius,
+    this.style,
+    this.iconEnabledColor,
+    this.selectedItemBuilder,
+    this.hint,
+    this.underline,
+  });
+  final List<DropdownMenuItem<T>>? items;
+  final ValueChanged<T?>? onChanged;
+  final T? value;
+  final T? initialValue;
+  final InputDecoration? decoration;
+  final bool isExpanded;
+  final Color? dropdownColor;
+  final BorderRadius? borderRadius;
+  final TextStyle? style;
+  final Color? iconEnabledColor;
+  final DropdownButtonBuilder? selectedItemBuilder;
+  final Widget? hint;
+  final Widget? underline;
+
+  @override
+  State<SolDropdown<T>> createState() => _SolDropdownState<T>();
+}
+
+class _SolDropdownState<T> extends State<SolDropdown<T>> {
+  late T? _cur = widget.value ?? widget.initialValue;
+
+  @override
+  void didUpdateWidget(covariant SolDropdown<T> old) {
+    super.didUpdateWidget(old);
+    if (widget.value != null || old.value != null) _cur = widget.value;
+  }
+
+  Future<void> _open() async {
+    final items = widget.items ?? const [];
+    if (items.isEmpty || widget.onChanged == null) return;
+    final title = widget.decoration?.labelText ?? "";
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (c) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(c).size.height * 0.75),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 10, 4),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(title,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(c),
+                    icon: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: const Icon(Icons.close, size: 16, color: Colors.white70),
+                    ),
+                  ),
+                ]),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const Divider(
+                      height: 1, indent: 18, endIndent: 18, color: Color(0x22FFFFFF)),
+                  itemBuilder: (_, i) {
+                    final sel = items[i].value == _cur;
+                    return InkWell(
+                      onTap: () => Navigator.pop(c, i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        child: Row(children: [
+                          Expanded(
+                            child: DefaultTextStyle.merge(
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                                  color: sel ? const Color(0xFFC9A24A) : Colors.white),
+                              child: items[i].child,
+                            ),
+                          ),
+                          if (sel)
+                            const Icon(Icons.check, color: Color(0xFFC9A24A), size: 20),
+                        ]),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final v = items[picked].value;
+    setState(() => _cur = v);
+    items[picked].onTap?.call();
+    widget.onChanged?.call(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items ?? const [];
+    final idx = items.indexWhere((e) => e.value == _cur);
+    Widget shown;
+    if (idx < 0) {
+      shown = widget.hint ?? const SizedBox.shrink();
+    } else if (widget.selectedItemBuilder != null) {
+      final b = widget.selectedItemBuilder!(context);
+      shown = idx < b.length ? b[idx] : items[idx].child;
+    } else {
+      shown = items[idx].child;
+    }
+    final row = Row(children: [
+      Expanded(
+        child: DefaultTextStyle.merge(
+          style: widget.style ?? const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600),
+          overflow: TextOverflow.ellipsis,
+          child: Align(alignment: Alignment.centerLeft, child: shown),
+        ),
+      ),
+      Icon(Icons.keyboard_arrow_down_rounded,
+          color: widget.iconEnabledColor ?? Colors.white54),
+    ]);
+    if (widget.decoration != null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _open,
+        child: InputDecorator(
+          decoration: widget.decoration!
+              .applyDefaults(Theme.of(context).inputDecorationTheme),
+          isEmpty: false,
+          child: row,
+        ),
+      );
+    }
+    return InkWell(
+      onTap: _open,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0x22FFFFFF))),
+        ),
+        child: row,
+      ),
+    );
+  }
+}
+
 class _SolScrollBehavior extends MaterialScrollBehavior {
   const _SolScrollBehavior();
 
@@ -12577,7 +12751,7 @@ class _MainScreenState extends State<MainScreen> {
                     style: TextStyle(fontSize: 12, color: context.sol.muted)),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
+              SolDropdown<String>(
                 dropdownColor: const Color(0xFF1C1C1E),
                 borderRadius: BorderRadius.circular(14),
                 initialValue: pickMeal,
@@ -13299,7 +13473,7 @@ class _MainScreenState extends State<MainScreen> {
                         },
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
+                      SolDropdown<String>(
                         dropdownColor: const Color(0xFF1C1C1E),
                         borderRadius: BorderRadius.circular(14),
                         value: groupId,
@@ -13428,7 +13602,7 @@ class _MainScreenState extends State<MainScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
+                    SolDropdown<String>(
                       dropdownColor: const Color(0xFF1C1C1E),
                       borderRadius: BorderRadius.circular(14),
                       value: groupId,
@@ -19548,7 +19722,7 @@ _pickField(
               ),
               const SizedBox(height: 10),
               if (useMealPicker) ...[
-                DropdownButtonFormField<String>(
+                SolDropdown<String>(
                   dropdownColor: const Color(0xFF1C1C1E),
                   borderRadius: BorderRadius.circular(14),
                   value: meal,
@@ -19589,7 +19763,7 @@ _pickField(
                 ),
               ),
               const SizedBox(height: 4),
-              DropdownButtonFormField<String>(
+              SolDropdown<String>(
                 dropdownColor: const Color(0xFF1C1C1E),
                 borderRadius: BorderRadius.circular(14),
                 value: inputMode,
@@ -24651,7 +24825,7 @@ _pickField(
             title: t("mode"),
             child: Column(
               children: [
-                DropdownButtonFormField<String>(
+                SolDropdown<String>(
                   borderRadius: BorderRadius.circular(14),
                   key: ValueKey("mode_drop_${nutritionMode}_$_modeDropdownRevision"),
                   initialValue: nutritionMode,
@@ -25547,7 +25721,7 @@ _pickField(
                   ),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<int>(
+                SolDropdown<int>(
                   borderRadius: BorderRadius.circular(14),
                   value: weekStartWeekday,
                   decoration: _touchInputDecoration(t("week_start_settings")),
@@ -25703,7 +25877,7 @@ _pickField(
           ),
           _sectionCard(
             title: t("language"),
-            child: DropdownButtonFormField<String>(
+            child: SolDropdown<String>(
               borderRadius: BorderRadius.circular(14),
               initialValue: languageCode,
               decoration: _touchInputDecoration(t("language")),
@@ -30011,7 +30185,7 @@ _pickField(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    DropdownButtonFormField<String>(
+                    SolDropdown<String>(
                       dropdownColor: const Color(0xFF1C1C1E),
                       borderRadius: BorderRadius.circular(14),
                       initialValue: generatorMode,
@@ -30041,7 +30215,7 @@ _pickField(
                       decoration: InputDecoration(labelText: t("mode")),
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
+                    SolDropdown<String>(
                       dropdownColor: const Color(0xFF1C1C1E),
                       borderRadius: BorderRadius.circular(14),
                       initialValue: selectedMeal,
@@ -30661,7 +30835,7 @@ _pickField(
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              DropdownButtonFormField<Food?>(
+                              SolDropdown<Food?>(
                                 dropdownColor: const Color(0xFF1C1C1E),
                                 borderRadius: BorderRadius.circular(14),
                                 value: resolvedRecipe,
@@ -31275,7 +31449,7 @@ _pickField(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DropdownButton<String>(
+                  SolDropdown<String>(
                     dropdownColor: const Color(0xFF1C1C1E),
                     borderRadius: BorderRadius.circular(14),
                     isExpanded: true,
@@ -31533,7 +31707,7 @@ _pickField(
                   Row(
                     children: [
                       Expanded(
-                        child: DropdownButton<Food>(
+                        child: SolDropdown<Food>(
                           borderRadius: BorderRadius.circular(14),
                           isExpanded: true,
                           value: fInList,
@@ -31716,7 +31890,7 @@ _pickField(
                         ),
                       ),
                       const SizedBox(height: 4),
-                      DropdownButton<String>(
+                      SolDropdown<String>(
                         borderRadius: BorderRadius.circular(14),
                         isExpanded: true,
                         value: advInputMode,
@@ -33546,7 +33720,7 @@ _pickField(
                             color: gold, fontSize: 17, fontWeight: FontWeight.w800)),
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
+                  SolDropdown<String>(
                     dropdownColor: const Color(0xFF1C1C1E),
                     borderRadius: BorderRadius.circular(14),
                     initialValue: meal,
@@ -34426,7 +34600,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: DropdownButtonFormField<Food>(
+                              child: SolDropdown<Food>(
                                 borderRadius: BorderRadius.circular(14),
                                 isExpanded: true,
                                 value: f,
@@ -34455,7 +34629,7 @@ class _AiMealReviewDialogState extends State<_AiMealReviewDialog> {
                             const SizedBox(width: 6),
                             SizedBox(
                               width: 100,
-                              child: DropdownButtonFormField<String>(
+                              child: SolDropdown<String>(
                                 dropdownColor: const Color(0xFF1C1C1E),
                                 borderRadius: BorderRadius.circular(14),
                                 isExpanded: true,
