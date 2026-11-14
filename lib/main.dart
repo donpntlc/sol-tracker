@@ -2940,6 +2940,49 @@ class _MainScreenState extends State<MainScreen> {
     return grams;
   }
 
+  /// Einträge im „+“-Menü einer Mahlzeit: Icon, Titel, kurze Erklärung.
+  List<PopupMenuEntry<String>> _mealAddMenuItems({bool withTemplates = true}) {
+    const gold = Color(0xFFC9A24A);
+    PopupMenuItem<String> item(String v, IconData ic, String title, String sub) =>
+        PopupMenuItem<String>(
+          value: v,
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: gold.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(ic, size: 19, color: gold),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                          fontSize: 14.5, fontWeight: FontWeight.w600, color: context.sol.onCard)),
+                  const SizedBox(height: 1),
+                  Text(sub, style: TextStyle(fontSize: 11.5, color: context.sol.muted)),
+                ],
+              ),
+            ),
+          ]),
+        );
+    return [
+      item("food", Icons.search, t("menu_add_food"), t("menu_add_food_sub")),
+      if (withTemplates)
+        item("tpl", Icons.restaurant, t("menu_add_tpl"), t("menu_add_tpl_sub")),
+      item("gen", Icons.auto_awesome_outlined, t("generator"), t("menu_add_gen_sub")),
+      item("ai_photo", Icons.photo_camera_outlined, t("menu_add_ai"), t("menu_add_ai_sub")),
+    ];
+  }
+
   /// Kleines ✕ im Kreis zum Schließen von Blättern/Dialogen.
   Widget _sheetCloseButton(BuildContext c) => InkResponse(
         radius: 22,
@@ -8704,6 +8747,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "menu_add_food": "Lebensmittel",
+      "menu_add_food_sub": "Suchen, scannen, zuletzt",
+      "menu_add_tpl": "Mahlzeit",
+      "menu_add_tpl_sub": "Vorlage, Mengen passend berechnet",
+      "menu_add_gen_sub": "Kombis exakt für deine Makros",
+      "menu_add_ai": "KI-Foto",
+      "menu_add_ai_sub": "Foto machen, Werte schätzen",
       "undo": "Rückgängig",
       "last_meal_mode_rest": "Letzte Mahlzeit: Rest des Tages",
       "last_meal_mode_normal": "Letzte Mahlzeit: normaler Anteil",
@@ -10054,6 +10104,13 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "menu_add_food": "Food",
+      "menu_add_food_sub": "Search, scan, recent",
+      "menu_add_tpl": "Meal",
+      "menu_add_tpl_sub": "Template, amounts fitted",
+      "menu_add_gen_sub": "Combos matching your macros",
+      "menu_add_ai": "AI photo",
+      "menu_add_ai_sub": "Snap a photo, estimate values",
       "undo": "Undo",
       "last_meal_mode_rest": "Last meal: rest of the day",
       "last_meal_mode_normal": "Last meal: normal share",
@@ -23196,6 +23253,12 @@ class _MainScreenState extends State<MainScreen> {
                 PopupMenuButton<String>(
                   padding: EdgeInsets.zero,
                   tooltip: t("meal_add_menu"),
+                  color: context.sol.card,
+                  position: PopupMenuPosition.under,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+                  ),
                   icon: const Icon(
                     Icons.add_circle_outline,
                     size: 23,
@@ -23212,24 +23275,7 @@ class _MainScreenState extends State<MainScreen> {
                       unawaited(_openMealTemplatesSheet(meal));
                     }
                   },
-                  itemBuilder: (c) => [
-                    PopupMenuItem(
-                      value: "food",
-                      child: _ddLine(Text(t("add_food"))),
-                    ),
-                    PopupMenuItem(
-                      value: "tpl",
-                      child: _ddLine(Text(t("meal_tpl_menu"))),
-                    ),
-                    PopupMenuItem(
-                      value: "gen",
-                      child: _ddLine(Text(t("generator"))),
-                    ),
-                    PopupMenuItem(
-                      value: "ai_photo",
-                      child: Text(t("track_add_ai_photo")),
-                    ),
-                  ],
+                  itemBuilder: (_) => _mealAddMenuItems(withTemplates: true),
                 ),
                 IconButton(
                   padding: const EdgeInsets.only(top: 2),
@@ -26398,23 +26444,19 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 PopupMenuButton<String>(
                   tooltip: t("meal_add_menu"),
+                  color: context.sol.card,
+                  position: PopupMenuPosition.under,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+                  ),
                   onSelected: (v) => unawaited(addVia(v)),
                   icon: const Icon(
                     Icons.add_circle_outline,
                     size: 26,
                     color: Color(0xFFC9A24A),
                   ),
-                  itemBuilder: (_) => [
-                    PopupMenuItem(value: "food", child: _ddLine(Text(t("add_food")))),
-                    PopupMenuItem(
-                      value: "gen",
-                      child: _ddLine(Text(t("generator"))),
-                    ),
-                    PopupMenuItem(
-                      value: "ai_photo",
-                      child: Text(t("track_add_ai_photo")),
-                    ),
-                  ],
+                  itemBuilder: (_) => _mealAddMenuItems(withTemplates: false),
                 ),
               ],
             ),
@@ -27020,6 +27062,12 @@ class _MainScreenState extends State<MainScreen> {
         PopupMenuButton<String>(
           padding: EdgeInsets.zero,
           tooltip: t("meal_add_menu"),
+          color: context.sol.card,
+          position: PopupMenuPosition.under,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+          ),
           icon: const Icon(
             Icons.add_circle,
             size: 28,
@@ -27036,15 +27084,7 @@ class _MainScreenState extends State<MainScreen> {
               unawaited(_openMealTemplatesSheet(meal));
             }
           },
-          itemBuilder: (c) => [
-            PopupMenuItem(value: "food", child: _ddLine(Text(t("add_food")))),
-            PopupMenuItem(value: "tpl", child: _ddLine(Text(t("meal_tpl_menu")))),
-            PopupMenuItem(value: "gen", child: _ddLine(Text(t("generator")))),
-            PopupMenuItem(
-              value: "ai_photo",
-              child: Text(t("track_add_ai_photo")),
-            ),
-          ],
+          itemBuilder: (_) => _mealAddMenuItems(withTemplates: true),
         ),
     ];
 
