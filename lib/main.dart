@@ -3210,6 +3210,34 @@ class _MainScreenState extends State<MainScreen> {
     final ctrls = [
       for (final g in solved) TextEditingController(text: g.round().toString())
     ];
+    // Ähnliche Lebensmittel (gleiche Kategorie, ähnliches Makro-Verhältnis).
+    List<Food> similarTo(Food x) {
+      List<double> prof(Food f) {
+        final k = math.max(f.calories, 1.0);
+        return [f.protein * 4.1 / k, f.carbs * 4.1 / k, f.fat * 9.3 / k];
+      }
+      final px = prof(x);
+      double dist(Food f) {
+        final pf = prof(f);
+        var d = 0.0;
+        for (var i = 0; i < 3; i++) {
+          d += (pf[i] - px[i]).abs();
+        }
+        return d + 0.3 * (math.log(math.max(f.calories, 1) / math.max(x.calories, 1))).abs();
+      }
+      final c = foodDatabase
+          .where((f) =>
+              f.name != x.name &&
+              !f.isRecipe &&
+              f.category != "Rezepte" &&
+              f.category != "Mahlzeiten" &&
+              f.calories > 1 &&
+              (f.category == x.category || f.extraCategories.any(x.isInCategory)) &&
+              (!_veganOnly || _isVegan(f)))
+          .toList()
+        ..sort((a, b) => dist(a).compareTo(dist(b)));
+      return c.take(12).toList();
+    }
     final macros = ["protein", "carbs", "fat"];
     final targets = [
       for (final m in macros)
@@ -3272,6 +3300,64 @@ class _MainScreenState extends State<MainScreen> {
                                 size: 18, color: const Color(0xFFC9A24A)),
                             const SizedBox(width: 8),
                             Expanded(child: Text(foods[i].name, style: const TextStyle(fontSize: 14))),
+                            if (!foods[i].isRecipe)
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: t("tpl_swap"),
+                                icon: const Icon(Icons.swap_horiz, size: 20, color: Color(0xFFC9A24A)),
+                                onPressed: () async {
+                                  final alts = similarTo(foods[i]);
+                                  final pick = await showModalBottomSheet<Food>(
+                                    context: ctx,
+                                    backgroundColor: context.sol.scaffold,
+                                    shape: const RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                                    builder: (sc) => SafeArea(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+                                            child: Text(tFmt("tpl_swap_title", {"n": foods[i].name}),
+                                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                                            child: Text(t("tpl_swap_sub"),
+                                                style: TextStyle(fontSize: 12, color: context.sol.muted)),
+                                          ),
+                                          Flexible(
+                                            child: ListView(
+                                              shrinkWrap: true,
+                                              children: [
+                                                for (final a in alts)
+                                                  ListTile(
+                                                    dense: true,
+                                                    title: Text(a.name, style: const TextStyle(fontSize: 14)),
+                                                    subtitle: Text(
+                                                        "P ${a.protein.round()} · K ${a.carbs.round()} · F ${a.fat.round()} · ${a.calories.round()} kcal / 100 g",
+                                                        style: TextStyle(fontSize: 11.5, color: context.sol.muted)),
+                                                    trailing: const Icon(Icons.chevron_right),
+                                                    onTap: () => Navigator.pop(sc, a),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                  if (pick == null) return;
+                                  setL(() {
+                                    foods[i] = pick;
+                                    final ng = _solveMealTemplate(meal, foods);
+                                    for (var j = 0; j < ctrls.length; j++) {
+                                      ctrls[j].text = ng[j].round().toString();
+                                    }
+                                  });
+                                },
+                              ),
                             SizedBox(
                               width: 78,
                               child: TextField(
@@ -8475,6 +8561,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "tpl_swap": "Austauschen",
+      "tpl_swap_title": "{n} austauschen",
+      "tpl_swap_sub": "Ähnliche Nährwerte zuerst — Mengen werden neu berechnet.",
       "cat_meals": "Mahlzeiten",
       "db_tpl_add_to": "„{n}“ eintragen in …",
       "quick_title": "Schnell eintragen",
@@ -9817,6 +9906,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "tpl_swap": "Swap",
+      "tpl_swap_title": "Swap {n}",
+      "tpl_swap_sub": "Most similar macros first — amounts are recalculated.",
       "cat_meals": "Meals",
       "db_tpl_add_to": "Add “{n}” to …",
       "quick_title": "Quick add",
