@@ -796,6 +796,7 @@ class _ShoppingListEntry {
     List<String>? tags,
     this.cat,
     List<String>? cats2,
+    this.when,
   })  : tags = tags ?? <String>[],
         cats2 = cats2 ?? <String>[];
   String id;
@@ -812,6 +813,8 @@ class _ShoppingListEntry {
   String? cat;
   /// Weitere Abteilungen (zusätzlich zur Haupt-Abteilung).
   List<String> cats2;
+  /// "d" = Heute (schnell holen), "m" = Woche/Monat (hat Zeit).
+  String? when;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -825,6 +828,7 @@ class _ShoppingListEntry {
         if (tags.isNotEmpty) 't': tags,
         if (cat != null) 'c': cat,
         if (cats2.isNotEmpty) 'c2': cats2,
+        if (when != null) 'w': when,
       };
 
   factory _ShoppingListEntry.fromMap(Map<String, dynamic> m) {
@@ -840,6 +844,7 @@ class _ShoppingListEntry {
       tags: (m['t'] is List) ? (m['t'] as List).map((e) => e.toString()).toList() : null,
       cat: m['c']?.toString(),
       cats2: (m['c2'] is List) ? (m['c2'] as List).map((e) => e.toString()).toList() : null,
+      when: m['w']?.toString(),
     );
   }
 
@@ -855,6 +860,7 @@ class _ShoppingListEntry {
         tags: List<String>.from(tags),
         cat: cat,
         cats2: List<String>.from(cats2),
+        when: when,
       );
 }
 
@@ -9005,6 +9011,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "shop_when_all": "Gesamt",
+      "shop_when_d": "Heute",
+      "shop_when_m": "Woche/Monat",
+      "shop_when_m_short": "Woche/Monat",
       "why_fast": "schnelle KH",
       "why_fast_workout": "schnelle KH — gut rund ums Training",
       "why_often": "oft gegessen",
@@ -10406,6 +10416,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "shop_when_all": "All",
+      "shop_when_d": "Today",
+      "shop_when_m": "Week/Month",
+      "shop_when_m_short": "Week/Month",
       "why_fast": "fast carbs",
       "why_fast_workout": "fast carbs — good around training",
       "why_often": "eaten often",
@@ -35296,6 +35310,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
   late _ShoppingListBundle day;
   late _ShoppingListBundle month;
   String tagFilter = ""; // "" = alle
+  String whenFilter = ""; // "" = Gesamt, "d" = Heute, "m" = Woche/Monat
   bool byAisle = true; // nach Abteilung gruppieren
   bool showDone = false;
   final _addCtrl = TextEditingController();
@@ -35396,11 +35411,20 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
     }
     if (month.entries.isNotEmpty) {
       for (final e in month.entries) {
-        if (!e.tags.contains(widget.t("shop_tab_month"))) e.tags.add(widget.t("shop_tab_month"));
+        e.when = "m";
         day.entries.add(e);
       }
       month.entries.clear();
       changed = true;
+    }
+    // Zeitraum: früherer Tag „Monat“ → Woche/Monat, sonst Heute.
+    final monthTag = widget.t("shop_tab_month");
+    for (final e in day.entries) {
+      if (e.when == null) {
+        e.when = e.tags.contains(monthTag) ? "m" : "d";
+        e.tags.remove(monthTag);
+        changed = true;
+      }
     }
     if (changed) WidgetsBinding.instance.addPostFrameCallback((_) => _persist());
   }
@@ -35477,7 +35501,9 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
   }
 
   List<_ShoppingListEntry> get _visible => day.entries
-      .where((e) => tagFilter.isEmpty || e.tags.contains(tagFilter))
+      .where((e) =>
+          (tagFilter.isEmpty || e.tags.contains(tagFilter)) &&
+          (whenFilter.isEmpty || (e.when ?? "d") == whenFilter))
       .toList();
 
   void _quickAdd([String? text, Food? food]) {
@@ -35488,6 +35514,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
       final ex = day.entries.where((e) => e.label.toLowerCase() == label.toLowerCase()).toList();
       if (ex.isNotEmpty) {
         ex.first.done = false;
+        if (whenFilter.isNotEmpty) ex.first.when = whenFilter;
         if (tagFilter.isNotEmpty && !ex.first.tags.contains(tagFilter)) ex.first.tags.add(tagFilter);
       } else {
         day.entries.add(_ShoppingListEntry(
@@ -35496,6 +35523,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
           label: label,
           linkedFoodName: food?.name,
           tags: tagFilter.isEmpty ? null : [tagFilter],
+          when: whenFilter.isEmpty ? "d" : whenFilter,
         ));
       }
       _addCtrl.clear();
@@ -35539,6 +35567,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
     final newTagC = TextEditingController();
     var aisle = _aisleOf(e);
     final extra = List<String>.from(e.cats2);
+    var when = e.when ?? "d";
     final tags = List<String>.from(e.tags);
     final res = await showModalBottomSheet<String>(
       context: context,
@@ -35578,6 +35607,25 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
                       isDense: true,
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    for (final w in const ["d", "m"])
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          child: ChoiceChip(
+                            showCheckmark: false,
+                            label: SizedBox(
+                              width: double.infinity,
+                              child: Text(w == "d" ? "⚡ ${t("shop_when_d")}" : "🗓 ${t("shop_when_m")}",
+                                  textAlign: TextAlign.center),
+                            ),
+                            selected: when == w,
+                            onSelected: (_) => setL(() => when = w),
+                          ),
+                        ),
+                      ),
+                  ]),
                   const SizedBox(height: 14),
                   Text(t("shop_aisle").toUpperCase(),
                       style: const TextStyle(
@@ -35690,6 +35738,7 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
         e.tags = tags;
         e.cat = aisle;
         e.cats2 = extra.where((x) => x != aisle).toList();
+        e.when = when;
         for (final tg in tags) {
           if (!savedTags.contains(tg)) savedTags.add(tg);
         }
@@ -35744,6 +35793,12 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: done ? Colors.white24 : gold)),
+              ),
+            if (whenFilter.isEmpty && e.when == "m" && !done)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text("🗓 ${widget.t("shop_when_m_short")}",
+                    style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
               ),
             if (e.tags.isNotEmpty && !done)
               Padding(
@@ -35813,6 +35868,46 @@ class _ShoppingListsEditorState extends State<_ShoppingListsEditor> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(14, 6, 14, 30 + MediaQuery.paddingOf(context).bottom),
         children: [
+          // ── Zeitraum: Gesamt / Heute / Woche-Monat ──
+          Container(
+            padding: const EdgeInsets.all(4),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(children: [
+              for (final w in const ["", "d", "m"])
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => whenFilter = w),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: whenFilter == w ? gold : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(children: [
+                        Text(
+                          w == "" ? t("shop_when_all") : (w == "d" ? "⚡ ${t("shop_when_d")}" : "🗓 ${t("shop_when_m")}"),
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: whenFilter == w ? Colors.black : Colors.white70),
+                        ),
+                        Text(
+                          "${day.entries.where((e) => !e.done && (w.isEmpty || (e.when ?? "d") == w)).length}",
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: whenFilter == w ? Colors.black54 : Colors.white38),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+            ]),
+          ),
           // ── Schnell hinzufügen ──
           TextField(
             controller: _addCtrl,
