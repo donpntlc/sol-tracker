@@ -9005,6 +9005,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "why_fast": "schnelle KH",
+      "why_fast_workout": "schnelle KH — gut rund ums Training",
+      "why_often": "oft gegessen",
+      "why_volume": "viel Volumen",
+      "why_compact": "kompakt",
+      "why_slow": "langsame KH",
+      "gen2_show_all": "Alle anzeigen ({n})",
+      "gen2_show_less": "Weniger anzeigen",
       "carb_fast": "schnell",
       "carb_slow": "langsam",
       "diab_day_line": "Kohlenhydrate heute: {v} {u}",
@@ -10398,6 +10406,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "why_fast": "fast carbs",
+      "why_fast_workout": "fast carbs — good around training",
+      "why_often": "eaten often",
+      "why_volume": "high volume",
+      "why_compact": "compact",
+      "why_slow": "slow carbs",
+      "gen2_show_all": "Show all ({n})",
+      "gen2_show_less": "Show less",
       "carb_fast": "fast",
       "carb_slow": "slow",
       "diab_day_line": "Carbs today: {v} {u}",
@@ -28424,6 +28440,7 @@ class _MainScreenState extends State<MainScreen> {
     Food? pickC;
     Food? pickF;
     double? ovP, ovC, ovF; // eigene feste Mengen
+    final showAll = [false, false, false]; // „Alle anzeigen“ je Schritt
 
     final gDay = effectiveMacroGoalsForDay(selectedDayKey);
     final mm = mealMacros[meal]!;
@@ -28479,18 +28496,41 @@ class _MainScreenState extends State<MainScreen> {
     double r5(double g) => g.roundToDouble();
 
     // Sortierung je Ziel: Cut = wenig kcal pro g Makro (viel Volumen), Aufbau = wenig g (kompakt).
+    final usageCounts = _foodUsageCounts();
+    final workoutMeal = meal == "Pre-Workout" || meal == "Post-Workout";
+    // Sortierung: Reinheit des Makros (kcal pro g) je Ziel, echte Mahlzeiten-KH vor
+    // schnellem Zucker (außer rund ums Training), oft Gegessenes nach oben.
     double rankFor(Food f, double per100) {
       if (per100 <= 0.01) return 1e9;
       final kcalPerMacro = f.calories / per100;
       final gramsPerMacro = 100 / per100;
-      // Diabetes: schnelle Zucker nach hinten, langsame KH nach vorne.
-      if (diabetic && per100 == f.carbs && f.carbs > 5) {
-        final pen = (f.sugar / f.carbs) * 20 - (f.fiber >= 4 ? 2 : 0);
-        return kcalPerMacro + pen;
+      final isCarb = per100 == f.carbs && f.carbs > 5;
+      final sugarR = isCarb ? f.sugar / f.carbs : 0.0;
+      final used = math.log(1 + (usageCounts[f.name] ?? 0)) * 0.5;
+      // Diabetes: schnelle Zucker deutlich nach hinten.
+      final sugarPen = diabetic
+          ? sugarR * 20 - (f.fiber >= 4 ? 2 : 0)
+          : (workoutMeal ? 0.0 : sugarR * 3);
+      final base = goal == "cut"
+          ? kcalPerMacro
+          : (goal == "bulk"
+              ? gramsPerMacro * 0.7 + kcalPerMacro * 0.3
+              : kcalPerMacro * 0.8 + gramsPerMacro * 0.2);
+      return base + sugarPen - used;
+    }
+
+    /// Kurzer Grund, warum etwas vorgeschlagen wird.
+    String whyFor(Food f, double per100) {
+      if (per100 <= 0.01) return "";
+      final isCarb = per100 == f.carbs && f.carbs > 5;
+      if (isCarb && f.sugar / f.carbs >= 0.5) {
+        return workoutMeal ? t("why_fast_workout") : t("why_fast");
       }
-      if (goal == "cut") return kcalPerMacro;
-      if (goal == "bulk") return gramsPerMacro;
-      return kcalPerMacro * 0.6 + gramsPerMacro * 0.4;
+      if ((usageCounts[f.name] ?? 0) >= 3) return t("why_often");
+      if (f.calories / per100 <= 5.0 && 100 / per100 >= 4) return t("why_volume");
+      if (100 / per100 <= 1.6) return t("why_compact");
+      if (isCarb && (f.fiber >= 4 || f.sugar / f.carbs <= 0.15)) return t("why_slow");
+      return "";
     }
 
     double get0(double day, double meal) => scopeDay ? day : meal;
@@ -28711,7 +28751,7 @@ class _MainScreenState extends State<MainScreen> {
                           fontSize: big ? 13 : 12)),
               ]),
             );
-        Widget foodRow(Food f, double g, {bool selected = false, VoidCallback? onTap}) => InkWell(
+        Widget foodRow(Food f, double g, {bool selected = false, VoidCallback? onTap, String why = ""}) => InkWell(
               // Kombis: antippen → Details (Bild, Zutaten, Nährwerte).
               onTap: onTap ?? () => _showRecipeInfoDialog(f),
               borderRadius: BorderRadius.circular(10),
@@ -28751,6 +28791,9 @@ class _MainScreenState extends State<MainScreen> {
                               style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                           macroLine(f.calories * g / 100, f.protein * g / 100, f.carbs * g / 100,
                               f.fat * g / 100),
+                          if (why.isNotEmpty)
+                            Text(why,
+                                style: const TextStyle(fontSize: 10.5, color: Colors.white38)),
                         ],
                       ),
                     ),
@@ -28956,34 +28999,56 @@ class _MainScreenState extends State<MainScreen> {
             ..sort((x, y) => (100 / x.fat).compareTo(100 / y.fat));
           List<Food> withPick(List<Food> l, int n, Food? pick) =>
               [if (pick != null && !l.take(n).contains(pick)) pick, ...l.take(n)];
+          Widget moreBtn(int step, int total, int shown) => total <= shown && !showAll[step]
+              ? const SizedBox.shrink()
+              : Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                        foregroundColor: gold, visualDensity: VisualDensity.compact),
+                    onPressed: () => setG(() => showAll[step] = !showAll[step]),
+                    icon: Icon(showAll[step] ? Icons.expand_less : Icons.expand_more, size: 18),
+                    label: Text(showAll[step]
+                        ? t("gen2_show_less")
+                        : tFmt("gen2_show_all", {"n": total.toString()})),
+                  ),
+                );
+          final nP = showAll[0] ? ps.length : 8;
+          final nC = showAll[1] ? cs.length : 8;
+          final nF = showAll[2] ? fs.length : 5;
           return [
             sectionLabel("1 · ${t("gen2_step_p")} — ${t("gen2_need")} ${tP.round()} g"),
-            for (final f in withPick(ps, 8, pickP))
+            for (final f in withPick(ps, nP, pickP))
               foodRow(f, pickP == f ? a.gP : gFor(f, tP, f.protein),
+                  why: whyFor(f, f.protein),
                   selected: pickP == f,
                   onTap: () => setG(() {
                         pickP = pickP == f ? null : f;
                         ovP = null;
                       })),
+            moreBtn(0, ps.length, nP),
             ownRow(0),
             sectionLabel("2 · ${t("gen2_step_c")} — ${t("gen2_need")} ${a.afterC.round()} g"),
-            for (final f in withPick(cs, 8, pickC))
+            for (final f in withPick(cs, nC, pickC))
               foodRow(f, pickC == f ? a.gC : gFor(f, a.afterC, f.carbs),
+                  why: whyFor(f, f.carbs),
                   selected: pickC == f,
                   onTap: () => setG(() {
                         pickC = pickC == f ? null : f;
                         ovC = null;
                       })),
+            moreBtn(1, cs.length, nC),
             ownRow(1),
             if (a.afterF > 3 || pickF != null) ...[
               sectionLabel("3 · ${t("gen2_step_f")} — ${t("gen2_need")} ${a.afterF.round()} g"),
-              for (final f in withPick(fs, 5, pickF))
+              for (final f in withPick(fs, nF, pickF))
                 foodRow(f, pickF == f ? a.gF : gFor(f, a.afterF, f.fat),
                     selected: pickF == f,
                     onTap: () => setG(() {
                           pickF = pickF == f ? null : f;
                           ovF = null;
                         })),
+              moreBtn(2, fs.length, nF),
               ownRow(2),
             ],
             const SizedBox(height: 70),
