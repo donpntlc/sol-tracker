@@ -9030,6 +9030,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "food_group_portions": "Mengenangaben (optional)",
+      "portion_add_row": "Menge hinzufügen",
+      "portion_name_hint": "z. B. 1 Pizza",
       "type": "Typ (Diät / Aufbau)",
       "food_brand_label": "Hersteller / Variante (optional)",
       "food_brand_hint": "z. B. Dr. Oetker",
@@ -10440,6 +10443,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "food_group_portions": "Portions (optional)",
+      "portion_add_row": "Add portion",
+      "portion_name_hint": "e.g. 1 pizza",
       "type": "Type (diet / bulk)",
       "food_brand_label": "Brand / variant (optional)",
       "food_brand_hint": "e.g. Dr. Oetker",
@@ -15297,6 +15303,79 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// Optionale Mengenangaben (Name + Gramm) direkt beim Anlegen/Bearbeiten.
+  Widget _portionRowsEditor(
+      List<(TextEditingController, TextEditingController)> rows, StateSetter setX) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const Divider(height: 14, color: Color(0x22FFFFFF)),
+          Row(children: [
+            Expanded(
+              flex: 3,
+              child: TextField(
+                controller: rows[i].$1,
+                decoration: _touchInputDecoration(t("portion_name"))
+                    .copyWith(hintText: t("portion_name_hint")),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: TextField(
+                controller: rows[i].$2,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: _touchInputDecoration(t("portion_grams"))
+                    .copyWith(suffixText: "g"),
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close, size: 18, color: Colors.white54),
+              onPressed: () => setX(() => rows.removeAt(i)),
+            ),
+          ]),
+        ],
+        if (rows.isNotEmpty) const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setX(() => rows.add((TextEditingController(), TextEditingController()))),
+            icon: const Icon(Icons.add, size: 18),
+            label: Text(t("portion_add_row")),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<(TextEditingController, TextEditingController)> _portionRowsFor(String foodName) => [
+        for (final e in customPortions[foodName] ?? const <List<dynamic>>[])
+          (
+            TextEditingController(text: e[0].toString()),
+            TextEditingController(text: _fmtEdit1((e[1] as num).toDouble())),
+          )
+      ];
+
+  void _applyPortionRows(String? oldName, String newName,
+      List<(TextEditingController, TextEditingController)> rows) {
+    final list = <List<dynamic>>[];
+    for (final r in rows) {
+      final n = r.$1.text.trim();
+      final g = double.tryParse(r.$2.text.trim().replaceAll(",", "."));
+      if (n.isEmpty || g == null || g <= 0) continue;
+      list.add([n, g]);
+    }
+    if (oldName != null && oldName != newName) customPortions.remove(oldName);
+    if (list.isEmpty) {
+      customPortions.remove(newName);
+    } else {
+      customPortions[newName] = list;
+    }
+    _saveCustomPortions();
+  }
+
   /// Name mit optionalem Hersteller/Variante klein darunter.
   Widget _foodNameBrand(Food f, TextStyle style, {int maxLines = 2}) {
     final b = (f.brand ?? "").trim();
@@ -18233,6 +18312,7 @@ class _MainScreenState extends State<MainScreen> {
     String? editImagePath = food.imagePath;
     String? stagedPickPath;
     final brand = TextEditingController(text: food.brand ?? "");
+    final portionRows = _portionRowsFor(food.name);
 
     Future<void> applySave(BuildContext dCtx) async {
       final p = _safeDouble(protein.text);
@@ -18275,6 +18355,7 @@ class _MainScreenState extends State<MainScreen> {
           brand: brand.text.trim().isEmpty ? null : brand.text.trim(),
         ),
       );
+      _applyPortionRows(oldName, name.text.trim(), portionRows);
       if (dCtx.mounted) Navigator.pop(dCtx);
     }
 
@@ -18323,7 +18404,9 @@ class _MainScreenState extends State<MainScreen> {
                     controller: fat,
                     decoration: _touchInputDecoration(t("fat")),
                   ),
-                  const SizedBox(height: 10),
+                  _dlgGroup(t("food_group_portions")),
+                  _portionRowsEditor(portionRows, setD),
+                  _dlgGroup(t("food_group_photo")),
                   _userFoodImagePickerSection(
                     savedImagePath: editImagePath,
                     stagedPickPath: stagedPickPath,
@@ -21539,6 +21622,7 @@ _pickField(
     String? savedImagePath;
     String? stagedPickPath;
     final brand = TextEditingController();
+    final portionRows = <(TextEditingController, TextEditingController)>[];
     const kb = TextInputType.numberWithOptions(decimal: true);
 
     showDialog(
@@ -21585,6 +21669,8 @@ _pickField(
                     controller: fat,
                     keyboardType: kb,
                     decoration: _touchInputDecoration(t("fat"))),
+                _dlgGroup(t("food_group_portions")),
+                _portionRowsEditor(portionRows, setDialogState),
                 _dlgGroup(t("food_group_photo")),
                 _userFoodImagePickerSection(
                   savedImagePath: savedImagePath,
@@ -21739,6 +21825,7 @@ _pickField(
                     brand: brand.text.trim().isEmpty ? null : brand.text.trim(),
                   ));
                 });
+                _applyPortionRows(null, name.text, portionRows);
                 _saveAppState();
                 if (context.mounted) Navigator.pop(context);
               },
