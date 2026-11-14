@@ -2958,6 +2958,63 @@ class _MainScreenState extends State<MainScreen> {
     return grams;
   }
 
+  /// „+“-Menü immer an derselben Stelle: unten mittig, knapp über der Leiste.
+  Future<String?> _showMealAddMenu({bool withTemplates = true}) {
+    final items = _mealAddMenuItems(withTemplates: withTemplates);
+    return showGeneralDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "menu",
+      barrierColor: Colors.black45,
+      transitionDuration: const Duration(milliseconds: 160),
+      pageBuilder: (c, _, __) => SafeArea(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, kBottomNavigationBarHeight + 18),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: Material(
+                color: context.sol.card,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                elevation: 12,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final e in items.whereType<PopupMenuItem<String>>())
+                        InkWell(
+                          onTap: () => Navigator.pop(c, e.value),
+                          child: SizedBox(
+                            height: 60,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              child: Align(alignment: Alignment.centerLeft, child: e.child),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (c, a1, _, child) => FadeTransition(
+        opacity: a1,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.05), end: Offset.zero).animate(a1),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   /// Einträge im „+“-Menü einer Mahlzeit: Icon, Titel, kurze Erklärung.
   List<PopupMenuEntry<String>> _mealAddMenuItems({bool withTemplates = true}) {
     const gold = Color(0xFFC9A24A);
@@ -23284,22 +23341,18 @@ class _MainScreenState extends State<MainScreen> {
                   tooltip: t("meal_note"),
                   onPressed: () => _openMealNoteDialog(meal),
                 ),
-                PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  tooltip: t("meal_add_menu"),
-                  color: context.sol.card,
-                  position: PopupMenuPosition.over,
-                  offset: const Offset(0, -200),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
-                  ),
-                  icon: const Icon(
+                IconButton(
+          padding: EdgeInsets.zero,
+          tooltip: t("meal_add_menu"),
+          icon: const Icon(
                     Icons.add_circle_outline,
                     size: 23,
                     color: Color(0xFFC9A24A),
                   ),
-                  onSelected: (v) {
+          onPressed: () async {
+            final v = await _showMealAddMenu(withTemplates: true);
+            if (v == null) return;
+            ((v) {
                     if (v == "food") {
                       addTrackedFood(meal);
                     } else if (v == "gen") {
@@ -23309,9 +23362,9 @@ class _MainScreenState extends State<MainScreen> {
                     } else if (v == "tpl") {
                       unawaited(_openMealTemplatesSheet(meal));
                     }
-                  },
-                  itemBuilder: (_) => _mealAddMenuItems(withTemplates: true),
-                ),
+                  })(v);
+          },
+        ),
                 IconButton(
                   padding: const EdgeInsets.only(top: 2),
                   visualDensity: VisualDensity.compact,
@@ -26477,23 +26530,20 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 ),
-                PopupMenuButton<String>(
-                  tooltip: t("meal_add_menu"),
-                  color: context.sol.card,
-                  position: PopupMenuPosition.over,
-                  offset: const Offset(0, -144),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
-                  ),
-                  onSelected: (v) => unawaited(addVia(v)),
-                  icon: const Icon(
+                IconButton(
+          padding: EdgeInsets.zero,
+          tooltip: t("meal_add_menu"),
+          icon: const Icon(
                     Icons.add_circle_outline,
                     size: 26,
                     color: Color(0xFFC9A24A),
                   ),
-                  itemBuilder: (_) => _mealAddMenuItems(withTemplates: false),
-                ),
+          onPressed: () async {
+            final v = await _showMealAddMenu(withTemplates: false);
+            if (v == null) return;
+            ((v) => unawaited(addVia(v)))(v);
+          },
+        ),
               ],
             ),
             const SizedBox(height: 4),
@@ -27095,22 +27145,18 @@ class _MainScreenState extends State<MainScreen> {
       ),
       const SizedBox(width: 4),
       if (showInlineAdd)
-        PopupMenuButton<String>(
+        IconButton(
           padding: EdgeInsets.zero,
           tooltip: t("meal_add_menu"),
-          color: context.sol.card,
-          position: PopupMenuPosition.over,
-          offset: const Offset(0, -200),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
-          ),
           icon: const Icon(
             Icons.add_circle,
             size: 28,
             color: Color(0xFFC9A24A),
           ),
-          onSelected: (v) {
+          onPressed: () async {
+            final v = await _showMealAddMenu(withTemplates: true);
+            if (v == null) return;
+            ((v) {
             if (v == "food") {
               addTrackedFood(meal);
             } else if (v == "gen") {
@@ -27120,8 +27166,8 @@ class _MainScreenState extends State<MainScreen> {
             } else if (v == "tpl") {
               unawaited(_openMealTemplatesSheet(meal));
             }
+          })(v);
           },
-          itemBuilder: (_) => _mealAddMenuItems(withTemplates: true),
         ),
     ];
 
@@ -33882,100 +33928,152 @@ class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
-    return AlertDialog(
-      title: Text("${t("meal_note")} — ${widget.mealLabel}"),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                widget.dayKey,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  color: Colors.white60,
+    const gold = Color(0xFFC9A24A);
+    final parts = widget.dayKey.split("-");
+    final dateLbl = parts.length == 3 ? "${parts[2]}.${parts[1]}.${parts[0]}" : widget.dayKey;
+    return Dialog(
+      backgroundColor: const Color(0xFF1C1C1E),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              const Icon(Icons.checklist_rounded, color: gold, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.mealLabel,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    Text("${t("meal_note")} · $dateLbl",
+                        style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                t("meal_note_checklist_sub"),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.white60,
-                  height: 1.35,
+              InkResponse(
+                radius: 22,
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.08),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: const Icon(Icons.close, size: 17, color: Colors.white70),
                 ),
               ),
-              const SizedBox(height: 10),
-              ...List.generate(_rows.length, (i) => _rowWidget(i, t)),
-              const SizedBox(height: 2),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _addLine,
-                  icon: const Icon(Icons.add, size: 20),
-                  label: Text(t("meal_note_add_line")),
+            ]),
+            const SizedBox(height: 14),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ...List.generate(_rows.length, (i) => _rowWidget(i, t)),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: _addLine,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: gold.withValues(alpha: 0.30)),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.add, size: 18, color: gold),
+                          const SizedBox(width: 8),
+                          Text(t("meal_note_add_line"),
+                              style: const TextStyle(color: gold, fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      t("meal_note_checklist_sub"),
+                      style: const TextStyle(fontSize: 11.5, color: Colors.white38, height: 1.35),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(t("cancel")),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context, _buildResult()),
+                  child: Text(t("save")),
+                ),
+              ),
+            ]),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(t("cancel")),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, _buildResult()),
-          child: Text(t("save")),
-        ),
-      ],
     );
   }
 
   Widget _rowWidget(int i, String Function(String) t) {
+    const gold = Color(0xFFC9A24A);
     final r = _rows[i];
     final canToggle = _ctls[i].text.trim().isNotEmpty;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(6, 4, 2, 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 0),
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: Checkbox(
-                value: r.done,
-                onChanged: canToggle
-                    ? (v) {
-                        setState(() {
-                          _syncTextFromFields();
-                          _rows[i] =
-                              _rows[i].copyWith(done: v ?? false);
-                        });
-                      }
-                    : null,
+          // Runder Haken
+          InkResponse(
+            radius: 20,
+            onTap: canToggle
+                ? () => setState(() {
+                      _syncTextFromFields();
+                      _rows[i] = _rows[i].copyWith(done: !r.done);
+                    })
+                : null,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(
+                r.done ? Icons.check_circle : Icons.radio_button_unchecked,
+                size: 22,
+                color: r.done ? gold : (canToggle ? Colors.white54 : Colors.white24),
               ),
             ),
           ),
+          const SizedBox(width: 4),
           Expanded(
             child: r.done
                 ? Padding(
-                    padding: const EdgeInsets.only(top: 10, left: 2),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Text(
-                      _ctls[i].text.trim().isEmpty
-                          ? "…"
-                          : _ctls[i].text,
+                      _ctls[i].text.trim().isEmpty ? "…" : _ctls[i].text,
                       maxLines: 4,
                       style: const TextStyle(
-                        color: Colors.white70,
+                        color: Colors.white54,
                         decoration: TextDecoration.lineThrough,
-                        decorationColor: Colors.white60,
-                        height: 1.25,
+                        decorationColor: Colors.white38,
+                        height: 1.3,
                       ),
                     ),
                   )
@@ -33984,22 +34082,23 @@ class _MealNoteChecklistDialogState extends State<_MealNoteChecklistDialog> {
                     onChanged: (_) => setState(() {}),
                     maxLines: 3,
                     minLines: 1,
-                    style: const TextStyle(fontSize: 15),
+                    textCapitalization: TextCapitalization.sentences,
+                    style: const TextStyle(fontSize: 15, height: 1.3),
                     decoration: InputDecoration(
                       isDense: true,
                       hintText: t("meal_note_line_hint"),
-                      border: const OutlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
+                      hintStyle: const TextStyle(color: Colors.white30),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
           ),
           IconButton(
-            padding: const EdgeInsets.only(top: 2),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            icon: const Icon(Icons.close, size: 20, color: Colors.white60),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.close, size: 18, color: Colors.white38),
             onPressed: () => _removeAt(i),
             tooltip: t("meal_note_remove_line"),
           ),
