@@ -3242,7 +3242,6 @@ class _MainScreenState extends State<MainScreen> {
           final hits = foodDatabase
               .where((f) =>
                   (cat == "Alle" || _inCat(f, cat)) &&
-                  (!_veganOnly || _isVegan(f)) &&
                   words.every(norm(f.name).contains))
               .toList()
             ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -8963,6 +8962,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "gen2_own_fits": "Passt genau: {g} g",
+      "gen2_own_take": "Übernehmen",
       "shop_aisle_hint": "Tippen = hinzufügen/entfernen · Lange drücken = Haupt-Abteilung (gold)",
       "shop_tag_delete_q": "Tag „{t}“ löschen?",
       "shop_qty_hint": "z. B. 2 Packungen, 500 g",
@@ -9559,9 +9560,10 @@ class _MainScreenState extends State<MainScreen> {
       "db_off_error": "Netzwerk oder Dienst — erneut versuchen.",
       "db_off_not_found": "Produkt noch nicht in der Datenbank — trag die Werte einmal von der Packung ein, danach wird es beim Scannen erkannt.",
       "db_barcode_short": "Code zu kurz — vollständigen Barcode scannen.",
-      "db_quick_title": "Faul & schnell",
+      "db_quick_title": "Schnell anlegen",
+      "db_quick_macros": "NÄHRWERTE PRO 100 G (OPTIONAL)",
       "db_quick_body":
-          "Nur der Name reicht; Nährwerte sind 0/100g — träg sie später in der Karte nach (oder per Barcode). Optional Referenzfoto, ohne Text-Erkennung.",
+          "Neues Lebensmittel in Sekunden: Name reicht. Nährwerte pro 100 g kannst du gleich oder später eintragen (oder per Barcode). Foto optional.",
       "db_quick_snap": "Referenzfoto (Kamera)",
       "db_quick_snack":
           "Foto gespeichert im Cache — Werte bitte in der Karte nachtragen.",
@@ -10342,6 +10344,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "gen2_own_fits": "Exact fit: {g} g",
+      "gen2_own_take": "Use",
       "shop_aisle_hint": "Tap = add/remove · Long-press = main aisle (gold)",
       "shop_tag_delete_q": "Delete tag “{t}”?",
       "shop_qty_hint": "e.g. 2 packs, 500 g",
@@ -10931,7 +10935,8 @@ class _MainScreenState extends State<MainScreen> {
       "db_off_error": "Network or service error — try again.",
       "db_off_not_found": "Product not in the database yet — enter the values from the pack once, then scans will find it.",
       "db_barcode_short": "Code too short — scan full barcode.",
-      "db_quick_title": "Quick & lazy",
+      "db_quick_title": "Quick add food",
+      "db_quick_macros": "VALUES PER 100 G (OPTIONAL)",
       "db_quick_body":
           "Name only; macros start at 0/100g — fill in the card later (or use the barcode). Optional reference photo, no text recognition yet.",
       "db_quick_snap": "Reference photo (camera)",
@@ -19633,49 +19638,111 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _openQuickNameFoodDialog() async {
     final name = TextEditingController();
+    final pC = TextEditingController();
+    final cC = TextEditingController();
+    final fC = TextEditingController();
+    var cat = "Protein";
     String? stagedPickPath;
-    final result = await showDialog<String>(
+    const gold = Color(0xFFC9A24A);
+    double v(TextEditingController c) => double.tryParse(c.text.trim().replaceAll(",", ".")) ?? 0;
+    final result = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setL) => AlertDialog(
-          title: Text(t("db_quick_title")),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                t("db_quick_body"),
-                style: const TextStyle(fontSize: 13, height: 1.35),
+        builder: (ctx, setL) {
+          final k = v(pC) * 4.1 + v(cC) * 4.1 + v(fC) * 9.3;
+          Widget num(TextEditingController c, String l) => Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: TextField(
+                    controller: c,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(labelText: l, suffixText: "g", isDense: true),
+                    onChanged: (_) => setL(() {}),
+                  ),
+                ),
+              );
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 14, 14, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.bolt, color: gold, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(t("db_quick_title"),
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                      ),
+                      _sheetCloseButton(ctx),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(t("db_quick_body"),
+                        style: TextStyle(fontSize: 12, color: context.sol.muted, height: 1.35)),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: name,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: _touchInputDecoration(t("name")),
+                      onChanged: (_) => setL(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      for (final c in const ["Protein", "Carbs", "Fett", "Obst", "Gemüse", "Mahlzeiten"])
+                        ChoiceChip(
+                          visualDensity: VisualDensity.compact,
+                          showCheckmark: false,
+                          label: Text(_tCat(c), style: const TextStyle(fontSize: 12.5)),
+                          selected: cat == c,
+                          onSelected: (_) => setL(() => cat = c),
+                        ),
+                    ]),
+                    const SizedBox(height: 14),
+                    Text(t("db_quick_macros"),
+                        style: const TextStyle(fontSize: 11, letterSpacing: 1, color: Colors.white54)),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      num(pC, t("protein")),
+                      num(cC, t("amount_fill_carbs_short")),
+                      num(fC, t("fat")),
+                    ]),
+                    if (k > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text("= ${k.round()} kcal / 100 g",
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: gold, fontWeight: FontWeight.w700)),
+                      ),
+                    const SizedBox(height: 12),
+                    _userFoodImagePickerSection(
+                      savedImagePath: null,
+                      stagedPickPath: stagedPickPath,
+                      onSavedImagePathChanged: (_) {},
+                      onStagedPickPathChanged: (x) => setL(() => stagedPickPath = x),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton(
+                      onPressed: name.text.trim().isEmpty
+                          ? null
+                          : () => Navigator.pop(ctx, name.text.trim()),
+                      child: Text(t("save")),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: name,
-                autofocus: true,
-                decoration: _touchInputDecoration(t("name")),
-              ),
-              const SizedBox(height: 10),
-              _userFoodImagePickerSection(
-                savedImagePath: null,
-                stagedPickPath: stagedPickPath,
-                onSavedImagePathChanged: (_) {},
-                onStagedPickPathChanged: (v) => setL(() => stagedPickPath = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(t("cancel")),
             ),
-            TextButton(
-              onPressed: () {
-                if (name.text.trim().isEmpty) return;
-                Navigator.pop(ctx, name.text.trim());
-              },
-              child: Text(t("save")),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
     if (result == null || result.isEmpty) return;
@@ -19695,13 +19762,13 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       foodDatabase.add(Food(
         name: result,
-        protein: 0,
-        carbs: 0,
+        protein: v(pC),
+        carbs: v(cC),
         sugar: 0,
         fiber: 0,
-        fat: 0,
-        category: "Carbs",
-        type: "Diät (Viel Volumen)",
+        fat: v(fC),
+        category: cat,
+        type: "",
         isDefault: false,
         imagePath: img,
       ));
@@ -28550,36 +28617,54 @@ class _MainScreenState extends State<MainScreen> {
           final f = await _pickFoodBySearch(
               initialCat: step == 0 ? "Protein" : (step == 1 ? "Carbs" : "Fett"));
           if (f == null) return;
-          final gCtrl = TextEditingController();
+          // Passende Menge vorausfüllen (änderbar), Nährwerte live.
+          final cur = amounts();
+          final need = step == 0 ? tP : (step == 1 ? cur.afterC : cur.afterF);
+          final per = step == 0 ? f.protein : (step == 1 ? f.carbs : f.fat);
+          final auto = gFor(f, need, per);
+          final gCtrl = TextEditingController(text: auto > 0 ? auto.round().toString() : "100");
           final g = await showDialog<double?>(
             context: ctx,
-            builder: (d) => AlertDialog(
-              title: Text(f.name, style: const TextStyle(fontSize: 17)),
-              content: TextField(
-                controller: gCtrl,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: t("gen2_own_amount"),
-                  helperText: t("gen2_own_amount_hint"),
-                  suffixText: "g",
+            builder: (d) => StatefulBuilder(builder: (d, setD) {
+              final gg = double.tryParse(gCtrl.text.replaceAll(",", ".")) ?? 0;
+              return AlertDialog(
+                title: Text(f.name, style: const TextStyle(fontSize: 17)),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: gCtrl,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: t("shop_quantity"),
+                        helperText: auto > 0
+                            ? tFmt("gen2_own_fits", {"g": auto.round().toString()})
+                            : null,
+                        suffixText: "g",
+                      ),
+                      onChanged: (_) => setD(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    macroLine(f.calories * gg / 100, f.protein * gg / 100, f.carbs * gg / 100,
+                        f.fat * gg / 100,
+                        big: true),
+                  ],
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(d, -1.0),
-                  child: Text(t("gen2_own_auto")),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(
-                      d, double.tryParse(gCtrl.text.replaceAll(",", ".")) ?? -1.0),
-                  child: Text(t("save")),
-                ),
-              ],
-            ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(d), child: Text(t("cancel"))),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(d, gg),
+                    child: Text(t("gen2_own_take")),
+                  ),
+                ],
+              );
+            }),
           );
-          if (g == null) return;
-          final ov = g > 0 ? g : null;
+          if (g == null || g <= 0) return;
+          // Genau die passende Menge → weiter automatisch anpassen.
+          final ov = (g - auto).abs() < 0.5 ? null : g;
           setG(() {
             if (step == 0) {
               pickP = f;
