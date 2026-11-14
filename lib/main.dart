@@ -1694,6 +1694,33 @@ class _MainScreenState extends State<MainScreen> {
 
   /// 3 Mahlzeiten (Pre, Post, Haupt): Abendessen fällt weg, sein Anteil geht in die Snacks.
   bool threeMeals = false;
+  /// Diabetes-Hilfe: KE/BE anzeigen, schnelle/langsame KH markieren, Generator bevorzugt langsame KH.
+  bool diabetic = false;
+  /// 10 = KE (Kohlenhydrateinheit), 12 = BE (Broteinheit).
+  int carbUnitG = 10;
+  static const String _kDiabeticKey = "diabetic_v1";
+  static const String _kCarbUnitKey = "carb_unit_g_v1";
+
+  String get carbUnitLabel => carbUnitG == 12 ? "BE" : "KE";
+  String fmtKE(double carbsG) => (carbsG / carbUnitG).toStringAsFixed(1);
+
+  /// „schnell“ (viel Zucker) / „langsam“ (wenig Zucker, Ballaststoffe) / null.
+  String? _carbSpeed(Food f) {
+    if (f.carbs < 8) return null;
+    final sr = f.sugar / f.carbs;
+    if (sr >= 0.5) return "fast";
+    if (sr <= 0.2 || f.fiber >= 4) return "slow";
+    return null;
+  }
+
+  String _diabeticTag(Food f) {
+    if (!diabetic) return "";
+    final sp = _carbSpeed(f);
+    final ke = f.carbs >= 1 ? " · ${fmtKE(f.carbs)} $carbUnitLabel/100 g" : "";
+    if (sp == "fast") return " · ⚡${t("carb_fast")}$ke";
+    if (sp == "slow") return " · 🐢${t("carb_slow")}$ke";
+    return ke;
+  }
   static const String _kThreeMealsKey = "three_meals_v1";
 
   /// Gegessenes in [meal]? Bei 3 Mahlzeiten zählen alte Abendessen-Einträge zu den Snacks.
@@ -4907,7 +4934,9 @@ class _MainScreenState extends State<MainScreen> {
                         : f.name,
                     sub: _pickerType == "recent" && recentGrams[f.name] != null
                         ? tFmt("picker_recent_last", {"g": recentGrams[f.name]!.round().toString()})
-                        : (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") + mTxt,
+                        : (p.$1 == "100 g" ? "100 g" : "${p.$1} (${p.$2.round()} g)") +
+                            mTxt +
+                            _diabeticTag(f),
                     trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
                     placeholder: _foodEmoji(f),
@@ -5736,6 +5765,16 @@ class _MainScreenState extends State<MainScreen> {
                         macroTile("P", food.protein * grams() / 100, const Color(0xFF6FA8DC)),
                         macroTile("K", food.carbs * grams() / 100, const Color(0xFFE0B04A)),
                         macroTile("F", food.fat * grams() / 100, const Color(0xFFD9826B)),
+                        if (diabetic)
+                          Expanded(
+                            child: Column(children: [
+                              Text(fmtKE(food.carbs * grams() / 100),
+                                  style: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF81C784))),
+                              Text(carbUnitLabel,
+                                  style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
+                            ]),
+                          ),
                       ],
                     ),
                     ),
@@ -8017,6 +8056,8 @@ class _MainScreenState extends State<MainScreen> {
     final savedLastDeviationWarning = prefs.getString(_kLastDeviationWarningKey);
     final savedMealGroupOrder = prefs.getString(_kMealGroupOrderKey);
     threeMeals = prefs.getBool(_kThreeMealsKey) ?? false;
+    diabetic = prefs.getBool(_kDiabeticKey) ?? false;
+    carbUnitG = prefs.getInt(_kCarbUnitKey) ?? 10;
     final savedMealCustomNames = prefs.getString(_kMealCustomNamesKey);
     final savedCommitmentCut = prefs.getBool(_kCommitmentCutKey);
     final savedCommitmentBulk = prefs.getBool(_kCommitmentBulkKey);
@@ -8602,6 +8643,8 @@ class _MainScreenState extends State<MainScreen> {
     }
     await prefs.setString(_kMealGroupOrderKey, jsonEncode(mealGroupOrder));
     await prefs.setBool(_kThreeMealsKey, threeMeals);
+    await prefs.setBool(_kDiabeticKey, diabetic);
+    await prefs.setInt(_kCarbUnitKey, carbUnitG);
     await prefs.setString(_kMealCustomNamesKey, jsonEncode(mealCustomNames));
     await prefs.setBool(_kCommitmentCutKey, commitmentAcceptedCut);
     await prefs.setBool(_kCommitmentBulkKey, commitmentAcceptedBulk);
@@ -8962,6 +9005,16 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "carb_fast": "schnell",
+      "carb_slow": "langsam",
+      "diab_day_line": "Kohlenhydrate heute: {v} {u}",
+      "diab_title": "Diabetes",
+      "diab_switch": "Ich bin Diabetiker",
+      "diab_switch_sub": "Zeigt KE/BE überall, markiert schnelle ⚡ und langsame 🐢 Kohlenhydrate, und der Generator bevorzugt langsame KH. Diät, Aufbau & Alltag funktionieren normal weiter.",
+      "diab_unit": "Einheit für Kohlenhydrate",
+      "diab_unit_ke": "KE (10 g KH)",
+      "diab_unit_be": "BE (12 g KH)",
+      "diab_disclaimer": "Wichtig: PREPIT berechnet keine Insulin-Dosen. Die KE/BE-Werte sind Schätzungen aus der Datenbank — deine Dosis immer nach deinem Schema vom Arzt bzw. deiner Diabetes-App/Pumpe bestimmen.",
       "gen2_still_open": "Noch offen",
       "gen2_own_fits": "Passt genau: {g} g",
       "gen2_own_take": "Übernehmen",
@@ -10345,6 +10398,16 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "carb_fast": "fast",
+      "carb_slow": "slow",
+      "diab_day_line": "Carbs today: {v} {u}",
+      "diab_title": "Diabetes",
+      "diab_switch": "I have diabetes",
+      "diab_switch_sub": "Shows carb units everywhere, marks fast ⚡ and slow 🐢 carbs, and the generator prefers slow carbs. Cut, bulk & everyday modes keep working.",
+      "diab_unit": "Carb unit",
+      "diab_unit_ke": "CU (10 g carbs)",
+      "diab_unit_be": "BU (12 g carbs)",
+      "diab_disclaimer": "Important: PREPIT does not calculate insulin doses. Carb units are estimates from the database — always dose according to your doctor's plan or your diabetes app/pump.",
       "gen2_still_open": "Still open",
       "gen2_own_fits": "Exact fit: {g} g",
       "gen2_own_take": "Use",
@@ -13695,19 +13758,30 @@ class _MainScreenState extends State<MainScreen> {
     bool extraTop = false,
   }) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(6, extraTop ? 20 : 6, 6, 4),
+      padding: EdgeInsets.fromLTRB(18, extraTop ? 26 : 10, 18, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            t(titleKey),
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.2,
-              color: Color(0xFFC9A24A),
+          Row(children: [
+            Flexible(
+              child: Text(
+                t(titleKey).toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.4,
+                  color: Color(0xFFC9A24A),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 1,
+                color: const Color(0xFFC9A24A).withValues(alpha: 0.25),
+              ),
+            ),
+          ]),
           if (subtitleKey != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -14946,37 +15020,69 @@ class _MainScreenState extends State<MainScreen> {
     String body, {
     bool initiallyExpanded = false,
   }) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+    const gold = Color(0xFFC9A24A);
+    final lines = body.split("\n").map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    Widget line(String l) {
+      // „Label: Text“ → Label hervorheben.
+      final i = l.indexOf(": ");
+      final bullet = lines.length > 1;
+      final txt = (i > 0 && i < 34)
+          ? Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: l.substring(0, i + 1),
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+              TextSpan(text: l.substring(i + 1)),
+            ]))
+          : Text(l);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (bullet)
+              Container(
+                width: 5,
+                height: 5,
+                margin: const EdgeInsets.only(top: 9, right: 10),
+                decoration: const BoxDecoration(color: gold, shape: BoxShape.circle),
+              ),
+            Expanded(
+              child: DefaultTextStyle.merge(
+                style: TextStyle(fontSize: 14.5, height: 1.55, color: context.sol.onCard.withValues(alpha: 0.85)),
+                child: txt,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(
+        color: context.sol.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: initiallyExpanded,
-          tilePadding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          iconColor: const Color(0xFFC9A24A),
-          collapsedIconColor: Colors.white60,
+          tilePadding: const EdgeInsets.fromLTRB(16, 4, 12, 4),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          iconColor: gold,
+          collapsedIconColor: Colors.white38,
+          leading: Container(
+            width: 4,
+            height: 22,
+            decoration: BoxDecoration(color: gold, borderRadius: BorderRadius.circular(2)),
+          ),
           title: Text(
             title,
-            style: const TextStyle(
-              fontSize: 16.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.2,
-              height: 1.3,
-              color: Color(0xFFC9A24A),
-            ),
+            style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, height: 1.3),
           ),
-          children: [
-            Text(
-              body,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.72,
-                color: context.sol.onCard,
-              ),
-            ),
-          ],
+          children: [for (final l in lines) line(l)],
         ),
       ),
     );
@@ -20049,55 +20155,121 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-      child: ExpansionTile(
-        leading: _foodThumbnail(food, size: 40),
-        title: Text(
-          food.name,
-          style: TextStyle(
-            fontWeight:
-                !food.isDefault ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _dbcListPcfFrame(food, compact: true),
-            const SizedBox(height: 4),
-            Text(
-              "${_foodCategoryLabelsLine(food)}${food.type.isEmpty ? "" : " · ${_tFullType(food.type)}"}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g",
-              style: const TextStyle(
-                fontSize: 10.5,
-                color: Colors.white38,
-                height: 1.2,
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _openFoodDetailSheet(food),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 10, 6, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _foodThumbnail(food, size: 44),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      food.name,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: !food.isDefault ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _dbcListPcfFrame(food, compact: true),
+                    const SizedBox(height: 4),
+                    Text(
+                      "${_foodCategoryLabelsLine(food)}${food.type.isEmpty ? "" : " · ${_tFullType(food.type)}"}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g${_diabeticTag(food)}",
+                      style: const TextStyle(fontSize: 10.5, color: Colors.white38, height: 1.2),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const Padding(
+                padding: EdgeInsets.only(top: 10, left: 4),
+                child: Icon(Icons.chevron_right, color: Colors.white38),
+              ),
+            ],
+          ),
         ),
-        children: [
-          if (!food.isDefault)
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.edit_outlined, color: Color(0xFFC9A24A)),
-              title: Text(t("db_edit_food")),
-              onTap: () => _openEditUserFoodDialog(food),
-            ),
-          ListTile(
-            dense: true,
-            leading:
-                const Icon(Icons.shopping_cart_outlined, color: Color(0xFFC9A24A)),
-            title: Text(t("shop_db_add")),
-            onTap: () => _showFoodToShoppingSheet(food),
+      ),
+    );
+  }
+
+  /// Lebensmittel als Fenster öffnen (statt aufklappen).
+  void _openFoodDetailSheet(Food food) {
+    const gold = Color(0xFFC9A24A);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.sol.scaffold,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => ValueListenableBuilder<int>(
+        valueListenable: _liveRev,
+        builder: (c, _, __) => SizedBox(
+          height: MediaQuery.of(c).size.height * 0.88,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 12, 4),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(food.name,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  ),
+                  _sheetCloseButton(c),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+                child: Row(children: [
+                  if (!food.isDefault)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: gold,
+                          side: BorderSide(color: gold.withValues(alpha: 0.4)),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(c);
+                          _openEditUserFoodDialog(food);
+                        },
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: Text(t("db_edit_food")),
+                      ),
+                    ),
+                  if (!food.isDefault) const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: gold,
+                        side: BorderSide(color: gold.withValues(alpha: 0.4)),
+                      ),
+                      onPressed: () => _showFoodToShoppingSheet(food),
+                      icon: const Icon(Icons.shopping_cart_outlined, size: 18),
+                      label: Text(t("shop_db_add"), overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ]),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 30),
+                  child: _foodCardDetailContent(
+                    food,
+                    showUserDelete: !food.isDefault,
+                    useDatabasePcfStyling: true,
+                    imageHeight: 210,
+                  ),
+                ),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: _foodCardDetailContent(
-              food,
-              showUserDelete: !food.isDefault,
-              useDatabasePcfStyling: true,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -21868,6 +22040,19 @@ class _MainScreenState extends State<MainScreen> {
                           carbs: totalCarbs,
                           fat: totalFat,
                         ),
+                        if (diabetic)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2, bottom: 2),
+                            child: Text(
+                              tFmt("diab_day_line", {
+                                "v": fmtKE(totalCarbs),
+                                "u": carbUnitLabel,
+                              }),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 12.5, color: Color(0xFF81C784), fontWeight: FontWeight.w600),
+                            ),
+                          ),
                         _dayMacroDetails(
                           recK: recK,
                           totalProtein: totalProtein,
@@ -24919,6 +25104,52 @@ class _MainScreenState extends State<MainScreen> {
                   t("formula_kcal_hint"),
                   style: const TextStyle(fontSize: 12, color: Colors.white70),
                 ),
+              ],
+            ),
+          ),
+          _sectionCard(
+            title: t("diab_title"),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(t("diab_switch")),
+                  subtitle: Text(t("diab_switch_sub"),
+                      style: const TextStyle(fontSize: 12, color: Colors.white60, height: 1.35)),
+                  value: diabetic,
+                  onChanged: (v) {
+                    setState(() => diabetic = v);
+                    _saveAppState();
+                  },
+                ),
+                if (diabetic) ...[
+                  const SizedBox(height: 6),
+                  Text(t("diab_unit"), style: const TextStyle(fontSize: 12.5, color: Colors.white70)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 8, children: [
+                    for (final u in const [10, 12])
+                      ChoiceChip(
+                        showCheckmark: false,
+                        label: Text(u == 10 ? t("diab_unit_ke") : t("diab_unit_be")),
+                        selected: carbUnitG == u,
+                        onSelected: (_) {
+                          setState(() => carbUnitG = u);
+                          _saveAppState();
+                        },
+                      ),
+                  ]),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE57373).withValues(alpha: 0.4)),
+                    ),
+                    child: Text(t("diab_disclaimer"),
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white70, height: 1.4)),
+                  ),
+                ],
               ],
             ),
           ),
@@ -28252,6 +28483,11 @@ class _MainScreenState extends State<MainScreen> {
       if (per100 <= 0.01) return 1e9;
       final kcalPerMacro = f.calories / per100;
       final gramsPerMacro = 100 / per100;
+      // Diabetes: schnelle Zucker nach hinten, langsame KH nach vorne.
+      if (diabetic && per100 == f.carbs && f.carbs > 5) {
+        final pen = (f.sugar / f.carbs) * 20 - (f.fiber >= 4 ? 2 : 0);
+        return kcalPerMacro + pen;
+      }
       if (goal == "cut") return kcalPerMacro;
       if (goal == "bulk") return gramsPerMacro;
       return kcalPerMacro * 0.6 + gramsPerMacro * 0.4;
@@ -28466,6 +28702,13 @@ class _MainScreenState extends State<MainScreen> {
                 TextSpan(
                     text: "  ·  P ${p.round()}  ·  K ${c.round()}  ·  F ${f.round()}",
                     style: TextStyle(color: Colors.white60, fontSize: big ? 13 : 12)),
+                if (diabetic)
+                  TextSpan(
+                      text: "  ·  ${fmtKE(c)} $carbUnitLabel",
+                      style: TextStyle(
+                          color: const Color(0xFF81C784),
+                          fontWeight: FontWeight.w700,
+                          fontSize: big ? 13 : 12)),
               ]),
             );
         Widget foodRow(Food f, double g, {bool selected = false, VoidCallback? onTap}) => InkWell(
