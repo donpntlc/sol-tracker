@@ -385,7 +385,9 @@ class _OffFetchResult {
     required this.sugar,
     required this.fiber,
     required this.fat,
+    this.brand = "",
   });
+  final String brand;
   final String barcode;
   final String name;
   final double protein;
@@ -511,6 +513,8 @@ class Food {
   String? recipeFlavor;
   /// Open Food Facts / Scan — für schnelles Wiederfinden beim Scannen.
   String? offBarcode;
+  /// Optional: Hersteller / Variante (z. B. „Dr. Oetker“) — klein unter dem Namen.
+  String? brand;
 
   Food({
     required this.name,
@@ -531,6 +535,7 @@ class Food {
     this.basePortionGrams,
     this.recipeFlavor,
     this.offBarcode,
+    this.brand,
   });
 
   double get calories =>
@@ -570,6 +575,7 @@ class Food {
       "basePortionGrams": basePortionGrams,
       "recipeFlavor": recipeFlavor,
       "offBarcode": offBarcode,
+      if (brand != null && brand!.isNotEmpty) "brand": brand,
     };
   }
 
@@ -612,6 +618,9 @@ class Food {
           (rawBase is num) ? rawBase.toDouble() : null,
       recipeFlavor: (rawRF is String && rawRF.isNotEmpty) ? rawRF : null,
       offBarcode: (rawOb is String && rawOb.isNotEmpty) ? rawOb : null,
+      brand: (map["brand"] is String && (map["brand"] as String).trim().isNotEmpty)
+          ? (map["brand"] as String).trim()
+          : null,
     );
   }
 }
@@ -3282,7 +3291,7 @@ class _MainScreenState extends State<MainScreen> {
           final hits = foodDatabase
               .where((f) =>
                   (cat == "Alle" || _inCat(f, cat)) &&
-                  words.every(norm(f.name).contains))
+                  words.every(norm("${f.name} ${f.brand ?? ""}").contains))
               .toList()
             ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
           return Padding(
@@ -3376,11 +3385,10 @@ class _MainScreenState extends State<MainScreen> {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(f.name,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                  fontSize: 14, fontWeight: FontWeight.w600)),
+                                          _foodNameBrand(f,
+                                              const TextStyle(
+                                                  fontSize: 14, fontWeight: FontWeight.w600),
+                                              maxLines: 1),
                                           Text(
                                               "P ${f.protein.round()} · K ${f.carbs.round()} · F ${f.fat.round()} · ${f.calories.round()} kcal / 100 g",
                                               style: TextStyle(fontSize: 11.5, color: context.sol.muted)),
@@ -9018,6 +9026,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "food_brand_label": "Hersteller / Variante (optional)",
+      "food_brand_hint": "z. B. Dr. Oetker",
+      "food_group_photo": "Foto",
+      "food_group_class": "Einordnung",
       "shop_when_all": "Gesamt",
       "shop_when_d": "Heute",
       "shop_when_m": "Woche/Monat",
@@ -10423,6 +10435,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "food_brand_label": "Brand / variant (optional)",
+      "food_brand_hint": "e.g. Dr. Oetker",
+      "food_group_photo": "Photo",
+      "food_group_class": "Classification",
       "shop_when_all": "All",
       "shop_when_d": "Today",
       "shop_when_m": "Week/Month",
@@ -15162,6 +15178,49 @@ class _MainScreenState extends State<MainScreen> {
         ),
       );
 
+  /// Gruppen-Label im Dialog (gold, uppercase, Linie) — ohne Seitenabstand.
+  Widget _dlgGroup(String label) => Padding(
+        padding: const EdgeInsets.fromLTRB(0, 18, 0, 10),
+        child: Row(
+          children: [
+            Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                color: Color(0xFFC9A24A),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.3,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                height: 1,
+                color: const Color(0xFFC9A24A).withValues(alpha: 0.25),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  /// Name mit optionalem Hersteller/Variante klein darunter.
+  Widget _foodNameBrand(Food f, TextStyle style, {int maxLines = 2}) {
+    final b = (f.brand ?? "").trim();
+    final n = Text(f.name, style: style, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+    if (b.isEmpty) return n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        n,
+        Text(b,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11.5, color: Colors.white54, letterSpacing: 0.2)),
+      ],
+    );
+  }
+
   Widget _sectionCard({
     required String title,
     required Widget child,
@@ -18079,6 +18138,7 @@ class _MainScreenState extends State<MainScreen> {
     String? flavor = food.recipeFlavor;
     String? editImagePath = food.imagePath;
     String? stagedPickPath;
+    final brand = TextEditingController(text: food.brand ?? "");
 
     Future<void> applySave(BuildContext dCtx) async {
       final p = _safeDouble(protein.text);
@@ -18117,6 +18177,8 @@ class _MainScreenState extends State<MainScreen> {
           portionHint: food.portionHint,
           basePortionGrams: food.basePortionGrams,
           recipeFlavor: flavor,
+          offBarcode: food.offBarcode,
+          brand: brand.text.trim().isEmpty ? null : brand.text.trim(),
         ),
       );
       if (dCtx.mounted) Navigator.pop(dCtx);
@@ -18136,7 +18198,13 @@ class _MainScreenState extends State<MainScreen> {
                     controller: name,
                     decoration: _touchInputDecoration(t("name")),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: brand,
+                    decoration: _touchInputDecoration(t("food_brand_label"))
+                        .copyWith(hintText: t("food_brand_hint")),
+                  ),
+                  _dlgGroup(t("values_per_100g")),
                   TextField(
                     controller: protein,
                     decoration: _touchInputDecoration(t("protein")),
@@ -19195,7 +19263,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     try {
       final uri = Uri.parse(
-        "https://world.openfoodfacts.org/api/v2/product/$cleaned.json?fields=product_name,nutriments",
+        "https://world.openfoodfacts.org/api/v2/product/$cleaned.json?fields=product_name,brands,nutriments",
       );
       final res = await http.get(uri);
       if (res.statusCode != 200) throw Exception("HTTP");
@@ -19235,8 +19303,10 @@ class _MainScreenState extends State<MainScreen> {
       if (carbs <= 0 && (protein + fat) > 0) {
         carbs = 0.1;
       }
+      final brandRaw = (p["brands"] as String?)?.split(",").first.trim() ?? "";
       return _OffFetchResult(
         barcode: cleaned,
+        brand: brandRaw,
         name: name,
         protein: protein,
         carbs: carbs,
@@ -19558,6 +19628,7 @@ class _MainScreenState extends State<MainScreen> {
     final fi = TextEditingController(text: _fmtEdit1(r.fiber));
     final f = TextEditingController(text: _fmtEdit1(r.fat));
     final nCtrl = TextEditingController(text: r.name);
+    final bCtrl = TextEditingController(text: r.brand);
     if (!mounted) return null;
     String saveCat = "Carbs";
     String saveCK = "komplex";
@@ -19582,6 +19653,12 @@ class _MainScreenState extends State<MainScreen> {
                 TextField(
                   controller: nCtrl,
                   decoration: _touchInputDecoration(t("name")),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: bCtrl,
+                  decoration: _touchInputDecoration(t("food_brand_label"))
+                      .copyWith(hintText: t("food_brand_hint")),
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
@@ -19788,6 +19865,7 @@ class _MainScreenState extends State<MainScreen> {
                   recipeFlavor: saveFlavor,
                   offBarcode: r.barcode.isEmpty ? null : r.barcode,
                   imagePath: img,
+                  brand: bCtrl.text.trim().isEmpty ? null : bCtrl.text.trim(),
                 );
                 setState(() {
                   foodDatabase.add(newFood);
@@ -19960,7 +20038,12 @@ class _MainScreenState extends State<MainScreen> {
     if (path == null || path.isEmpty) return false;
     if (_foodImagePathIsAsset(path)) return true;
     if (path.startsWith("data:")) return true;
-    return File(path).existsSync();
+    if (kIsWeb) return false;
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<String?> _persistUserFoodImageFromPath(
@@ -20037,13 +20120,23 @@ class _MainScreenState extends State<MainScreen> {
     required ValueChanged<String?> onStagedPickPathChanged,
   }) {
     Future<void> pick(ImageSource source) async {
-      final x = await ImagePicker().pickImage(
-        source: source,
-        imageQuality: 85,
-      );
-      if (x == null) return;
-      onSavedImagePathChanged(null);
-      onStagedPickPathChanged(x.path);
+      try {
+        final x = await ImagePicker().pickImage(
+          source: source,
+          maxWidth: kIsWeb ? 900 : null,
+          imageQuality: kIsWeb ? 72 : 85,
+        );
+        if (x == null) return;
+        if (kIsWeb) {
+          final b = await x.readAsBytes();
+          onSavedImagePathChanged(null);
+          onStagedPickPathChanged(
+              "data:${x.mimeType ?? "image/jpeg"};base64,${base64Encode(b)}");
+          return;
+        }
+        onSavedImagePathChanged(null);
+        onStagedPickPathChanged(x.path);
+      } catch (_) {}
     }
 
     final previewPath = stagedPickPath ?? savedImagePath;
@@ -20060,7 +20153,7 @@ class _MainScreenState extends State<MainScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: stagedPickPath != null
+              child: (stagedPickPath != null && !stagedPickPath.startsWith("data:"))
                   ? Image.file(
                       File(stagedPickPath),
                       height: 120,
@@ -20068,7 +20161,7 @@ class _MainScreenState extends State<MainScreen> {
                       fit: BoxFit.cover,
                     )
                   : _foodImageWidget(
-                      savedImagePath!,
+                      (stagedPickPath ?? savedImagePath)!,
                       height: 120,
                       width: double.infinity,
                     ),
@@ -20108,6 +20201,7 @@ class _MainScreenState extends State<MainScreen> {
     String? stagedPickPath,
   }) async {
     if (stagedPickPath != null) {
+      if (stagedPickPath.startsWith("data:")) return stagedPickPath;
       return _persistUserFoodImageFromPath(stagedPickPath, foodName);
     }
     return savedImagePath;
@@ -20229,9 +20323,9 @@ class _MainScreenState extends State<MainScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      food.name,
-                      style: TextStyle(
+                    _foodNameBrand(
+                      food,
+                      TextStyle(
                         fontSize: 15,
                         fontWeight: !food.isDefault ? FontWeight.w700 : FontWeight.w500,
                       ),
@@ -20277,8 +20371,8 @@ class _MainScreenState extends State<MainScreen> {
                 padding: const EdgeInsets.fromLTRB(18, 14, 12, 4),
                 child: Row(children: [
                   Expanded(
-                    child: Text(food.name,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    child: _foodNameBrand(food,
+                        const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                   ),
                   _sheetCloseButton(c),
                 ]),
@@ -21442,41 +21536,54 @@ class _MainScreenState extends State<MainScreen> {
     String? flavor;
     String? savedImagePath;
     String? stagedPickPath;
+    final brand = TextEditingController();
+    const kb = TextInputType.numberWithOptions(decimal: true);
 
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(t("values_per_100g")),
+          title: Text(t("create_food")),
           content: _solDialogConstrainedBody(
             context,
             Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
                     controller: name,
                     decoration: _touchInputDecoration(t("name"))),
                 const SizedBox(height: 8),
                 TextField(
+                    controller: brand,
+                    decoration: _touchInputDecoration(t("food_brand_label"))
+                        .copyWith(hintText: t("food_brand_hint"))),
+                _dlgGroup(t("values_per_100g")),
+                TextField(
                     controller: protein,
+                    keyboardType: kb,
                     decoration: _touchInputDecoration(t("protein"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: carbs,
+                    keyboardType: kb,
                     decoration: _touchInputDecoration(t("carbs_total"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: sugar,
+                    keyboardType: kb,
                     decoration: _touchInputDecoration(t("of_which_sugar"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: fiber,
+                    keyboardType: kb,
                     decoration: _touchInputDecoration(t("of_which_fiber"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: fat,
+                    keyboardType: kb,
                     decoration: _touchInputDecoration(t("fat"))),
-                const SizedBox(height: 10),
+                _dlgGroup(t("food_group_photo")),
                 _userFoodImagePickerSection(
                   savedImagePath: savedImagePath,
                   stagedPickPath: stagedPickPath,
@@ -21485,7 +21592,7 @@ class _MainScreenState extends State<MainScreen> {
                   onStagedPickPathChanged: (v) =>
                       setDialogState(() => stagedPickPath = v),
                 ),
-                const SizedBox(height: 10),
+                _dlgGroup(t("food_group_class")),
                 Text(
                   t("db_off_category"),
                   style: const TextStyle(
@@ -21676,6 +21783,7 @@ class _MainScreenState extends State<MainScreen> {
                     carbKind: category == "Carbs" ? carbK : null,
                     recipeFlavor: flavor,
                     imagePath: img,
+                    brand: brand.text.trim().isEmpty ? null : brand.text.trim(),
                   ));
                 });
                 _saveAppState();
