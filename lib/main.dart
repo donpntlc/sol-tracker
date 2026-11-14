@@ -5026,9 +5026,61 @@ class _MainScreenState extends State<MainScreen> {
   Map<String, List<List<dynamic>>> customPortions = {};
   bool _customPortionsLoaded = false;
 
+  // ───────────── Standard-Anzeigemenge pro Lebensmittel ─────────────
+  static const String _kFoodDisplayKey = "food_display_default_v1";
+  Map<String, List<dynamic>> foodDisplayDefault = {};
+
+  (String, double)? _displayPortionFor(Food f) {
+    final e = foodDisplayDefault[f.name];
+    if (e == null || e.length < 2) return null;
+    final g = (e[1] as num).toDouble();
+    if (g <= 0) return null;
+    return (e[0].toString(), g);
+  }
+
+  Future<void> _setDisplayPortion(Food f, (String, double)? p) async {
+    setState(() {
+      if (p == null) {
+        foodDisplayDefault.remove(f.name);
+      } else {
+        foodDisplayDefault[f.name] = [p.$1, p.$2];
+      }
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kFoodDisplayKey, jsonEncode(foodDisplayDefault));
+    } catch (_) {}
+  }
+
+  /// Anzeige-Kopie mit Werten für [grams] (nur für Darstellung).
+  Food _scaledFoodView(Food f, double grams) {
+    final k = grams / 100.0;
+    return Food(
+      name: f.name,
+      protein: f.protein * k,
+      carbs: f.carbs * k,
+      sugar: f.sugar * k,
+      fiber: f.fiber * k,
+      fat: f.fat * k,
+      category: f.category,
+      extraCategories: f.extraCategories,
+      type: f.type,
+      isDefault: f.isDefault,
+      imagePath: f.imagePath,
+      carbKind: f.carbKind,
+      recipeFlavor: f.recipeFlavor,
+      brand: f.brand,
+    );
+  }
+
   Future<void> _loadCustomPortions() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final rawD = prefs.getString(_kFoodDisplayKey);
+      if (rawD != null && rawD.isNotEmpty) {
+        final m = Map<String, dynamic>.from(jsonDecode(rawD) as Map);
+        foodDisplayDefault = m.map((k, v) => MapEntry(k, List<dynamic>.from(v as List)));
+      }
       final raw = prefs.getString(_kCustomPortionsKey);
       if (raw != null && raw.isNotEmpty) {
         final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -9453,6 +9505,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "display_default_set": "Als Standard-Anzeige festlegen",
+      "display_default_is": "Standard-Anzeige in der Datenbank",
       "meal_times_title": "Essenszeiten",
       "meal_times_switch": "Essenszeiten planen",
       "meal_times_switch_sub": "Uhrzeit + Zeitfenster an jeder Mahlzeit anzeigen, optional als Erinnerung im Kalender.",
@@ -10908,6 +10962,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "display_default_set": "Set as default display",
+      "display_default_is": "Default display in database",
       "meal_times_title": "Meal times",
       "meal_times_switch": "Plan meal times",
       "meal_times_switch_sub": "Show time + window on each meal, optionally as calendar reminders.",
@@ -20945,7 +21001,7 @@ _pickField(
                     _dbcListPcfFrame(food, compact: true),
                     const SizedBox(height: 4),
                     Text(
-                      "${_foodCategoryLabelsLine(food)}${food.type.isEmpty ? "" : " · ${_tFullType(food.type)}"}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${food.calories.toStringAsFixed(0)} kcal/100g${_diabeticTag(food)}",
+                      "${_foodCategoryLabelsLine(food)}${food.type.isEmpty ? "" : " · ${_tFullType(food.type)}"}${_foodFlavorListSuffix(food)}${_carbKindListSuffix(food)}${_personalRatingListSuffix(food)} · ${_displayPortionFor(food) == null ? "${food.calories.toStringAsFixed(0)} kcal/100g" : "${(food.calories * _displayPortionFor(food)!.$2 / 100).toStringAsFixed(0)} kcal · ${_displayPortionFor(food)!.$1} (${_displayPortionFor(food)!.$2.round()} g)"}${_diabeticTag(food)}",
                       style: const TextStyle(fontSize: 10.5, color: Colors.white38, height: 1.2),
                     ),
                   ],
@@ -20965,7 +21021,7 @@ _pickField(
   /// Lebensmittel als Fenster öffnen (statt aufklappen).
   void _openFoodDetailSheet(Food food) {
     const gold = Color(0xFFC9A24A);
-    (String, double)? selPortion;
+    (String, double)? selPortion = _displayPortionFor(food);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -21050,8 +21106,31 @@ _pickField(
                                 onSelected: (_) => setP(() => selPortion = p),
                               ),
                           ]),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Builder(builder: (_) {
+                              final isDef = _displayPortionFor(food) == selPortion;
+                              return TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: isDef ? gold : Colors.white60,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: isDef
+                                    ? null
+                                    : () async {
+                                        await _setDisplayPortion(food, selPortion);
+                                        setP(() {});
+                                      },
+                                icon: Icon(isDef ? Icons.push_pin : Icons.push_pin_outlined, size: 16,
+                                    color: isDef ? gold : Colors.white60),
+                                label: Text(isDef ? t("display_default_is") : t("display_default_set"),
+                                    style: TextStyle(fontSize: 12.5, color: isDef ? gold : Colors.white60)),
+                              );
+                            }),
+                          ),
                           if (selPortion != null) ...[
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 6),
                             Builder(builder: (_) {
                               final f = selPortion!.$2 / 100.0;
                               Widget col(String v, String l) => Expanded(
@@ -21310,10 +21389,11 @@ _pickField(
   }
 
   Widget _dbcListPcfFrame(Food food, {required bool compact}) {
+    final dp = _displayPortionFor(food);
     return _dbPcfFrameForKind(
       _dbPcfFrameKindForListCard(food),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      child: _foodPcfRow(food, compact: compact),
+      child: _foodPcfRow(dp == null ? food : _scaledFoodView(food, dp.$2), compact: compact),
     );
   }
 
