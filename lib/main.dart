@@ -13299,9 +13299,26 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  /// Leer = 0, Komma erlaubt; sonst Hinweis + null.
+  double? _num0(String input) {
+    final v = input.trim().replaceAll(",", ".");
+    if (v.isEmpty) return 0;
+    final d = double.tryParse(v);
+    if (d == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t("invalid_input"))),
+      );
+    }
+    return d;
+  }
+
+  /// Still (ohne Hinweis) — für Live-Vorschauen.
+  double _numQ(String input) =>
+      double.tryParse(input.trim().replaceAll(",", ".")) ?? 0;
+
   double? _safeDouble(String input) {
     try {
-      return double.parse(input);
+      return double.parse(input.trim().replaceAll(",", "."));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t("invalid_input"))),
@@ -18909,11 +18926,11 @@ class _MainScreenState extends State<MainScreen> {
     final portionRows = _portionRowsFor(food.name);
 
     Future<void> applySave(BuildContext dCtx) async {
-      final p = _safeDouble(protein.text);
-      final c = _safeDouble(carbs.text);
-      final s = _safeDouble(sugar.text);
-      final fi = _safeDouble(fiber.text);
-      final f0 = _safeDouble(fat.text);
+      final p = _num0(protein.text);
+      final c = _num0(carbs.text);
+      final s = _num0(sugar.text);
+      final fi = _num0(fiber.text);
+      final f0 = _num0(fat.text);
       if (name.text.isEmpty || p == null || c == null || s == null || fi == null || f0 == null) {
         return;
       }
@@ -20486,11 +20503,11 @@ _pickField(
             ),
             TextButton(
               onPressed: () async {
-                final pV = _tryParseUserNumber(p.text);
-                final cV = _tryParseUserNumber(c.text);
-                final sV = _tryParseUserNumber(s.text);
-                final fiV = _tryParseUserNumber(fi.text);
-                final fV = _tryParseUserNumber(f.text);
+                final pV = p.text.trim().isEmpty ? 0.0 : _tryParseUserNumber(p.text);
+                final cV = c.text.trim().isEmpty ? 0.0 : _tryParseUserNumber(c.text);
+                final sV = s.text.trim().isEmpty ? 0.0 : _tryParseUserNumber(s.text);
+                final fiV = fi.text.trim().isEmpty ? 0.0 : _tryParseUserNumber(fi.text);
+                final fV = f.text.trim().isEmpty ? 0.0 : _tryParseUserNumber(f.text);
                 if (nCtrl.text.trim().isEmpty ||
                     pV == null ||
                     cV == null ||
@@ -22444,14 +22461,14 @@ _pickField(
                     decoration: _touchInputDecoration(t("fat"))),
                 if (perPortion)
                   Builder(builder: (_) {
-                    final g = _safeDouble(ppGrams.text) ?? 0;
+                    final g = _numQ(ppGrams.text);
                     if (g <= 0) return const SizedBox.shrink();
                     final k = 100 / g;
                     String v(TextEditingController c) =>
-                        ((_safeDouble(c.text) ?? 0) * k).toStringAsFixed(1);
-                    final kcal = ((_safeDouble(protein.text) ?? 0) * 4.1 +
-                            (_safeDouble(carbs.text) ?? 0) * 4.1 +
-                            (_safeDouble(fat.text) ?? 0) * 9.3) *
+                        (_numQ(c.text) * k).toStringAsFixed(1);
+                    final kcal = (_numQ(protein.text) * 4.1 +
+                            _numQ(carbs.text) * 4.1 +
+                            _numQ(fat.text) * 9.3) *
                         k;
                     return Container(
                       margin: const EdgeInsets.only(top: 10),
@@ -22572,11 +22589,11 @@ _pickField(
           actions: [
             TextButton(
               onPressed: () async {
-                final p = _safeDouble(protein.text);
-                final c = _safeDouble(carbs.text);
-                final s = _safeDouble(sugar.text);
-                final fi = _safeDouble(fiber.text);
-                final f = _safeDouble(fat.text);
+                final p = _num0(protein.text);
+                final c = _num0(carbs.text);
+                final s = _num0(sugar.text);
+                final fi = _num0(fiber.text);
+                final f = _num0(fat.text);
 
                 if (name.text.isEmpty ||
                     p == null ||
@@ -22588,7 +22605,7 @@ _pickField(
                 }
                 var k = 1.0;
                 if (perPortion) {
-                  final g = _safeDouble(ppGrams.text);
+                  final g = _num0(ppGrams.text);
                   if (g == null || g <= 0) return;
                   k = 100 / g;
                   portionRows.insert(0, (
