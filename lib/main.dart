@@ -24703,6 +24703,24 @@ _pickField(
                   tooltip: t("meal_note"),
                   onPressed: () => _openMealNoteDialog(meal),
                 ),
+                // Rest Day (KH in Pre/Post halbieren) — an der ersten Workout-Karte.
+                if (meal == meals.firstWhere(
+                    (m) => m == "Pre-Workout" || m == "Post-Workout",
+                    orElse: () => ""))
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 34, minHeight: 32),
+                    tooltip: t("rest_day_tooltip"),
+                    icon: Icon(
+                      isRestDay(selectedDayKey) ? Icons.bedtime : Icons.bedtime_outlined,
+                      size: 20,
+                      color: isRestDay(selectedDayKey)
+                          ? const Color(0xFFC9A24A)
+                          : mtx.noteOff,
+                    ),
+                    onPressed: () => unawaited(_toggleRestDay()),
+                  ),
                 IconButton(
           padding: EdgeInsets.zero,
           tooltip: t("meal_add_menu"),
