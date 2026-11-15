@@ -9505,6 +9505,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "food_values_for": "Werte eingeben für",
+      "food_values_portion": "Portion / Stück",
+      "food_portion_name_hint": "z. B. 1 Döner",
+      "food_portion_default": "1 Portion",
+      "food_values_portion_hint": "Werte für die ganze Portion eingeben – PREPIT rechnet automatisch auf 100 g um und speichert die Portion als Mengenangabe.",
+      "food_values_per100_result": "= pro 100 g:",
       "display_default_set": "Als Standard-Anzeige festlegen",
       "display_default_is": "Standard-Anzeige in der Datenbank",
       "meal_times_title": "Essenszeiten",
@@ -10962,6 +10968,12 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "food_values_for": "Enter values for",
+      "food_values_portion": "Portion / piece",
+      "food_portion_name_hint": "e.g. 1 kebab",
+      "food_portion_default": "1 portion",
+      "food_values_portion_hint": "Enter values for the whole portion – PREPIT converts to 100 g and saves the portion as an amount.",
+      "food_values_per100_result": "= per 100 g:",
       "display_default_set": "Set as default display",
       "display_default_is": "Default display in database",
       "meal_times_title": "Meal times",
@@ -22314,6 +22326,9 @@ _pickField(
     final brand = TextEditingController();
     final portionRows = <(TextEditingController, TextEditingController)>[];
     const kb = TextInputType.numberWithOptions(decimal: true);
+    var perPortion = false;
+    final ppName = TextEditingController();
+    final ppGrams = TextEditingController();
 
     showDialog(
       context: context,
@@ -22334,31 +22349,119 @@ _pickField(
                     controller: brand,
                     decoration: _touchInputDecoration(t("food_brand_label"))
                         .copyWith(hintText: t("food_brand_hint"))),
-                _dlgGroup(t("values_per_100g")),
+                _dlgGroup(t("food_values_for")),
+                Row(children: [
+                  for (final on in const [false, true]) ...[
+                    if (on) const SizedBox(width: 8),
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setDialogState(() => perPortion = on),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: perPortion == on
+                                    ? const Color(0xFFC9A24A)
+                                    : Colors.white24),
+                            color: perPortion == on
+                                ? const Color(0xFFC9A24A).withValues(alpha: 0.12)
+                                : null,
+                          ),
+                          child: Text(on ? t("food_values_portion") : "100 g",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: perPortion == on
+                                      ? const Color(0xFFC9A24A)
+                                      : Colors.white70)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ]),
+                const SizedBox(height: 10),
+                if (perPortion) ...[
+                  Row(children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: ppName,
+                        decoration: _touchInputDecoration(t("portion_name"))
+                            .copyWith(hintText: t("food_portion_name_hint")),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: ppGrams,
+                        keyboardType: kb,
+                        onChanged: (_) => setDialogState(() {}),
+                        decoration: _touchInputDecoration(t("portion_grams"))
+                            .copyWith(suffixText: "g"),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(t("food_values_portion_hint"),
+                      style: const TextStyle(fontSize: 11.5, color: Colors.white54, height: 1.35)),
+                  const SizedBox(height: 10),
+                ],
                 TextField(
                     controller: protein,
+                    onChanged: (_) => setDialogState(() {}),
                     keyboardType: kb,
                     decoration: _touchInputDecoration(t("protein"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: carbs,
+                    onChanged: (_) => setDialogState(() {}),
                     keyboardType: kb,
                     decoration: _touchInputDecoration(t("carbs_total"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: sugar,
+                    onChanged: (_) => setDialogState(() {}),
                     keyboardType: kb,
                     decoration: _touchInputDecoration(t("of_which_sugar"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: fiber,
+                    onChanged: (_) => setDialogState(() {}),
                     keyboardType: kb,
                     decoration: _touchInputDecoration(t("of_which_fiber"))),
                 const SizedBox(height: 8),
                 TextField(
                     controller: fat,
+                    onChanged: (_) => setDialogState(() {}),
                     keyboardType: kb,
                     decoration: _touchInputDecoration(t("fat"))),
+                if (perPortion)
+                  Builder(builder: (_) {
+                    final g = _safeDouble(ppGrams.text) ?? 0;
+                    if (g <= 0) return const SizedBox.shrink();
+                    final k = 100 / g;
+                    String v(TextEditingController c) =>
+                        ((_safeDouble(c.text) ?? 0) * k).toStringAsFixed(1);
+                    final kcal = ((_safeDouble(protein.text) ?? 0) * 4.1 +
+                            (_safeDouble(carbs.text) ?? 0) * 4.1 +
+                            (_safeDouble(fat.text) ?? 0) * 9.3) *
+                        k;
+                    return Container(
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFC9A24A).withValues(alpha: 0.4)),
+                      ),
+                      child: Text(
+                        "${t("food_values_per100_result")}  P ${v(protein)} · K ${v(carbs)} · F ${v(fat)} · ${kcal.round()} kcal",
+                        style: const TextStyle(fontSize: 12.5, color: Color(0xFFC9A24A), fontWeight: FontWeight.w600),
+                      ),
+                    );
+                  }),
                 _dlgGroup(t("food_group_portions")),
                 _portionRowsEditor(portionRows, setDialogState),
                 _dlgGroup(t("food_group_photo")),
@@ -22479,6 +22582,17 @@ _pickField(
                     f == null) {
                   return;
                 }
+                var k = 1.0;
+                if (perPortion) {
+                  final g = _safeDouble(ppGrams.text);
+                  if (g == null || g <= 0) return;
+                  k = 100 / g;
+                  portionRows.insert(0, (
+                    TextEditingController(
+                        text: ppName.text.trim().isEmpty ? t("food_portion_default") : ppName.text.trim()),
+                    TextEditingController(text: ppGrams.text.trim()),
+                  ));
+                }
                 final dup = _findUserFoodByNormalizedName(name.text.trim());
                 if (dup != null) {
                   if (!await _confirmDuplicateUserFoodName(dup)) {
@@ -22500,11 +22614,11 @@ _pickField(
                 setState(() {
                   foodDatabase.add(Food(
                     name: name.text,
-                    protein: p,
-                    carbs: c,
-                    sugar: s,
-                    fiber: fi,
-                    fat: f,
+                    protein: p * k,
+                    carbs: c * k,
+                    sugar: s * k,
+                    fiber: fi * k,
+                    fat: f * k,
                     category: category,
                     type: type,
                     isDefault: false,
