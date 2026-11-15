@@ -9505,6 +9505,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "food_recipes_with": "Rezepte mit {n}",
+      "food_recipes_none": "Noch keine Rezepte oder eigenen Mahlzeiten mit diesem Lebensmittel.",
       "food_values_for": "Werte eingeben für",
       "food_values_portion": "Portion / Stück",
       "food_portion_name_hint": "z. B. 1 Döner",
@@ -10968,6 +10970,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "food_recipes_with": "Recipes with {n}",
+      "food_recipes_none": "No recipes or own meals with this food yet.",
       "food_values_for": "Enter values for",
       "food_values_portion": "Portion / piece",
       "food_portion_name_hint": "e.g. 1 kebab",
@@ -13359,6 +13363,8 @@ class _MainScreenState extends State<MainScreen> {
     bool useDatabasePcfStyling = false,
     /// Detail-Blatt: Inhalt direkt über den Nährwerten (z. B. Mengen-Auswahl).
     Widget? aboveMacros,
+    /// Detail-Blatt: Inhalt direkt unter den Nährwerten (z. B. Rezepte mit diesem Lebensmittel).
+    Widget? belowMacros,
     /// „Pro 100 g · kcal“ als Überschrift über den Nährwerten statt Fusszeile.
     bool per100Header = false,
   }) {
@@ -13461,6 +13467,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
         ),
+        if (belowMacros != null) belowMacros,
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 4),
           child: Divider(height: 1, color: Color(0xFF3A3A3A)),
@@ -19685,6 +19692,79 @@ _pickField(
   }
 
   /// Gespeicherte eigene Mahlzeit (Vorlage) in der Datenbank: antippen → eintragen.
+  String _ingKey(String x) => x
+      .toLowerCase()
+      .replaceAll(RegExp(r"\(.*?\)"), "")
+      .replaceAll("ä", "a")
+      .replaceAll("ö", "o")
+      .replaceAll("ü", "u")
+      .replaceAll("ß", "ss")
+      .replaceAll(RegExp(r"\s+"), " ")
+      .trim();
+
+  /// Rezepte + eigene Mahlzeiten, die dieses Lebensmittel enthalten.
+  Widget _recipesWithFoodSection(Food food) {
+    final key = _ingKey(food.name);
+    if (key.length < 3) return const SizedBox.shrink();
+    final recipes = foodDatabase
+        .where((r) =>
+            r.isRecipe &&
+            r.name != food.name &&
+            r.ingredients.any((i) => _ingKey(i).contains(key)))
+        .toList();
+    final tpls = userMealTemplates
+        .where((tp) => ((tp["items"] as List?) ?? const [])
+            .any((n) => n.toString() == food.name || _ingKey(n.toString()).contains(key)))
+        .toList();
+    const div = Divider(height: 1, color: Color(0x1FFFFFFF));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _dlgGroup(tFmt("food_recipes_with", {"n": food.name})),
+        if (recipes.isEmpty && tpls.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(t("food_recipes_none"),
+                style: const TextStyle(fontSize: 12.5, color: Colors.white54)),
+          ),
+        for (var i = 0; i < recipes.length; i++) ...[
+          if (i > 0) div,
+          InkWell(
+            onTap: () => _showRecipeInfoDialog(recipes[i]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(children: [
+                _foodThumbnail(recipes[i], size: 44),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(recipes[i].name,
+                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+                      Text(
+                          "P ${recipes[i].protein.round()} · K ${recipes[i].carbs.round()} · F ${recipes[i].fat.round()} · ${recipes[i].calories.round()} kcal / 100 g",
+                          style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.white38),
+              ]),
+            ),
+          ),
+        ],
+        if (tpls.isNotEmpty) ...[
+          if (recipes.isNotEmpty) div,
+          for (var i = 0; i < tpls.length; i++) ...[
+            if (i > 0) div,
+            _dbMealTemplateTile(tpls[i]),
+          ],
+        ],
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
   Widget _dbMealTemplateTile(Map<String, dynamic> tpl) {
     final name = tpl["name"].toString();
     return ListTile(
@@ -21217,6 +21297,8 @@ _pickField(
                           imageHeight: 210,
                           aboveMacros: menge,
                           per100Header: true,
+                          belowMacros:
+                              food.isRecipe ? null : _recipesWithFoodSection(food),
                         ),
                       ],
                     );
