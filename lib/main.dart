@@ -21662,7 +21662,11 @@ _pickField(
 
   /// Lange Dialoge: abgerundete Ecken (Theme) + Obergrenze, damit nicht “endlos” hoch.
   Widget _solDialogConstrainedBody(BuildContext context, Widget child) {
-    return _solConstrainedDialogScrollBody(context, child);
+    // Immer volle Dialogbreite — sonst springt die Breite je nach Inhalt.
+    return SizedBox(
+      width: double.maxFinite,
+      child: _solConstrainedDialogScrollBody(context, child),
+    );
   }
 
   String _normalizeFoodNameKey(String s) => s.trim().toLowerCase();
