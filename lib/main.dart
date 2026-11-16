@@ -9505,6 +9505,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "track_to_plan": "Auf „geplant“ umstellen",
+      "track_to_plan_sub": "Noch nicht gegessen – zählt erst, wenn du es einträgst",
+      "track_to_plan_done": "Auf geplant umgestellt",
       "track_move_sub": "In eine andere Mahlzeit schieben",
       "track_edit_amount": "Menge ändern",
       "track_edit_amount_sub": "Gramm oder Portion anpassen",
@@ -10974,6 +10977,9 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "track_to_plan": "Switch to “planned”",
+      "track_to_plan_sub": "Not eaten yet – counts once you log it",
+      "track_to_plan_done": "Switched to planned",
       "track_move_sub": "Move to another meal",
       "track_edit_amount": "Change amount",
       "track_edit_amount_sub": "Adjust grams or portion",
@@ -13376,14 +13382,26 @@ class _MainScreenState extends State<MainScreen> {
     /// „Pro 100 g · kcal“ als Überschrift über den Nährwerten statt Fusszeile.
     bool per100Header = false,
   }) {
+    final pcfInner = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          tFmt("food_per100_header", {"k": food.calories.toStringAsFixed(0)}),
+          style: const TextStyle(
+              fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white54, letterSpacing: 0.3),
+        ),
+        const SizedBox(height: 4),
+        _foodPcfRow(food, compact: false),
+      ],
+    );
     final pcfBlock = useDatabasePcfStyling
         ? _dbPcfFrameForKind(
             _dbPcfFrameKindForListCard(food),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: _foodPcfRow(food, compact: false),
+            child: pcfInner,
           )
         : _goldMacroFrame(
-            child: _foodPcfRow(food, compact: false),
+            child: pcfInner,
           );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -13402,15 +13420,6 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(height: 12),
         ],
         if (aboveMacros != null) aboveMacros,
-        if (per100Header)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6, left: 2),
-            child: Text(
-              tFmt("food_per100_header", {"k": food.calories.toStringAsFixed(0)}),
-              style: const TextStyle(
-                  fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.white60),
-            ),
-          ),
         pcfBlock,
         const SizedBox(height: 6),
         Padding(
@@ -13465,16 +13474,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
         const SizedBox(height: 4),
-        if (!per100Header)
-        Center(
-          child: Text(
-            "∑ ${food.calories.toStringAsFixed(0)} kcal / 100 g",
-            style: TextStyle(
-              fontSize: 12.5,
-              color: Colors.white.withValues(alpha: 0.45),
-            ),
-          ),
-        ),
         if (belowMacros != null) belowMacros,
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 4),
@@ -24856,11 +24855,29 @@ _pickField(
                                         items: [
                                           ("move", Icons.swap_horiz, t("track_move_menu"), t("track_move_sub"), false),
                                           ("edit", Icons.edit_outlined, t("track_edit_amount"), t("track_edit_amount_sub"), false),
+                                          ("plan", Icons.event_note_outlined, t("track_to_plan"), t("track_to_plan_sub"), false),
                                           ("delete", Icons.delete_outline, t("delete"), t("track_delete_sub"), true),
                                         ],
                                       );
                                       if (v == "edit") {
                                         unawaited(_editTrackedFoodPortion(f, meal: meal));
+                                      } else if (v == "plan") {
+                                        setState(() {
+                                          trackedFoods.remove(f);
+                                          plannedFoods.add(TrackedFood(
+                                            food: f.food,
+                                            grams: f.grams,
+                                            meal: f.meal,
+                                            dayKey: f.dayKey,
+                                          ));
+                                        });
+                                        _updateMealTotals();
+                                        _saveAppState();
+                                        _savePlannedFoods();
+                                        _applyDailyKcalOverSchedule();
+                                        if (ctx.mounted) Navigator.of(ctx).pop();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text(t("track_to_plan_done"))));
                                       } else if (v == "move") {
                                         unawaited(
                                             _openMoveTrackedFoodDialog(f, meal));
