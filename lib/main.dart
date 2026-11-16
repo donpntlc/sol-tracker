@@ -13385,13 +13385,13 @@ class _MainScreenState extends State<MainScreen> {
     final pcfInner = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        _foodPcfRow(food, compact: false),
+        const SizedBox(height: 6),
         Text(
           tFmt("food_per100_header", {"k": food.calories.toStringAsFixed(0)}),
           style: const TextStyle(
               fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white54, letterSpacing: 0.3),
         ),
-        const SizedBox(height: 4),
-        _foodPcfRow(food, compact: false),
       ],
     );
     final pcfBlock = useDatabasePcfStyling
