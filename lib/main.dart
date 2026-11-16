@@ -25144,6 +25144,24 @@ _pickField(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  _goldMacroFrame(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _foodPcfRow(food, compact: false),
+                        const SizedBox(height: 6),
+                        Text(
+                          tFmt("food_per100_header", {"k": food.calories.toStringAsFixed(0)}),
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white54,
+                              letterSpacing: 0.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     modes.length > 1
                         ? t("track_edit_portion_hint")
