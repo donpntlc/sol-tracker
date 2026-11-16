@@ -9505,6 +9505,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "track_move_sub": "In eine andere Mahlzeit schieben",
+      "track_edit_amount": "Menge ändern",
+      "track_edit_amount_sub": "Gramm oder Portion anpassen",
+      "track_delete_sub": "Aus dem heutigen Tracking entfernen",
       "food_recipes_with": "Rezepte mit {n}",
       "food_recipes_none": "Noch keine Rezepte oder eigenen Mahlzeiten mit diesem Lebensmittel.",
       "food_values_for": "Werte eingeben für",
@@ -10970,6 +10974,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "track_move_sub": "Move to another meal",
+      "track_edit_amount": "Change amount",
+      "track_edit_amount_sub": "Adjust grams or portion",
+      "track_delete_sub": "Remove from today's tracking",
       "food_recipes_with": "Recipes with {n}",
       "food_recipes_none": "No recipes or own meals with this food yet.",
       "food_values_for": "Enter values for",
@@ -19702,6 +19710,88 @@ _pickField(
       .replaceAll(RegExp(r"\s+"), " ")
       .trim();
 
+  /// Aktions-Blatt (statt Popup-Menü): Icon-Quadrate, Untertitel, Linien, ✕.
+  Future<String?> _actionSheet({
+    required String title,
+    String? subtitle,
+    required List<(String, IconData, String, String, bool)> items,
+  }) {
+    const gold = Color(0xFFC9A24A);
+    const red = Color(0xFFE57373);
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (c) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
+              child: Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800)),
+                      if (subtitle != null)
+                        Text(subtitle,
+                            style: const TextStyle(fontSize: 12.5, color: Colors.white54)),
+                    ],
+                  ),
+                ),
+                _sheetCloseButton(c),
+              ]),
+            ),
+            for (var i = 0; i < items.length; i++) ...[
+              const Divider(height: 1, indent: 18, endIndent: 18, color: Color(0x22FFFFFF)),
+              InkWell(
+                onTap: () => Navigator.pop(c, items[i].$1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  child: Row(children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: (items[i].$5 ? red : gold).withValues(alpha: 0.12),
+                        border: Border.all(
+                            color: (items[i].$5 ? red : gold).withValues(alpha: 0.35)),
+                      ),
+                      child: Icon(items[i].$2, size: 20, color: items[i].$5 ? red : gold),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(items[i].$3,
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: items[i].$5 ? red : Colors.white)),
+                          Text(items[i].$4,
+                              style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                        ],
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Rezepte + eigene Mahlzeiten, die dieses Lebensmittel enthalten.
   Widget _recipesWithFoodSection(Food food) {
     final key = _ingKey(food.name);
@@ -24748,20 +24838,30 @@ _pickField(
                                       ));
                                     },
                                   ),
-                                  PopupMenuButton<String>(
+                                  IconButton(
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(
                                       minWidth: 36,
                                       minHeight: 36,
                                     ),
-                                    iconSize: 20,
-                                    child: Icon(
+                                    icon: Icon(
                                       Icons.more_vert,
                                       color: context.sol.muted,
                                       size: 20,
                                     ),
-                                    onSelected: (v) {
-                                      if (v == "move") {
+                                    onPressed: () async {
+                                      final v = await _actionSheet(
+                                        title: f.food.name,
+                                        subtitle: "${f.grams.round()} g · ${f.calories.round()} kcal",
+                                        items: [
+                                          ("move", Icons.swap_horiz, t("track_move_menu"), t("track_move_sub"), false),
+                                          ("edit", Icons.edit_outlined, t("track_edit_amount"), t("track_edit_amount_sub"), false),
+                                          ("delete", Icons.delete_outline, t("delete"), t("track_delete_sub"), true),
+                                        ],
+                                      );
+                                      if (v == "edit") {
+                                        unawaited(_editTrackedFoodPortion(f, meal: meal));
+                                      } else if (v == "move") {
                                         unawaited(
                                             _openMoveTrackedFoodDialog(f, meal));
                                       } else if (v == "delete") {
@@ -24771,19 +24871,9 @@ _pickField(
                                         _updateMealTotals();
                                         _saveAppState();
                                         _applyDailyKcalOverSchedule();
-                                        Navigator.of(ctx).pop();
+                                        if (ctx.mounted) Navigator.of(ctx).pop();
                                       }
                                     },
-                                    itemBuilder: (menuCtx) => [
-                                      PopupMenuItem(
-                                        value: "move",
-                                        child: Text(t("track_move_menu")),
-                                      ),
-                                      PopupMenuItem(
-                                        value: "delete",
-                                        child: Text(t("delete")),
-                                      ),
-                                    ],
                                   ),
                                 ],
                               ),
