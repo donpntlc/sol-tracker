@@ -9905,7 +9905,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_fail": "Kein Barcode erkannt. Nah ran, gerade halten, gutes Licht — nochmal versuchen oder Code eintippen.",
       "barcode_manual_button": "Code eintippen",
       "barcode_manual_new": "Nicht gefunden — trag das Lebensmittel einfach selbst ein.",
-      "barcode_web_hint": "Tippe auf „Foto scannen“ und fotografiere den Barcode nah und gerade.",
+      "barcode_web_hint": "Tippe auf „Foto scannen“ und fotografiere den Barcode nah und gerade.\n\nZu dunkel? In der Kamera oben links auf ⚡ tippen → „Ein“ – dann blitzt das Licht beim Foto.",
       "barcode_lib_fail": "Scanner konnte nicht geladen werden (Internet?). Bitte Code eintippen.",
       "barcode_manual_title": "Barcode eintippen",
       "barcode_manual_hint": "Zahlen unter dem Strichcode",
@@ -11370,7 +11370,7 @@ class _MainScreenState extends State<MainScreen> {
       "barcode_photo_fail": "No barcode found. Get close, hold straight, good light — try again or type the code.",
       "barcode_manual_button": "Type code",
       "barcode_manual_new": "Not found — just enter the food yourself.",
-      "barcode_web_hint": "Tap “Photo scan” and take a close, straight photo of the barcode.",
+      "barcode_web_hint": "Tap “Photo scan” and take a close, straight photo of the barcode.\n\nToo dark? In the camera tap ⚡ (top left) → “On” to use the flash.",
       "barcode_lib_fail": "Scanner could not be loaded (internet?). Please type the code.",
       "barcode_manual_title": "Type barcode",
       "barcode_manual_hint": "Digits under the barcode",
@@ -36472,6 +36472,20 @@ class _BarcodeScanDialogState extends State<_BarcodeScanDialog> {
                   }
                 },
               ),
+              if (!kIsWeb)
+                Positioned(
+                  left: 4,
+                  top: 4,
+                  child: Material(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(20),
+                    child: IconButton(
+                      tooltip: "Licht",
+                      icon: const Icon(Icons.flashlight_on, color: Color(0xFFC9A24A)),
+                      onPressed: () => _controller.toggleTorch(),
+                    ),
+                  ),
+                ),
               Positioned(
                 right: 4,
                 top: 4,
