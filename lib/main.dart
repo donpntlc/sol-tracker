@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:sol/education_quiz.dart';
 import 'package:sol/education_quiz_view.dart';
 import 'package:sol/placement_quiz_view.dart';
@@ -5870,9 +5871,10 @@ class _MainScreenState extends State<MainScreen> {
                         ? Center(
                             child: Text(t("track_search_none"),
                                 style: TextStyle(color: muted)))
-                        : ListView(
+                        : ListView.builder(
                             padding: const EdgeInsets.only(bottom: 24),
-                            children: rows,
+                            itemCount: rows.length,
+                            itemBuilder: (_, i) => rows[i],
                           ),
                   ),
                 ],
@@ -5955,7 +5957,8 @@ class _MainScreenState extends State<MainScreen> {
                 child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: image.startsWith("data:")
-                    ? Image.memory(base64Decode(image.split(",").last),
+                    ? Image(
+                        image: _dataImg(image, 140),
                         width: 46, height: 46, fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const SizedBox(width: 46, height: 46))
                     : Image.asset(image, width: 46, height: 46, fit: BoxFit.cover,
@@ -20005,6 +20008,20 @@ _pickField(
     });
   }
 
+  /// Eigene Fotos (data:-URL) nur einmal dekodieren und verkleinert anzeigen — sonst ruckelt jede Liste.
+  final Map<String, ImageProvider> _dataImgCache = {};
+  ImageProvider _dataImg(String dataUrl, double w) {
+    final key = "${dataUrl.hashCode}_${dataUrl.length}_${w.round()}";
+    return _dataImgCache.putIfAbsent(key, () {
+      try {
+        return ResizeImage(MemoryImage(base64Decode(dataUrl.split(",").last)),
+            width: w.round().clamp(60, 1200), allowUpscaling: false);
+      } catch (_) {
+        return MemoryImage(Uint8List(0));
+      }
+    });
+  }
+
   /// Aktions-Blatt (statt Popup-Menü): Icon-Quadrate, Untertitel, Linien, ✕.
   Future<String?> _actionSheet({
     required String title,
@@ -21238,7 +21255,7 @@ _pickField(
         );
     if (path.startsWith("data:")) {
       try {
-        return Image.memory(base64Decode(path.split(",").last),
+        return Image(image: _dataImg(path, ((width ?? 300).isFinite ? (width ?? 300) : 600) * 3),
             width: width, height: height, fit: fit, errorBuilder: (_, __, ___) => err);
       } catch (_) {
         return err;
