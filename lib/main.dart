@@ -19885,6 +19885,19 @@ _pickField(
       .replaceAll(RegExp(r"\s+"), " ")
       .trim();
 
+  /// Nach dem Aufklappen: Karte so scrollen, dass der Inhalt direkt sichtbar ist.
+  void _scrollIntoViewAfterExpand(BuildContext ctx) {
+    Future.delayed(const Duration(milliseconds: 240), () {
+      if (!ctx.mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.06,
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   /// Aktions-Blatt (statt Popup-Menü): Icon-Quadrate, Untertitel, Linien, ✕.
   Future<String?> _actionSheet({
     required String title,
@@ -24475,7 +24488,7 @@ _pickField(
                         child: Text(_displayMealName("Post-Workout"))),
                   ],
                 ),
-                IconButton(
+                Builder(builder: (btnCtx) => IconButton(
                   padding: const EdgeInsets.only(top: 2),
                   visualDensity: VisualDensity.compact,
                   constraints: const BoxConstraints(
@@ -24483,9 +24496,12 @@ _pickField(
                     minHeight: 32,
                   ),
                   tooltip: t("meal_expand_inline"),
-                  onPressed: () => setState(() {
-                    _mealKcalBarExpanded[_kWorkoutBlockMealId] = !sectionOpen;
-                  }),
+                  onPressed: () {
+                    setState(() {
+                      _mealKcalBarExpanded[_kWorkoutBlockMealId] = !sectionOpen;
+                    });
+                    if (!sectionOpen) _scrollIntoViewAfterExpand(btnCtx);
+                  },
                   icon: AnimatedRotation(
                     turns: sectionOpen ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),
@@ -24496,7 +24512,7 @@ _pickField(
                       color: wtx.expandIcon,
                     ),
                   ),
-                ),
+                )),
               ],
             ),
             SizedBox(height: sectionOpen ? 6 : 2),
@@ -25245,7 +25261,7 @@ _pickField(
                   })(v);
           },
         ),
-                IconButton(
+                Builder(builder: (btnCtx) => IconButton(
                   padding: const EdgeInsets.only(top: 2),
                   visualDensity: VisualDensity.compact,
                   constraints: const BoxConstraints(
@@ -25256,6 +25272,7 @@ _pickField(
                       _mealKcalBarExpanded[meal] = !sectionOpen;
                     });
                     onAfterExpandToggle?.call();
+                    if (!sectionOpen) _scrollIntoViewAfterExpand(btnCtx);
                   },
                   icon: AnimatedRotation(
                     turns: sectionOpen ? 0.5 : 0,
@@ -25267,7 +25284,7 @@ _pickField(
                       color: mtx.expandIcon,
                     ),
                   ),
-                ),
+                )),
               ],
             ),
             SizedBox(height: sectionOpen ? 6 : 2),
