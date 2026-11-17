@@ -1700,20 +1700,92 @@ class _MainScreenState extends State<MainScreen> {
   bool get _usesFreeMealLayout =>
       nutritionMode == "Alltag" || nutritionMode == "Advanced";
 
+  // ───────────── Zweites Training (nur Advanced) ─────────────
+  static const String _kExtraWorkoutsKey = "extra_workouts_v1";
+  /// 0 = aus, 1 = zweites Pre-Workout, 2 = zweites Pre- + Post-Workout.
+  int extraWorkouts = 0;
+  int get _extraWorkoutsEff => nutritionMode == "Advanced" ? extraWorkouts : 0;
+  static const List<String> _kExtraWorkoutIds = ["Pre-Workout 2", "Post-Workout 2"];
+  List<String> get _activeExtraWorkoutIds =>
+      _kExtraWorkoutIds.take(_extraWorkoutsEff).toList();
+
+  /// Basis-Mahlzeit für Logik (Pre-Workout 2 verhält sich wie Pre-Workout).
+  String _baseMeal(String m) {
+    if (m == "Pre-Workout 2") return "Pre-Workout";
+    if (m == "Post-Workout 2") return "Post-Workout";
+    return m;
+  }
+
+  void _ensureExtraMealMacros() {
+    for (final id in _kExtraWorkoutIds) {
+      _mealMacrosStore.putIfAbsent(id, () => {"protein": 0.0, "carbs": 0.0, "fat": 0.0});
+    }
+  }
+
+  /// Zweites Training ein/aus: Anteile werden zwischen Pre/Pre 2 (Post/Post 2) geteilt bzw. zurückgelegt.
+  void _setExtraWorkouts(int v) {
+    _ensureExtraMealMacros();
+    final oldN = _extraWorkoutsEff;
+    extraWorkouts = v;
+    final newN = _extraWorkoutsEff;
+    for (var i = 0; i < 2; i++) {
+      final base = i == 0 ? "Pre-Workout" : "Post-Workout";
+      final extra = _kExtraWorkoutIds[i];
+      final wasOn = oldN > i, isOn = newN > i;
+      if (wasOn == isOn) continue;
+      final b = _mealMacrosStore[base];
+      final e = _mealMacrosStore[extra]!;
+      if (b == null) continue;
+      for (final k in const ["protein", "carbs", "fat"]) {
+        if (isOn) {
+          final half = (b[k] ?? 0) / 2;
+          b[k] = half;
+          e[k] = half;
+        } else {
+          b[k] = (b[k] ?? 0) + (e[k] ?? 0);
+          e[k] = 0;
+        }
+      }
+      mealDayMacroBands.remove(base);
+      mealDayMacroBands.remove(extra);
+    }
+    _fillMissingMealDayMacroBandEntries();
+    _normalizeMealGroupOrderForMode();
+  }
+
   void _normalizeMealGroupOrderForMode() {
+    _ensureExtraMealMacros();
+    {
+      final active = _activeExtraWorkoutIds;
+      mealGroupOrder.removeWhere(
+          (g) => _kExtraWorkoutIds.contains(g) && !active.contains(g));
+      for (final id in active) {
+        if (!mealGroupOrder.contains(id)) {
+          final anchor = id == "Pre-Workout 2" ? "Post-Workout" : "Pre-Workout 2";
+          final ai = mealGroupOrder.indexOf(anchor);
+          if (ai >= 0) {
+            mealGroupOrder.insert(ai + 1, id);
+          } else {
+            mealGroupOrder.add(id);
+          }
+        }
+      }
+    }
     if (_usesFreeMealLayout) {
       if (mealGroupOrder.contains("prepost")) {
         final i = mealGroupOrder.indexOf("prepost");
         mealGroupOrder.removeAt(i);
         mealGroupOrder.insertAll(i, ["Pre-Workout", "Post-Workout"]);
       }
-      if (mealGroupOrder.length != 5 ||
-          mealGroupOrder.toSet().length != 5 ||
-          mealGroupOrder.toSet().difference(_freeMealGroupIds).isNotEmpty) {
+      final allowed = {..._freeMealGroupIds, ..._activeExtraWorkoutIds};
+      if (mealGroupOrder.length != allowed.length ||
+          mealGroupOrder.toSet().length != allowed.length ||
+          mealGroupOrder.toSet().difference(allowed).isNotEmpty) {
         mealGroupOrder = [
           "Snacks",
           "Pre-Workout",
           "Post-Workout",
+          ..._activeExtraWorkoutIds,
           "Main Meal",
           "Evening Meal",
         ];
@@ -1853,7 +1925,7 @@ class _MainScreenState extends State<MainScreen> {
   bool isRestDay(String k) => restDays.contains(k) && !cheatDays.containsKey(k);
   /// Faktor für die KH einer Mahlzeit am gewählten Tag (Pre/Post am Rest Day = ½).
   double _restCarbFactor(String meal) => (isRestDay(selectedDayKey) &&
-          (meal == "Pre-Workout" || meal == "Post-Workout"))
+          (_baseMeal(meal) == "Pre-Workout" || _baseMeal(meal) == "Post-Workout"))
       ? 0.5
       : 1.0;
   /// Wie viele g KH der Rest Day am Tag streicht.
@@ -1911,7 +1983,7 @@ class _MainScreenState extends State<MainScreen> {
       tm = mealTimeOverride[m] ?? tm;
       out[m] = tm;
       final next = i + 1 < list.length ? list[i + 1] : null;
-      tm += (m == "Pre-Workout" && next == "Post-Workout") ? 120 : _effMealIntervalMin;
+      tm += (_baseMeal(m) == "Pre-Workout" && next == "Post-Workout") ? 120 : _effMealIntervalMin;
     }
     return out;
   }
@@ -1967,6 +2039,61 @@ class _MainScreenState extends State<MainScreen> {
     );
     if (r == null) return null;
     return r.hour * 60 + r.minute;
+  }
+
+  Widget _extraWorkoutsCard() {
+    const gold = Color(0xFFC9A24A);
+    Widget opt(int v, String title, String sub) {
+      final on = extraWorkouts == v;
+      return InkWell(
+        onTap: () {
+          setState(() {
+            _setExtraWorkouts(v);
+            _updateMealTotals();
+          });
+          _saveAppState();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          child: Row(children: [
+            Icon(on ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                color: on ? gold : Colors.white38, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: on ? gold : Colors.white)),
+                  Text(sub, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      );
+    }
+
+    const div = Divider(height: 1, color: Color(0x1FFFFFFF));
+    return _sectionCard(
+      title: t("xw_title"),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(t("xw_sub"),
+              style: const TextStyle(fontSize: 12, color: Colors.white70, height: 1.4)),
+          const SizedBox(height: 6),
+          opt(0, t("xw_off"), t("xw_off_sub")),
+          div,
+          opt(1, t("xw_pre"), t("xw_pre_sub")),
+          div,
+          opt(2, t("xw_prepost"), t("xw_prepost_sub")),
+        ],
+      ),
+    );
   }
 
   Widget _mealTimesCard() {
@@ -2462,7 +2589,7 @@ class _MainScreenState extends State<MainScreen> {
     if (nutritionMode == "Advanced") {
       return _advancedBandPpFor(meal, macro);
     }
-    final workout = meal == "Pre-Workout" || meal == "Post-Workout";
+    final workout = _baseMeal(meal) == "Pre-Workout" || _baseMeal(meal) == "Post-Workout";
     if (nutritionMode == "Alltag") {
       if (workout) {
         if (macro == "fat") return _alltagWorkoutMealBandTolerancePpFat;
@@ -2493,7 +2620,7 @@ class _MainScreenState extends State<MainScreen> {
   /// Pre/Post-Workout–Fett: Obergrenze [_kWorkoutFatMaxPct] % (Untergrenze wie üblich).
   List<double> _defaultBandListFor(String meal, String macro) {
     final c = _mealMacrosStore[meal]?[macro] ?? 0.0;
-    if (meal == "Pre-Workout" &&
+    if (_baseMeal(meal) == "Pre-Workout" &&
         macro == "protein" &&
         nutritionMode != "Diät" &&
         nutritionMode != "Advanced") {
@@ -2501,7 +2628,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     final t = _defaultTolerancePpForMealMacro(meal, macro);
     final lo = (c - t).clamp(0.0, 100.0);
-    if ((meal == "Pre-Workout" || meal == "Post-Workout") && macro == "fat") {
+    if ((_baseMeal(meal) == "Pre-Workout" || _baseMeal(meal) == "Post-Workout") && macro == "fat") {
       return [lo, _kWorkoutFatMaxPct];
     }
     return [
@@ -2805,7 +2932,7 @@ class _MainScreenState extends State<MainScreen> {
     final order = meals.where((m) => m != "Snacks").toList();
     var lastW = -1;
     for (var i = 0; i < order.length; i++) {
-      if (order[i] == "Pre-Workout" || order[i] == "Post-Workout") lastW = i;
+      if (_baseMeal(order[i]) == "Pre-Workout" || _baseMeal(order[i]) == "Post-Workout") lastW = i;
     }
     for (var i = lastW + 1; i < order.length; i++) {
       final m = order[i];
@@ -2815,7 +2942,7 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
     for (final m in order.reversed) {
-      if (m != "Pre-Workout" && m != "Post-Workout" && !_isMealMergedLocked(m)) {
+      if (_baseMeal(m) != "Pre-Workout" && _baseMeal(m) != "Post-Workout" && !_isMealMergedLocked(m)) {
         return m;
       }
     }
@@ -2824,7 +2951,7 @@ class _MainScreenState extends State<MainScreen> {
 
   bool get _workoutTrackedToday => trackedFoods.any((t) =>
       t.dayKey == selectedDayKey &&
-      (t.meal == "Pre-Workout" || t.meal == "Post-Workout"));
+      (_baseMeal(t.meal) == "Pre-Workout" || _baseMeal(t.meal) == "Post-Workout"));
 
   Widget _dayFillButtons() {
     final target = _nextMealAfterWorkout();
@@ -8535,6 +8662,7 @@ class _MainScreenState extends State<MainScreen> {
     final savedLastDeviationWarning = prefs.getString(_kLastDeviationWarningKey);
     final savedMealGroupOrder = prefs.getString(_kMealGroupOrderKey);
     threeMeals = prefs.getBool(_kThreeMealsKey) ?? false;
+    extraWorkouts = (prefs.getInt(_kExtraWorkoutsKey) ?? 0).clamp(0, 2);
     try {
       final rawMt = prefs.getString(_kMealTimesKey);
       if (rawMt != null && rawMt.isNotEmpty) {
@@ -8802,14 +8930,14 @@ class _MainScreenState extends State<MainScreen> {
       if (mealMacrosRaw != null) {
         final map = Map<String, dynamic>.from(jsonDecode(mealMacrosRaw));
         final loaded = <String, Map<String, double>>{};
-        for (final meal in meals) {
+        for (final meal in {...meals, ..._kExtraWorkoutIds}) {
           final macroMap = Map<String, dynamic>.from(map[meal] ?? {});
           loaded[meal] = {
-            "protein": (macroMap["protein"] ?? mealMacros[meal]!["protein"]!)
+            "protein": (macroMap["protein"] ?? mealMacros[meal]?["protein"] ?? 0)
                 .toDouble(),
             "carbs":
-                (macroMap["carbs"] ?? mealMacros[meal]!["carbs"]!).toDouble(),
-            "fat": (macroMap["fat"] ?? mealMacros[meal]!["fat"]!).toDouble(),
+                (macroMap["carbs"] ?? mealMacros[meal]?["carbs"] ?? 0).toDouble(),
+            "fat": (macroMap["fat"] ?? mealMacros[meal]?["fat"] ?? 0).toDouble(),
           };
         }
         mealMacros = loaded;
@@ -9135,6 +9263,7 @@ class _MainScreenState extends State<MainScreen> {
           _kLastDeviationWarningKey, lastDeviationWarningKey!);
     }
     await prefs.setString(_kMealGroupOrderKey, jsonEncode(mealGroupOrder));
+    await prefs.setInt(_kExtraWorkoutsKey, extraWorkouts);
     await prefs.setBool(_kThreeMealsKey, threeMeals);
     await prefs.setString(_kMealTimesKey, jsonEncode({
       "on": mealTimesOn,
@@ -9505,6 +9634,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "xw_title": "Zweites Training am Tag",
+      "xw_sub": "Für Athleten mit zwei Einheiten pro Tag (nur Advanced). Die Anteile werden geteilt – danach kannst du die Kalorien jeder Mahlzeit oben selbst anpassen.",
+      "xw_off": "Ein Training",
+      "xw_off_sub": "Normal: Pre- und Post-Workout",
+      "xw_pre": "+ Pre-Workout 2",
+      "xw_pre_sub": "Zweite Mahlzeit vor dem zweiten Training",
+      "xw_prepost": "+ Pre- & Post-Workout 2",
+      "xw_prepost_sub": "Zweites Training komplett mit Vor- und Nachher-Mahlzeit",
       "track_to_plan": "Auf „geplant“ umstellen",
       "track_to_plan_sub": "Noch nicht gegessen – zählt erst, wenn du es einträgst",
       "track_to_plan_done": "Auf geplant umgestellt",
@@ -10977,6 +11114,14 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "xw_title": "Second workout per day",
+      "xw_sub": "For athletes training twice a day (Advanced only). Shares are split – then adjust each meal's calories above.",
+      "xw_off": "One workout",
+      "xw_off_sub": "Normal: pre- and post-workout",
+      "xw_pre": "+ Pre-workout 2",
+      "xw_pre_sub": "Extra meal before the second session",
+      "xw_prepost": "+ Pre- & post-workout 2",
+      "xw_prepost_sub": "Second session with a meal before and after",
       "track_to_plan": "Switch to “planned”",
       "track_to_plan_sub": "Not eaten yet – counts once you log it",
       "track_to_plan_done": "Switched to planned",
@@ -12186,6 +12331,10 @@ class _MainScreenState extends State<MainScreen> {
         return t("meal_pre_workout");
       case "Post-Workout":
         return t("meal_post_workout");
+      case "Pre-Workout 2":
+        return "${t("meal_pre_workout")} 2";
+      case "Post-Workout 2":
+        return "${t("meal_post_workout")} 2";
       case "Main Meal":
         return t("meal_main");
       case "Evening Meal":
@@ -14259,7 +14408,7 @@ class _MainScreenState extends State<MainScreen> {
     String? preWorkoutCarbKind,
   }) {
     if (macro == "carbs" &&
-        meal == "Pre-Workout" &&
+        _baseMeal(meal) == "Pre-Workout" &&
         (preWorkoutCarbKind == "komplex" || preWorkoutCarbKind == "einfach")) {
       final gDayM = effectiveMacroGoalsForDay(selectedDayKey);
       final dayCarbG = gDayM.carbs;
@@ -14328,7 +14477,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     if (inputMode == "protein" || inputMode == "carbs" || inputMode == "fat") {
       final macro = inputMode;
-      if (macro == "carbs" && meal == "Pre-Workout") {
+      if (macro == "carbs" && _baseMeal(meal) == "Pre-Workout") {
         final k = preWorkoutCarbKind;
         if (k == "komplex" || k == "einfach") {
           final gap = _mealMacroFillGapG(meal, "carbs", preWorkoutCarbKind: k);
@@ -20431,7 +20580,7 @@ _pickField(
                       ),
                       onPressed: () => applyMealFill("protein"),
                     ),
-                  if (food.carbs > 0.01 && meal != "Pre-Workout")
+                  if (food.carbs > 0.01 && _baseMeal(meal) != "Pre-Workout")
                     ActionChip(
                       label: Text(
                         t("track_fill_carbs"),
@@ -20439,7 +20588,7 @@ _pickField(
                       ),
                       onPressed: () => applyMealFill("carbs"),
                     ),
-                  if (meal == "Pre-Workout" && food.carbs > 0.01) ...[
+                  if (_baseMeal(meal) == "Pre-Workout" && food.carbs > 0.01) ...[
                     ActionChip(
                       label: Text(
                         t("track_fill_carb_complex"),
@@ -23470,7 +23619,7 @@ _pickField(
                   var workoutDone = false;
                   for (final m in meals) {
                     if (m == "Snacks") continue;
-                    if (m == "Pre-Workout" || m == "Post-Workout") {
+                    if (_baseMeal(m) == "Pre-Workout" || _baseMeal(m) == "Post-Workout") {
                       if (combined) {
                         if (workoutDone) continue;
                         workoutDone = true;
@@ -23485,8 +23634,8 @@ _pickField(
                       }
                     }
                     if (_isMealMergedLocked(m)) continue;
-                    if (m != "Pre-Workout" &&
-                        m != "Post-Workout" &&
+                    if (_baseMeal(m) != "Pre-Workout" &&
+                        _baseMeal(m) != "Post-Workout" &&
                         !core.contains(m)) {
                       continue;
                     }
@@ -23512,7 +23661,7 @@ _pickField(
   ({Color border, Color surface}) _mealCardColors(String mealId) {
     final light = Theme.of(context).brightness == Brightness.light;
     if (light) {
-      switch (mealId) {
+      switch (_baseMeal(mealId)) {
         case "Snacks":
           return (
             border: const Color(0xFFC49552),
@@ -23547,7 +23696,7 @@ _pickField(
           );
       }
     }
-    switch (mealId) {
+    switch (_baseMeal(mealId)) {
       case "Snacks":
         return (
           border: const Color(0xFFB8874D),
@@ -23656,7 +23805,7 @@ _pickField(
 
   /// Fallback, wenn kein Emoji (z. B. nur Icon nötig).
   IconData _mealSlotIcon(String mealId) {
-    switch (mealId) {
+    switch (_baseMeal(mealId)) {
       case "Snacks":
         return Icons.cookie_outlined;
       case "Workout":
@@ -23771,7 +23920,7 @@ _pickField(
     final slotF = gDayM.fat * (mm['fat']! / 100.0);
     // Pre-Workout komplex/einfach: Bänder = Anteil am **Tages-KH-Ziel** (15–20 % bzw. 10–15 %), nicht am Mahlzeiten-Slot.
     final dayCarbG = gDayM.carbs;
-    final showPreCarbSplit = meal == "Pre-Workout" && dayCarbG > 0.01;
+    final showPreCarbSplit = _baseMeal(meal) == "Pre-Workout" && dayCarbG > 0.01;
     final preCarbSplit = showPreCarbSplit ? _mealCarbKindSplitG("Pre-Workout") : null;
     final cCxMin = dayCarbG * preCxMin / 100.0;
     final cCxMax = dayCarbG * preCxMax / 100.0;
@@ -23930,7 +24079,7 @@ _pickField(
                   ),
                 ),
               ] else ...[
-                if (meal == "Pre-Workout") _preWorkoutCarbTimingTipBanner(),
+                if (_baseMeal(meal) == "Pre-Workout") _preWorkoutCarbTimingTipBanner(),
                 _macroTargetKpiLine(
                   toggleKey: "$meal|carbs",
                   label: t("carbs"),
@@ -25029,7 +25178,7 @@ _pickField(
                 ),
                 // Rest Day (KH in Pre/Post halbieren) — an der ersten Workout-Karte.
                 if (meal == meals.firstWhere(
-                    (m) => m == "Pre-Workout" || m == "Post-Workout",
+                    (m) => _baseMeal(m) == "Pre-Workout" || _baseMeal(m) == "Post-Workout",
                     orElse: () => ""))
                   IconButton(
                     padding: EdgeInsets.zero,
@@ -25385,17 +25534,17 @@ _pickField(
       if (groupId == "prepost") {
         return "${_tMeal("Pre-Workout")} (${t("meal_pre_paren")}) + ${_tMeal("Post-Workout")} (${t("meal_post_paren")})";
       }
-      if (groupId == "Pre-Workout") {
+      if (_baseMeal(groupId) == "Pre-Workout") {
         return "${_displayMealName(groupId)} (${t("meal_pre_paren")})";
       }
-      if (groupId == "Post-Workout") {
+      if (_baseMeal(groupId) == "Post-Workout") {
         return "${_displayMealName(groupId)} (${t("meal_post_paren")})";
       }
       return _displayMealName(groupId);
     }
 
     IconData groupIcon(String groupId) {
-      switch (groupId) {
+      switch (_baseMeal(groupId)) {
         case "prepost":
         case "Pre-Workout":
         case "Post-Workout":
@@ -26477,6 +26626,7 @@ _pickField(
               ],
             ),
           ),
+          if (nutritionMode == "Advanced") _extraWorkoutsCard(),
           _mealTimesCard(),
           if (nutritionMode == "Advanced")
             _sectionCard(
@@ -27448,7 +27598,7 @@ _pickField(
   }
 
   Color _mealShareSegmentColor(String mealId) {
-    switch (mealId) {
+    switch (_baseMeal(mealId)) {
       case "Snacks":
         return const Color(0xFF8D6E63);
       case "Pre-Workout":
@@ -27812,7 +27962,7 @@ _pickField(
                           setSt(() => pcts[m] = _round2(v)),
                     ),
                     // KH · Pre-Workout: Aufteilung komplex / einfach direkt darunter
-                    if (macroKey == "carbs" && m == "Pre-Workout")
+                    if (macroKey == "carbs" && _baseMeal(m) == "Pre-Workout")
                       _preSplitEditorRow(
                         split: preSplit,
                         prePct: pcts["Pre-Workout"] ?? 0.0,
@@ -29971,7 +30121,7 @@ _pickField(
 
     // Sortierung je Ziel: Cut = wenig kcal pro g Makro (viel Volumen), Aufbau = wenig g (kompakt).
     final usageCounts = _foodUsageCounts();
-    final workoutMeal = meal == "Pre-Workout" || meal == "Post-Workout";
+    final workoutMeal = _baseMeal(meal) == "Pre-Workout" || _baseMeal(meal) == "Post-Workout";
     // Sortierung: Reinheit des Makros (kcal pro g) je Ziel, echte Mahlzeiten-KH vor
     // schnellem Zucker (außer rund ums Training), oft Gegessenes nach oben.
     double rankFor(Food f, double per100) {
@@ -32411,7 +32561,7 @@ _pickField(
               pendingFillLocal = null;
               return;
             }
-            if (tag == "c" && meal == "Pre-Workout") {
+            if (tag == "c" && _baseMeal(meal) == "Pre-Workout") {
               onFail();
               pendingFillLocal = null;
               return;
@@ -33063,7 +33213,7 @@ _pickField(
                                 });
                               },
                             ),
-                          if (fInList.carbs > 0.01 && meal != "Pre-Workout")
+                          if (fInList.carbs > 0.01 && _baseMeal(meal) != "Pre-Workout")
                             ActionChip(
                               label: Text(
                                 t("track_fill_carbs"),
@@ -33085,7 +33235,7 @@ _pickField(
                                 });
                               },
                             ),
-                          if (meal == "Pre-Workout" && fInList.carbs > 0.01) ...[
+                          if (_baseMeal(meal) == "Pre-Workout" && fInList.carbs > 0.01) ...[
                             ActionChip(
                               label: Text(
                                 t("track_fill_carb_complex"),
@@ -33428,7 +33578,7 @@ _pickField(
                                 });
                               },
                             ),
-                          if (fInList.carbs > 0.01 && meal != "Pre-Workout")
+                          if (fInList.carbs > 0.01 && _baseMeal(meal) != "Pre-Workout")
                             ActionChip(
                               label: Text(
                                 t("track_fill_carbs"),
@@ -33452,7 +33602,7 @@ _pickField(
                                 });
                               },
                             ),
-                          if (meal == "Pre-Workout" && fInList.carbs > 0.01) ...[
+                          if (_baseMeal(meal) == "Pre-Workout" && fInList.carbs > 0.01) ...[
                             ActionChip(
                               label: Text(
                                 t("track_fill_carb_complex"),
