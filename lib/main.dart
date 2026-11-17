@@ -13858,7 +13858,10 @@ class _MainScreenState extends State<MainScreen> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.62),
-      builder: (ctx) {
+      // Live neu zeichnen (Bewertung, Favorit …), sobald sich der App-Zustand ändert.
+      builder: (ctx) => ValueListenableBuilder<int>(
+        valueListenable: _liveRev,
+        builder: (ctx, _, __) {
         return Dialog(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -13980,7 +13983,8 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
         );
-      },
+        },
+      ),
     );
   }
 
