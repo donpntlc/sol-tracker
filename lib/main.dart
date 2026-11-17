@@ -13324,7 +13324,12 @@ class _MainScreenState extends State<MainScreen> {
                 borderRadius: BorderRadius.circular(14),
                 initialValue: pickMeal,
                 decoration: _touchInputDecoration(t("track_move_target_label")),
-                items: meals
+                items: [
+                  ...meals,
+                  if (f.meal == _kMergedMealCardId ||
+                      _mergedMealsByDay[dateKeyFromDate(pickDay)] != null)
+                    _kMergedMealCardId,
+                ]
                     .map((m) => DropdownMenuItem(
                           value: m,
                           child: Text(_displayMealName(m)),
@@ -16369,6 +16374,10 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 actions: [
                   TextButton(
+                    onPressed: () => Navigator.pop(dCtx, "move"),
+                    child: Text(t("track_move_menu")),
+                  ),
+                  TextButton(
                     style: TextButton.styleFrom(foregroundColor: const Color(0xFFE57373)),
                     onPressed: () => Navigator.pop(dCtx, "delete"),
                     child: Text(t("dayfoods_delete_all")),
@@ -16383,6 +16392,20 @@ class _MainScreenState extends State<MainScreen> {
             }),
           );
           if (res == null) return;
+          if (res == "move") {
+            final first = items.first;
+            await _openMoveTrackedFoodDialog(first, first.meal);
+            setState(() {
+              for (final e in items.skip(1)) {
+                e.meal = first.meal;
+                e.dayKey = first.dayKey;
+              }
+              _updateMealTotals();
+            });
+            _saveAppState();
+            setS(() {});
+            return;
+          }
           final newG = double.tryParse(ctrl.text.replaceAll(",", ".")) ?? 0;
           setState(() {
             if (res == "delete") {
