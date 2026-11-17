@@ -9634,6 +9634,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "perf_auto_chip": "Auto",
+      "perf_auto_note": "Aus REPIT: {l} · 👍 {u} · – {m} · 👎 {d} ({n}× vor dem Training bewertet)",
+      "perf_auto_pending": "REPIT: {n}× bewertet – ab 3 Bewertungen setzt PREPIT die Performance automatisch.",
+      "perf_auto_overridden": "Deine eigene Wahl gilt.",
       "xw_title": "Zweites Training am Tag",
       "xw_sub": "Für Athleten mit zwei Einheiten pro Tag (nur Advanced). Die Anteile werden geteilt – danach kannst du die Kalorien jeder Mahlzeit oben selbst anpassen.",
       "xw_off": "Ein Training",
@@ -11114,6 +11118,10 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "perf_auto_chip": "Auto",
+      "perf_auto_note": "From REPIT: {l} · 👍 {u} · – {m} · 👎 {d} (rated {n}× before training)",
+      "perf_auto_pending": "REPIT: rated {n}× – from 3 ratings PREPIT sets performance automatically.",
+      "perf_auto_overridden": "Your own choice applies.",
       "xw_title": "Second workout per day",
       "xw_sub": "For athletes training twice a day (Advanced only). Shares are split – then adjust each meal's calories above.",
       "xw_off": "One workout",
@@ -18637,8 +18645,74 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  /// Eigene Bewertung hat Vorrang, sonst automatisch aus den REPIT-Daumen.
   int? _foodPerformanceRating(Food food) =>
-      userFoodPerformanceByName[food.name];
+      userFoodPerformanceByName[food.name] ?? _repitAutoPerf(food.name)?.level;
+
+  // ───────────── REPIT-Daumen → Performance (automatisch) ─────────────
+  Map<String, ({int up, int mid, int down, int n, double? feel})>? _repitStatsCache;
+  int _repitStatsAt = 0;
+
+  Map<String, ({int up, int mid, int down, int n, double? feel})> _repitFoodStats() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_repitStatsCache != null && now - _repitStatsAt < 30000) return _repitStatsCache!;
+    final out = <String, ({int up, int mid, int down, int n, double? feel})>{};
+    try {
+      final raw = localStorageGet("hantelbuch.v1");
+      if (raw != null && raw.isNotEmpty) {
+        final m = jsonDecode(raw);
+        final ws = (m is Map ? m["workouts"] : null) as List? ?? const [];
+        final acc = <String, List<num>>{}; // up, mid, down, n, feelSum, feelN
+        for (final w in ws) {
+          if (w is! Map) continue;
+          final feel = w["feel"];
+          for (final f in (w["meals"] as List? ?? const [])) {
+            if (f is! Map) continue;
+            final name = (f["n"] ?? "").toString().trim().toLowerCase();
+            if (name.isEmpty) continue;
+            final a = acc.putIfAbsent(name, () => [0, 0, 0, 0, 0, 0]);
+            final r = f["r"];
+            if (r == 1) {
+              a[0] += 1;
+            } else if (r == -1) {
+              a[2] += 1;
+            } else {
+              a[1] += 1;
+            }
+            a[3] += 1;
+            if (feel is num && feel > 0) {
+              a[4] += feel;
+              a[5] += 1;
+            }
+          }
+        }
+        for (final e in acc.entries) {
+          final a = e.value;
+          out[e.key] = (
+            up: a[0].toInt(),
+            mid: a[1].toInt(),
+            down: a[2].toInt(),
+            n: a[3].toInt(),
+            feel: a[5] > 0 ? a[4] / a[5] : null,
+          );
+        }
+      }
+    } catch (_) {}
+    _repitStatsCache = out;
+    _repitStatsAt = now;
+    return out;
+  }
+
+  /// Ab 3 Bewertungen: 3 = überwiegend 👍, 1 = überwiegend 👎, sonst 2.
+  /// Das Trainingsgefühl (1–4) zählt leicht mit.
+  ({int level, int up, int mid, int down, int n})? _repitAutoPerf(String foodName) {
+    final st = _repitFoodStats()[foodName.trim().toLowerCase()];
+    if (st == null || st.n < 3) return null;
+    var score = (st.up - st.down) / st.n;
+    if (st.feel != null) score += (st.feel! - 2.5) / 3 * 0.3;
+    final level = score >= 0.34 ? 3 : (score <= -0.34 ? 1 : 2);
+    return (level: level, up: st.up, mid: st.mid, down: st.down, n: st.n);
+  }
 
   int? _foodToleranceRating(Food food) => userFoodToleranceByName[food.name];
 
@@ -18853,6 +18927,8 @@ class _MainScreenState extends State<MainScreen> {
     required String kind,
     required int? value,
     required ValueChanged<int?> onChanged,
+    int? autoValue,
+    String? autoNote,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -18873,14 +18949,29 @@ class _MainScreenState extends State<MainScreen> {
             for (final opt in <int?>[null, 1, 2, 3])
               FilterChip(
                 label: Text(
-                  opt == null ? t("db_personal_rating_off") : "$opt",
+                  opt == null
+                      ? (autoValue != null ? t("perf_auto_chip") : t("db_personal_rating_off"))
+                      : "$opt",
                   style: const TextStyle(fontSize: 12),
                 ),
                 selected: value == opt,
+                side: (value == null && opt != null && opt == autoValue)
+                    ? const BorderSide(color: Color(0xFFC9A24A), width: 1.6)
+                    : null,
                 onSelected: (_) => onChanged(opt),
               ),
           ],
         ),
+        if (autoNote != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              (value != null && autoValue != null && value != autoValue)
+                  ? "$autoNote ${t("perf_auto_overridden")}"
+                  : autoNote,
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFFC9A24A), height: 1.35),
+            ),
+          ),
         if (value != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -18918,7 +19009,23 @@ class _MainScreenState extends State<MainScreen> {
         _personalRatingPickerRow(
           title: t("db_personal_rating_performance"),
           kind: "performance",
-          value: _foodPerformanceRating(food),
+          value: userFoodPerformanceByName[food.name],
+          autoValue: _repitAutoPerf(food.name)?.level,
+          autoNote: () {
+            final a = _repitAutoPerf(food.name);
+            if (a == null) {
+              final st = _repitFoodStats()[food.name.trim().toLowerCase()];
+              if (st == null) return null;
+              return tFmt("perf_auto_pending", {"n": "${st.n}"});
+            }
+            return tFmt("perf_auto_note", {
+              "l": "${a.level}",
+              "u": "${a.up}",
+              "m": "${a.mid}",
+              "d": "${a.down}",
+              "n": "${a.n}",
+            });
+          }(),
           onChanged: (v) {
             setState(() {
               if (v == null) {

@@ -9,3 +9,6 @@ Future<bool> shareText(String title, String text) =>
 /// Kalender-Datei (.ics) öffnen/herunterladen — iPhone bietet „Zum Kalender hinzufügen“.
 Future<bool> openIcsFile(String filename, String ics) =>
     _impl.openIcsFile(filename, ics);
+
+/// localStorage lesen (gleiche Domain, z. B. REPIT-Daten). null = nicht verfügbar.
+String? localStorageGet(String key) => _impl.localStorageGet(key);

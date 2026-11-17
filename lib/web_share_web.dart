@@ -43,3 +43,15 @@ Future<bool> openIcsFile(String filename, String ics) async {
     return false;
   }
 }
+
+String? localStorageGet(String key) {
+  try {
+    final ls = globalContext['localStorage'] as JSObject?;
+    if (ls == null) return null;
+    final v = ls.callMethod<JSAny?>('getItem'.toJS, key.toJS);
+    if (v == null) return null;
+    return (v as JSString).toDart;
+  } catch (_) {
+    return null;
+  }
+}
