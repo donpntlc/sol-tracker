@@ -6372,71 +6372,31 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     if (unit != null) ...[
                       const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(children: [
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () async {
-                                final v = await _pickFractionWheel(rawVal(), unit!.$2, unit!.$1);
-                                if (v != null) setL(() => ctrl.text = v);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: gold.withValues(alpha: 0.5)),
-                                ),
-                                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                  const Icon(Icons.unfold_more, size: 18, color: gold),
-                                  Text(t("frac_wheel"),
-                                      style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
-                                ]),
-                              ),
-                            ),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () async {
+                          final v = await _pickFractionWheel(rawVal(), unit!.$2, unit!.$1);
+                          if (v != null) setL(() => ctrl.text = v);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: gold.withValues(alpha: 0.5)),
                           ),
-                          for (final fr in const [
-                            ("⅛", "1/8", 0.125),
-                            ("¼", "1/4", 0.25),
-                            ("⅓", "1/3", 1 / 3),
-                            ("½", "1/2", 0.5),
-                            ("⅔", "2/3", 2 / 3),
-                            ("¾", "3/4", 0.75),
-                            ("1", "1", 1.0),
-                            ("1½", "1 1/2", 1.5),
-                            ("2", "2", 2.0),
-                          ])
-                            Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: Builder(builder: (_) {
-                                final on = (rawVal() - fr.$3).abs() < 0.005;
-                                return InkWell(
-                                  borderRadius: BorderRadius.circular(8),
-                                  onTap: () => setL(() => ctrl.text = fr.$2),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      color: on ? gold.withValues(alpha: 0.14) : null,
-                                      border: Border.all(
-                                          color: on ? gold : Colors.white.withValues(alpha: 0.18)),
-                                    ),
-                                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                      Text(fr.$1,
-                                          style: TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w800,
-                                              color: on ? gold : Colors.white)),
-                                      Text("${(unit!.$2 * fr.$3).round()} g",
-                                          style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
-                                    ]),
-                                  ),
-                                );
-                              }),
+                          child: Row(children: [
+                            Text(t("frac_title"),
+                                style: TextStyle(fontSize: 13, color: context.sol.muted)),
+                            const Spacer(),
+                            Text(
+                              "${_fracLabel((rawVal() * 24).round(), 24)} · ${grams().round()} g",
+                              style: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w800, color: gold),
                             ),
-                        ]),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.unfold_more, size: 20, color: gold),
+                          ]),
+                        ),
                       ),
                     ],
                     const SizedBox(height: 12),
@@ -9717,6 +9677,7 @@ class _MainScreenState extends State<MainScreen> {
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
       "frac_wheel": "Mehr",
+      "frac_title": "Bruchteil (⅛, ¼, ⅓, ½ …)",
       "frac_apply": "Übernehmen",
       "perf_auto_chip": "Auto",
       "perf_auto_note": "Aus REPIT: {l} · 👍 {u} · – {m} · 👎 {d} ({n}× vor dem Training bewertet)",
@@ -11203,6 +11164,7 @@ class _MainScreenState extends State<MainScreen> {
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
       "frac_wheel": "More",
+      "frac_title": "Fraction (⅛, ¼, ⅓, ½ …)",
       "frac_apply": "Apply",
       "perf_auto_chip": "Auto",
       "perf_auto_note": "From REPIT: {l} · 👍 {u} · – {m} · 👎 {d} (rated {n}× before training)",
