@@ -6102,10 +6102,112 @@ class _MainScreenState extends State<MainScreen> {
         }
       }
     }
+    // ── Mengen-Rad (Ganz | Bruchteil | Einheit), nur bei Portions-Einheit ──
+    const wFracs = <(String, int, int)>[
+      ("–", 0, 1), ("⅛", 1, 8), ("¼", 1, 4), ("⅓", 1, 3), ("⅜", 3, 8), ("½", 1, 2),
+      ("⅝", 5, 8), ("⅔", 2, 3), ("¾", 3, 4), ("⅞", 7, 8),
+    ];
+    var wWhole = 1, wFi = 0, wUi = 0;
+    var cW = FixedExtentScrollController(initialItem: 1);
+    var cF = FixedExtentScrollController();
+    var cU = FixedExtentScrollController();
+    void syncWheels() {
+      final v = rawVal();
+      wWhole = v.floor().clamp(0, 30);
+      final rest = v - v.floor();
+      var best = 1e9;
+      wFi = 0;
+      for (var i = 0; i < wFracs.length; i++) {
+        final d = (wFracs[i].$2 / wFracs[i].$3 - rest).abs();
+        if (d < best) {
+          best = d;
+          wFi = i;
+        }
+      }
+      wUi = unit == null ? 0 : portions.indexOf(unit!).clamp(0, 999);
+      cW = FixedExtentScrollController(initialItem: wWhole);
+      cF = FixedExtentScrollController(initialItem: wFi);
+      cU = FixedExtentScrollController(initialItem: wUi);
+    }
+    String wheelText() {
+      final f = wFracs[wFi];
+      if (f.$2 == 0) return "$wWhole";
+      return wWhole == 0 ? "${f.$2}/${f.$3}" : "$wWhole ${f.$2}/${f.$3}";
+    }
+    if (unit != null) syncWheels();
     final res = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setL) {
+          Widget amountWheel() {
+            TextStyle st(bool on) => TextStyle(
+                fontSize: on ? 20 : 16,
+                fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+                color: on ? Colors.white : Colors.white54);
+            Widget wheel(FixedExtentScrollController c, int n, Widget Function(int, bool) item,
+                    ValueChanged<int> on, int sel) =>
+                ListWheelScrollView.useDelegate(
+                  controller: c,
+                  itemExtent: 40,
+                  diameterRatio: 1.4,
+                  perspective: 0.004,
+                  physics: const FixedExtentScrollPhysics(),
+                  onSelectedItemChanged: on,
+                  childDelegate: ListWheelChildBuilderDelegate(
+                    childCount: n,
+                    builder: (_, i) => Center(child: item(i, i == sel)),
+                  ),
+                );
+            return SizedBox(
+              height: 170,
+              child: Stack(alignment: Alignment.center, children: [
+                Container(
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(21),
+                  ),
+                ),
+                Row(children: [
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    width: 46,
+                    child: wheel(cW, 31, (i, on) => Text(i == 0 ? "–" : "$i", style: st(on)),
+                        (i) => setL(() {
+                              wWhole = i;
+                              ctrl.text = wheelText();
+                            }),
+                        wWhole),
+                  ),
+                  SizedBox(
+                    width: 52,
+                    child: wheel(cF, wFracs.length, (i, on) => Text(wFracs[i].$1, style: st(on)),
+                        (i) => setL(() {
+                              wFi = i;
+                              ctrl.text = wheelText();
+                            }),
+                        wFi),
+                  ),
+                  Expanded(
+                    child: wheel(
+                        cU,
+                        portions.length,
+                        (i, on) => Padding(
+                              padding: const EdgeInsets.only(right: 10),
+                              child: Text("${portions[i].$1} (${portions[i].$2.round()} g)",
+                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: st(on)),
+                            ),
+                        (i) => setL(() {
+                              wUi = i;
+                              unit = portions[i];
+                            }),
+                        wUi),
+                  ),
+                ]),
+              ]),
+            );
+          }
+
           void fill(String mode) {
             final g = _fillGramsForTarget(food, mode, meal);
             setL(() {
@@ -6277,6 +6379,7 @@ class _MainScreenState extends State<MainScreen> {
                               onTap: () => setL(() {
                                 unit = p;
                                 ctrl.text = "1";
+                                syncWheels();
                               }),
                               // Eigene Portion lange drücken → löschen.
                               onLongPress: _isCustomPortion(food, p)
@@ -6306,6 +6409,7 @@ class _MainScreenState extends State<MainScreen> {
                                 portions = _portionsFor(food);
                                 unit = np;
                                 ctrl.text = "1";
+                                syncWheels();
                               });
                             },
                           ),
@@ -6313,8 +6417,8 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    // ── Menge: − Zahl + ──
-                    Container(
+                    // ── Menge: − Zahl + (Gramm) / Rad (Portion) ──
+                    if (unit != null) amountWheel() else Container(
                       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(8),
@@ -6370,41 +6474,15 @@ class _MainScreenState extends State<MainScreen> {
                         ],
                       ),
                     ),
-                    if (unit != null) ...[
-                      const SizedBox(height: 8),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () async {
-                          final v = await _pickAmountWheel(
-                              rawVal(), portions.isEmpty ? [unit!] : portions, unit!);
-                          if (v != null) {
-                            setL(() {
-                              unit = v.$2;
-                              ctrl.text = v.$1;
-                            });
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: gold.withValues(alpha: 0.5)),
-                          ),
-                          child: Row(children: [
-                            Text(t("frac_title"),
-                                style: TextStyle(fontSize: 13, color: context.sol.muted)),
-                            const Spacer(),
-                            Text(
-                              "${_fracLabel((rawVal() * 24).round(), 24)} · ${grams().round()} g",
+                    if (unit != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Center(
+                          child: Text("= ${grams().round()} g",
                               style: const TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.w800, color: gold),
-                            ),
-                            const SizedBox(width: 6),
-                            const Icon(Icons.unfold_more, size: 20, color: gold),
-                          ]),
+                                  fontSize: 13, fontWeight: FontWeight.w700, color: gold)),
                         ),
                       ),
-                    ],
                     const SizedBox(height: 12),
                     // ── Nährwerte ──
                     Container(
