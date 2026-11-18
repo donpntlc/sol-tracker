@@ -6065,7 +6065,17 @@ class _MainScreenState extends State<MainScreen> {
         text: initGrams != null
             ? initGrams.round().toString()
             : (unit != null ? "1" : def.$2.round().toString()));
-    double rawVal() => double.tryParse(ctrl.text.trim().replaceAll(",", ".")) ?? 0;
+    double rawVal() {
+      final tx = ctrl.text.trim().replaceAll(",", ".");
+      // Brüche wie „1/3“ oder „1 1/2“ erlauben.
+      final m = RegExp(r"^(?:(\d+)\s+)?(\d+)\s*/\s*(\d+)$").firstMatch(tx);
+      if (m != null) {
+        final whole = double.tryParse(m.group(1) ?? "0") ?? 0;
+        final a = double.tryParse(m.group(2)!) ?? 0, b = double.tryParse(m.group(3)!) ?? 1;
+        return b == 0 ? 0 : whole + a / b;
+      }
+      return double.tryParse(tx) ?? 0;
+    }
     double grams() => unit == null ? rawVal() : rawVal() * unit!.$2;
     String fmtN(double v) =>
         (v - v.roundToDouble()).abs() < 0.01 ? v.round().toString() : v.toStringAsFixed(1);
@@ -6360,6 +6370,52 @@ class _MainScreenState extends State<MainScreen> {
                         ],
                       ),
                     ),
+                    if (unit != null) ...[
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(children: [
+                          for (final fr in const [
+                            ("¼", "1/4", 0.25),
+                            ("⅓", "1/3", 1 / 3),
+                            ("½", "1/2", 0.5),
+                            ("⅔", "2/3", 2 / 3),
+                            ("¾", "3/4", 0.75),
+                            ("1", "1", 1.0),
+                            ("1½", "1 1/2", 1.5),
+                            ("2", "2", 2.0),
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Builder(builder: (_) {
+                                final on = (rawVal() - fr.$3).abs() < 0.005;
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () => setL(() => ctrl.text = fr.$2),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      color: on ? gold.withValues(alpha: 0.14) : null,
+                                      border: Border.all(
+                                          color: on ? gold : Colors.white.withValues(alpha: 0.18)),
+                                    ),
+                                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                                      Text(fr.$1,
+                                          style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: on ? gold : Colors.white)),
+                                      Text("${(unit!.$2 * fr.$3).round()} g",
+                                          style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
+                                    ]),
+                                  ),
+                                );
+                              }),
+                            ),
+                        ]),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     // ── Nährwerte ──
                     Container(
