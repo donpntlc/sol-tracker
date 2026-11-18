@@ -6375,8 +6375,14 @@ class _MainScreenState extends State<MainScreen> {
                       InkWell(
                         borderRadius: BorderRadius.circular(8),
                         onTap: () async {
-                          final v = await _pickFractionWheel(rawVal(), unit!.$2, unit!.$1);
-                          if (v != null) setL(() => ctrl.text = v);
+                          final v = await _pickAmountWheel(
+                              rawVal(), portions.isEmpty ? [unit!] : portions, unit!);
+                          if (v != null) {
+                            setL(() {
+                              unit = v.$2;
+                              ctrl.text = v.$1;
+                            });
+                          }
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -20116,89 +20122,113 @@ _pickField(
     return whole == 0 ? f : "$whole$f";
   }
 
-  /// Scroll-Rad mit Bruchteilen (⅛-Schritte + Drittel, bis 5). Rückgabe = Text fürs Mengenfeld.
-  Future<String?> _pickFractionWheel(double current, double unitGrams, String unitLabel) async {
-    const gold = Color(0xFFC9A24A);
-    final opts = <(int, int)>{};
-    for (var k = 1; k <= 40; k++) {
-      opts.add((k, 8));
-    }
-    for (var k = 1; k <= 15; k++) {
-      if (k % 3 != 0) opts.add((k, 3));
-    }
-    final list = opts.toList()..sort((a, b) => (a.$1 / a.$2).compareTo(b.$1 / b.$2));
-    var idx = 0;
+  /// Mengen-Rad wie iOS: Ganze Zahl | Bruchteil | Einheit. Rückgabe = (Mengen-Text, Einheit).
+  Future<(String, (String, double))?> _pickAmountWheel(
+      double current, List<(String, double)> units, (String, double) unit) async {
+    const fracs = <(String, int, int)>[
+      ("–", 0, 1), ("⅛", 1, 8), ("¼", 1, 4), ("⅓", 1, 3), ("⅜", 3, 8), ("½", 1, 2),
+      ("⅝", 5, 8), ("⅔", 2, 3), ("¾", 3, 4), ("⅞", 7, 8),
+    ];
+    var whole = current.floor().clamp(0, 30);
+    final restV = current - current.floor();
+    var fi = 0;
     var best = 1e9;
-    for (var i = 0; i < list.length; i++) {
-      final d = (list[i].$1 / list[i].$2 - current).abs();
+    for (var i = 0; i < fracs.length; i++) {
+      final d = (fracs[i].$2 / fracs[i].$3 - restV).abs();
       if (d < best) {
         best = d;
-        idx = i;
+        fi = i;
       }
     }
-    var sel = idx;
-    final ctl = FixedExtentScrollController(initialItem: idx);
+    var ui = units.indexWhere((u) => u == unit);
+    if (ui < 0) ui = 0;
+    final cW = FixedExtentScrollController(initialItem: whole);
+    final cF = FixedExtentScrollController(initialItem: fi);
+    final cU = FixedExtentScrollController(initialItem: ui);
+    Widget wheel(FixedExtentScrollController c, int n, Widget Function(int, bool) item,
+            ValueChanged<int> on, int sel) =>
+        ListWheelScrollView.useDelegate(
+          controller: c,
+          itemExtent: 46,
+          diameterRatio: 1.5,
+          perspective: 0.004,
+          physics: const FixedExtentScrollPhysics(),
+          onSelectedItemChanged: on,
+          childDelegate: ListWheelChildBuilderDelegate(
+            childCount: n,
+            builder: (_, i) => Center(child: item(i, i == sel)),
+          ),
+        );
+    TextStyle st(bool on) => TextStyle(
+        fontSize: on ? 22 : 18,
+        fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+        color: on ? Colors.white : Colors.white54);
     final ok = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: const Color(0xFF1C1C1E),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
       builder: (c) => StatefulBuilder(builder: (c, setW) {
+        final g = (whole + fracs[fi].$2 / fracs[fi].$3) * units[ui].$2;
         return SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 12, 4),
+              padding: const EdgeInsets.fromLTRB(18, 14, 12, 0),
               child: Row(children: [
                 Expanded(
-                  child: Text(unitLabel,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  child: Text("= ${g.round()} g",
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFFC9A24A))),
                 ),
                 _sheetCloseButton(c),
               ]),
             ),
             SizedBox(
-              height: 220,
+              height: 240,
               child: Stack(alignment: Alignment.center, children: [
                 Container(
-                  height: 44,
-                  margin: const EdgeInsets.symmetric(horizontal: 18),
+                  height: 48,
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: gold.withValues(alpha: 0.6)),
-                    color: gold.withValues(alpha: 0.08),
+                    color: Colors.white.withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(24),
                   ),
                 ),
-                ListWheelScrollView.useDelegate(
-                  controller: ctl,
-                  itemExtent: 44,
-                  diameterRatio: 1.6,
-                  physics: const FixedExtentScrollPhysics(),
-                  onSelectedItemChanged: (i) => setW(() => sel = i),
-                  childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: list.length,
-                    builder: (_, i) {
-                      final f = list[i];
-                      final on = i == sel;
-                      return Center(
-                        child: Text(
-                          "${_fracLabel(f.$1, f.$2)}   ·   ${(unitGrams * f.$1 / f.$2).round()} g",
-                          style: TextStyle(
-                              fontSize: on ? 19 : 16,
-                              fontWeight: on ? FontWeight.w800 : FontWeight.w500,
-                              color: on ? gold : Colors.white70),
-                        ),
-                      );
-                    },
+                Row(children: [
+                  const SizedBox(width: 18),
+                  SizedBox(
+                    width: 60,
+                    child: wheel(cW, 31, (i, on) => Text(i == 0 ? "–" : "$i", style: st(on)),
+                        (i) => setW(() => whole = i), whole),
                   ),
-                ),
+                  SizedBox(
+                    width: 70,
+                    child: wheel(cF, fracs.length, (i, on) => Text(fracs[i].$1, style: st(on)),
+                        (i) => setW(() => fi = i), fi),
+                  ),
+                  Expanded(
+                    child: wheel(
+                        cU,
+                        units.length,
+                        (i, on) => Padding(
+                              padding: const EdgeInsets.only(right: 18),
+                              child: Text("${units[i].$1} (${units[i].$2.round()} g)",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: st(on)),
+                            ),
+                        (i) => setW(() => ui = i),
+                        ui),
+                  ),
+                ]),
               ]),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: () => Navigator.pop(c, true),
+                  onPressed: g > 0 ? () => Navigator.pop(c, true) : null,
                   child: Text(t("frac_apply")),
                 ),
               ),
@@ -20208,10 +20238,11 @@ _pickField(
       }),
     );
     if (ok != true) return null;
-    final f = list[sel];
-    final whole = f.$1 ~/ f.$2, rest = f.$1 % f.$2;
-    if (rest == 0) return "$whole";
-    return whole == 0 ? "$rest/${f.$2}" : "$whole $rest/${f.$2}";
+    final f = fracs[fi];
+    final txt = f.$2 == 0
+        ? "$whole"
+        : (whole == 0 ? "${f.$2}/${f.$3}" : "$whole ${f.$2}/${f.$3}");
+    return (txt, units[ui]);
   }
 
   /// Aktions-Blatt (statt Popup-Menü): Icon-Quadrate, Untertitel, Linien, ✕.
