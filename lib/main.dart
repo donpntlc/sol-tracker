@@ -13015,6 +13015,38 @@ class _MainScreenState extends State<MainScreen> {
         recipeFlavor: "sweet",
       ),
       Food(
+        name: "Protein-Quarkkuchen (One-Pot)",
+        // 1 Portion ≈ 295 g (Teig): ~376 kcal · 42,9 g E · 28,3 g K · ~9 g F · 1,1 g Ballast
+        // → pro 100 g: ~127 kcal, 14,6 g E, 9,6 g K, 3,1 g F
+        protein: 14.6,
+        carbs: 9.6,
+        sugar: 2.0,
+        fiber: 0.4,
+        fat: 3.1,
+        category: "Rezepte",
+        type: "Diät (Viel Volumen)",
+        isDefault: true,
+        basePortionGrams: 295,
+        portionHint: "1 Portion ≈ 295 g · ~376 kcal · 43 g Protein — alles in eine Schüssel, mischen, ab in den Ofen",
+        ingredients: [
+          "125 g Magerquark",
+          "30 g Dinkelmehl",
+          "20 g Protein-Sahne (z. B. More Nutrition — jede Marke geht)",
+          "1 Ei (Größe M, ca. 60 g)",
+          "4 g Backpulver",
+          "50 ml Wasser (still)",
+          "Optional: 4–5 g Geschmackspulver (z. B. Salted Caramel)",
+          "Optional: TK-Beeren",
+        ],
+        instructions: [
+          "Ofen auf 180 °C Ober-/Unterhitze vorheizen.",
+          "Alle Zutaten in eine Schüssel geben und glatt verrühren — fertig ist der Teig (One-Pot).",
+          "In eine kleine Form oder aufs Blech geben (ganzes Blech = doppelte Portion). Optional TK-Beeren obendrauf.",
+          "25 min backen, mit TK-Beeren ca. 30 min. Kurz abkühlen lassen — lass es dir schmecken!",
+        ],
+        recipeFlavor: "sweet",
+      ),
+      Food(
         name: "Grießpudding",
         // 1 Portion (Ofen/Form) ≈ 280g: ~241 kcal
         // → pro 100g: ~86 kcal, 4,0g E, 14g K, 1,3g F
