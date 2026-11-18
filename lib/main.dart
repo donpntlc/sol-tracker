@@ -6053,7 +6053,8 @@ class _MainScreenState extends State<MainScreen> {
   bool _isRawName(String n) => n.endsWith("(roh)") || n.endsWith(", roh)");
 
   Future<bool> _openAmountDialog(Food food, String meal,
-      {String? fillTag, double? initGrams}) async {
+      {String? fillTag, double? initGrams, TrackedFood? editing}) async {
+    if (editing != null) initGrams = editing.grams;
     if (!_customPortionsLoaded) await _loadCustomPortions();
     final sibling = _cookedRawSibling(food);
     var portions = _portionsFor(food);
@@ -6079,6 +6080,28 @@ class _MainScreenState extends State<MainScreen> {
     double grams() => unit == null ? rawVal() : rawVal() * unit!.$2;
     String fmtN(double v) =>
         (v - v.roundToDouble()).abs() < 0.01 ? v.round().toString() : v.toStringAsFixed(1);
+    // Bearbeiten: passende Portion vorwählen (z. B. 1½ Portion statt 443 g).
+    if (editing != null && portions.isNotEmpty) {
+      for (final p in portions) {
+        final r = editing.grams / p.$2;
+        final q = (r * 24).round();
+        if (q > 0 && (r * 24 - q).abs() < 0.05 && r <= 30) {
+          unit = p;
+          final whole = q ~/ 24, rest = q % 24;
+          if (rest == 0) {
+            ctrl.text = "$whole";
+          } else {
+            var a = rest, b = 24;
+            int gcd(int x, int y) => y == 0 ? x : gcd(y, x % y);
+            final d = gcd(a, b);
+            a ~/= d;
+            b ~/= d;
+            ctrl.text = whole == 0 ? "$a/$b" : "$whole $a/$b";
+          }
+          break;
+        }
+      }
+    }
     String? fillMsg;
     // Kommt von einem „… füllen“-Knopf: Menge direkt bis zur Zielmitte setzen.
     if (fillTag != null) {
@@ -6537,13 +6560,16 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: () => Navigator.pop(ctx),
                 child: Text(t("cancel")),
               ),
-              TextButton(
-                onPressed: grams() > 0 ? () => Navigator.pop(ctx, "plan") : null,
-                child: Text(t("plan_add_button")),
-              ),
+              if (editing == null)
+                TextButton(
+                  onPressed: grams() > 0 ? () => Navigator.pop(ctx, "plan") : null,
+                  child: Text(t("plan_add_button")),
+                ),
               FilledButton(
-                onPressed: grams() > 0 ? () => Navigator.pop(ctx, "add") : null,
-                child: Text(t("add")),
+                onPressed: grams() > 0
+                    ? () => Navigator.pop(ctx, editing == null ? "add" : "save")
+                    : null,
+                child: Text(editing == null ? t("add") : t("save")),
               ),
             ],
           );
@@ -6555,6 +6581,13 @@ class _MainScreenState extends State<MainScreen> {
       return _openAmountDialog(sibling, meal, fillTag: fillTag);
     }
     if (!mounted || res == null || g <= 0) return false;
+    if (res == "save" && editing != null) {
+      setState(() => editing.grams = g);
+      _updateMealTotals();
+      _saveAppState();
+      _applyDailyKcalOverSchedule();
+      return true;
+    }
     final e = TrackedFood(food: food, grams: g, meal: meal, dayKey: selectedDayKey);
     if (res == "plan") {
       setState(() => plannedFoods.add(e));
@@ -25742,6 +25775,10 @@ _pickField(
     TrackedFood tracked, {
     required String meal,
   }) async {
+    // Gleiches Fenster wie beim Eintragen (Portionen, Rad, Bruchteile).
+    await _openAmountDialog(tracked.food, meal, editing: tracked);
+    return;
+    // ignore: dead_code
     final food = tracked.food;
     final modes = _foodTrackModesFor(food);
     var editGrams = tracked.grams;
