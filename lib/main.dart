@@ -2258,8 +2258,8 @@ class _MainScreenState extends State<MainScreen> {
     if (!diabetic) return "";
     final sp = _carbSpeed(f);
     final ke = f.carbs >= 1 ? " · ${fmtKE(f.carbs)} $carbUnitLabel/100 g" : "";
-    if (sp == "fast") return " · ⚡${t("carb_fast")}$ke";
-    if (sp == "slow") return " · 🐢${t("carb_slow")}$ke";
+    if (sp == "fast") return " · ${t("carb_fast")}$ke";
+    if (sp == "slow") return " · ${t("carb_slow")}$ke";
     return ke;
   }
   static const String _kThreeMealsKey = "three_meals_v1";
@@ -3655,6 +3655,27 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Symbol für Lebensmittel ohne Foto (nach Kategorie / Name).
+  /// Symbol statt Emoji (Emojis laden im Web eine grosse Schrift nach und ruckeln).
+  IconData _foodIcon(Food f) {
+    final n = f.name.toLowerCase();
+    bool has(List<String> l) => l.any(n.contains);
+    if (f.category == "Mahlzeiten") return Icons.restaurant;
+    if (f.category == "Rezepte" || f.isRecipe) return Icons.menu_book_outlined;
+    if (has(["pulver", "isolat", "whey", "eaa", "shake"])) return Icons.local_drink_outlined;
+    if (has(["milch", "joghurt", "quark", "skyr"])) return Icons.water_drop_outlined;
+    if (has(["tofu", "tempeh", "edamame", "soja", "seitan", "myko", "linsen", "kichererbsen", "bohnen"])) return Icons.eco_outlined;
+    if (has(["fisch", "lachs", "thunfisch", "seelachs", "shrimp", "garnele", "kabeljau"])) return Icons.set_meal_outlined;
+    if (has(["ei", "eier"])) return Icons.egg_outlined;
+    if (f.isInCategory("Obst")) return Icons.local_florist_outlined;
+    if (f.isInCategory("Gemüse")) return Icons.grass;
+    if (f.category == "Protein") return Icons.kebab_dining_outlined;
+    if (f.category == "Fett") return Icons.opacity;
+    if (has(["brot", "toast", "wrap"])) return Icons.bakery_dining_outlined;
+    if (has(["nudel", "pasta"])) return Icons.ramen_dining_outlined;
+    if (f.category == "Carbs") return Icons.rice_bowl_outlined;
+    return Icons.restaurant_outlined;
+  }
+
   String _foodEmoji(Food f) {
     final n = f.name.toLowerCase();
     bool has(List<String> l) => l.any(n.contains);
@@ -5533,7 +5554,7 @@ class _MainScreenState extends State<MainScreen> {
                   return _pickerRow(
                     title: (f.isInCategory("Vegan") ||
                             (f.category == "Protein" && _isVegan(f)))
-                        ? "${f.name} 🌱"
+                        ? f.name
                         : f.name,
                     sub: _pickerType == "recent" && recentGrams[f.name] != null
                         ? tFmt("picker_recent_last", {"g": recentGrams[f.name]!.round().toString()})
@@ -5542,7 +5563,7 @@ class _MainScreenState extends State<MainScreen> {
                             _diabeticTag(f),
                     trailing: "${(f.calories * fac).round()} kcal",
                     image: f.imagePath,
-                    placeholder: _foodEmoji(f),
+                    placeholderIcon: _foodIcon(f),
                     fav: _isFav(f),
                     onFav: () async {
                       await _toggleFavKey("f:${f.name}");
@@ -5790,7 +5811,7 @@ class _MainScreenState extends State<MainScreen> {
                           ChoiceChip(
                             visualDensity: VisualDensity.compact,
                             showCheckmark: false,
-                            label: const Text("🌱", style: TextStyle(fontSize: 12)),
+                            label: const Icon(Icons.eco_outlined, size: 16, color: Color(0xFF81C784)),
                             selected: _veganOnly,
                             onSelected: (v) => setL(() => _veganOnly = v),
                           ),
@@ -5931,6 +5952,7 @@ class _MainScreenState extends State<MainScreen> {
     required String trailing,
     String? image,
     String? placeholder,
+    IconData? placeholderIcon,
     required VoidCallback onTap,
     bool? fav,
     VoidCallback? onFav,
@@ -5968,7 +5990,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
               ),
               const SizedBox(width: 12),
-            ] else if (placeholder != null) ...[
+            ] else if (placeholder != null || placeholderIcon != null) ...[
               // Noch kein Foto: ruhige Kachel mit Symbol statt Lücke.
               GestureDetector(
                 onTap: onInfo,
@@ -5981,7 +6003,9 @@ class _MainScreenState extends State<MainScreen> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFC9A24A).withValues(alpha: 0.25)),
                   ),
-                  child: Text(placeholder, style: const TextStyle(fontSize: 22)),
+                  child: placeholderIcon != null
+                      ? Icon(placeholderIcon, size: 22, color: const Color(0xFFC9A24A))
+                      : Text(placeholder!, style: const TextStyle(fontSize: 22)),
                 ),
               ),
               const SizedBox(width: 12),
