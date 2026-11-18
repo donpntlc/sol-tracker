@@ -6375,7 +6375,30 @@ class _MainScreenState extends State<MainScreen> {
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () async {
+                                final v = await _pickFractionWheel(rawVal(), unit!.$2, unit!.$1);
+                                if (v != null) setL(() => ctrl.text = v);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: gold.withValues(alpha: 0.5)),
+                                ),
+                                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                                  const Icon(Icons.unfold_more, size: 18, color: gold),
+                                  Text(t("frac_wheel"),
+                                      style: TextStyle(fontSize: 10.5, color: context.sol.muted)),
+                                ]),
+                              ),
+                            ),
+                          ),
                           for (final fr in const [
+                            ("⅛", "1/8", 0.125),
                             ("¼", "1/4", 0.25),
                             ("⅓", "1/3", 1 / 3),
                             ("½", "1/2", 0.5),
@@ -9693,6 +9716,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Serie",
       "phase_goal_label": "Ziel",
       "plan_add_button": "Vormerken",
+      "frac_wheel": "Mehr",
+      "frac_apply": "Übernehmen",
       "perf_auto_chip": "Auto",
       "perf_auto_note": "Aus REPIT: {l} · 👍 {u} · – {m} · 👎 {d} ({n}× vor dem Training bewertet)",
       "perf_auto_pending": "REPIT: {n}× bewertet – ab 3 Bewertungen setzt PREPIT die Performance automatisch.",
@@ -11177,6 +11202,8 @@ class _MainScreenState extends State<MainScreen> {
       "tracking_streak_label": "Streak",
       "phase_goal_label": "Goal",
       "plan_add_button": "Plan",
+      "frac_wheel": "More",
+      "frac_apply": "Apply",
       "perf_auto_chip": "Auto",
       "perf_auto_note": "From REPIT: {l} · 👍 {u} · – {m} · 👎 {d} (rated {n}× before training)",
       "perf_auto_pending": "REPIT: rated {n}× – from 3 ratings PREPIT sets performance automatically.",
@@ -20108,6 +20135,121 @@ _pickField(
         return MemoryImage(Uint8List(0));
       }
     });
+  }
+
+  /// Anzeige eines Bruchs: 1.5 → „1½“, 0.375 → „⅜“.
+  String _fracLabel(int num, int den) {
+    const g = {
+      "1/8": "⅛", "1/4": "¼", "3/8": "⅜", "1/2": "½", "5/8": "⅝", "3/4": "¾", "7/8": "⅞",
+      "1/3": "⅓", "2/3": "⅔", "1/6": "⅙", "5/6": "⅚",
+    };
+    final whole = num ~/ den, rest = num % den;
+    if (rest == 0) return "$whole";
+    var a = rest, b = den;
+    int gcd(int x, int y) => y == 0 ? x : gcd(y, x % y);
+    final d = gcd(a, b);
+    a ~/= d;
+    b ~/= d;
+    final f = g["$a/$b"] ?? "$a/$b";
+    return whole == 0 ? f : "$whole$f";
+  }
+
+  /// Scroll-Rad mit Bruchteilen (⅛-Schritte + Drittel, bis 5). Rückgabe = Text fürs Mengenfeld.
+  Future<String?> _pickFractionWheel(double current, double unitGrams, String unitLabel) async {
+    const gold = Color(0xFFC9A24A);
+    final opts = <(int, int)>{};
+    for (var k = 1; k <= 40; k++) {
+      opts.add((k, 8));
+    }
+    for (var k = 1; k <= 15; k++) {
+      if (k % 3 != 0) opts.add((k, 3));
+    }
+    final list = opts.toList()..sort((a, b) => (a.$1 / a.$2).compareTo(b.$1 / b.$2));
+    var idx = 0;
+    var best = 1e9;
+    for (var i = 0; i < list.length; i++) {
+      final d = (list[i].$1 / list[i].$2 - current).abs();
+      if (d < best) {
+        best = d;
+        idx = i;
+      }
+    }
+    var sel = idx;
+    final ctl = FixedExtentScrollController(initialItem: idx);
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (c) => StatefulBuilder(builder: (c, setW) {
+        return SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 12, 4),
+              child: Row(children: [
+                Expanded(
+                  child: Text(unitLabel,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                ),
+                _sheetCloseButton(c),
+              ]),
+            ),
+            SizedBox(
+              height: 220,
+              child: Stack(alignment: Alignment.center, children: [
+                Container(
+                  height: 44,
+                  margin: const EdgeInsets.symmetric(horizontal: 18),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: gold.withValues(alpha: 0.6)),
+                    color: gold.withValues(alpha: 0.08),
+                  ),
+                ),
+                ListWheelScrollView.useDelegate(
+                  controller: ctl,
+                  itemExtent: 44,
+                  diameterRatio: 1.6,
+                  physics: const FixedExtentScrollPhysics(),
+                  onSelectedItemChanged: (i) => setW(() => sel = i),
+                  childDelegate: ListWheelChildBuilderDelegate(
+                    childCount: list.length,
+                    builder: (_, i) {
+                      final f = list[i];
+                      final on = i == sel;
+                      return Center(
+                        child: Text(
+                          "${_fracLabel(f.$1, f.$2)}   ·   ${(unitGrams * f.$1 / f.$2).round()} g",
+                          style: TextStyle(
+                              fontSize: on ? 19 : 16,
+                              fontWeight: on ? FontWeight.w800 : FontWeight.w500,
+                              color: on ? gold : Colors.white70),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(c, true),
+                  child: Text(t("frac_apply")),
+                ),
+              ),
+            ),
+          ]),
+        );
+      }),
+    );
+    if (ok != true) return null;
+    final f = list[sel];
+    final whole = f.$1 ~/ f.$2, rest = f.$1 % f.$2;
+    if (rest == 0) return "$whole";
+    return whole == 0 ? "$rest/${f.$2}" : "$whole $rest/${f.$2}";
   }
 
   /// Aktions-Blatt (statt Popup-Menü): Icon-Quadrate, Untertitel, Linien, ✕.
