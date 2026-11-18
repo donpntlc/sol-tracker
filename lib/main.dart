@@ -2848,10 +2848,20 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   /// Summe gegessene kcal an Tag `dayKey`.
+  // Pro Build einmal alle Tage aufsummieren statt pro Tag die ganze Liste zu durchsuchen.
+  Map<String, double>? _kcalDayCache;
+  String _kcalDayCacheKey = "";
   double _kcalEatenOnDay(String dayKey) {
-    return trackedFoods
-        .where((f) => f.dayKey == dayKey)
-        .fold(0.0, (s, t) => s + t.calories);
+    final key = "${_liveRev.value}|${trackedFoods.length}";
+    if (_kcalDayCache == null || _kcalDayCacheKey != key) {
+      final m = <String, double>{};
+      for (final t in trackedFoods) {
+        m[t.dayKey] = (m[t.dayKey] ?? 0) + t.calories;
+      }
+      _kcalDayCache = m;
+      _kcalDayCacheKey = key;
+    }
+    return _kcalDayCache![dayKey] ?? 0.0;
   }
 
   /// Tages-Referenz (kcal) fürs Tracking, cheat-aware.
@@ -7094,7 +7104,7 @@ class _MainScreenState extends State<MainScreen> {
       var guardS = 0;
       while (dS.isBefore(today) && guardS < 400) {
         final key = dateKeyFromDate(dS);
-        if (_dayCounts(key) && trackedFoods.any((t) => t.dayKey == key)) {
+        if (_dayCounts(key) && _kcalEatenOnDay(key) > 0) {
           final eat = _kcalEatenOnDay(key);
           kcalSince += bulk ? (eat - maintS) : (maintS - eat);
         }
@@ -7133,7 +7143,7 @@ class _MainScreenState extends State<MainScreen> {
     var guard = 0;
     while (day.isBefore(today) && guard < 1000) {
       final key = dateKeyFromDate(day);
-      if (_dayCounts(key) && trackedFoods.any((t) => t.dayKey == key)) {
+      if (_dayCounts(key) && _kcalEatenOnDay(key) > 0) {
         final eat = _kcalEatenOnDay(key);
         done += bulk ? (eat - maint) : (maint - eat);
       }
