@@ -18886,7 +18886,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Map<String, ({int up, int mid, int down, int n, double? feel})> _repitFoodStats() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (_repitStatsCache != null && now - _repitStatsAt < 30000) return _repitStatsCache!;
+    if (_repitStatsCache != null && now - _repitStatsAt < 600000) return _repitStatsCache!;
     final out = <String, ({int up, int mid, int down, int n, double? feel})>{};
     try {
       final raw = localStorageGet("hantelbuch.v1");
