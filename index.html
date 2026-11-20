@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.json">
   <title>SOL Tracker</title>
   <meta name="theme-color" content="#000000">
-  <style>html,body{background:#000;margin:0;overscroll-behavior:none}</style>
+  <style>html,body{background:#000;margin:0;overscroll-behavior:none;height:100%}</style>
 </head>
 <body>
   <script>
@@ -35,8 +35,23 @@
       window.addEventListener('resize', function () { setTimeout(reset, 50); });
       window.addEventListener('pageshow', reset);
       if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', function () { setTimeout(reset, 50); });
+        // Tastatur zu / Leisten ändern sich: kurz warten, dann Flutter neu messen lassen.
+        var vvT = null;
+        window.visualViewport.addEventListener('resize', function () {
+          setTimeout(reset, 50);
+          clearTimeout(vvT);
+          vvT = setTimeout(nudge, 300);
+        });
       }
+      // Sicherheitsnetz: Ändert sich die Fensterhöhe unbemerkt (iPhone-Web-App),
+      // wird nachgemessen – sonst bleiben verrutschte Masse / schwarze Streifen hängen.
+      var lastH = window.innerHeight, lastW = window.innerWidth;
+      setInterval(function () {
+        var h = window.innerHeight, w = window.innerWidth;
+        if (Math.abs(h - lastH) > 1 || Math.abs(w - lastW) > 1) {
+          lastH = h; lastW = w; nudge();
+        }
+      }, 1000);
     })();
   </script>
   <script>
